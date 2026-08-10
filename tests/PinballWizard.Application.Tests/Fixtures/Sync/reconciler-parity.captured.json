@@ -1,0 +1,1506 @@
+{
+  "CapturedAt": "2026-08-10T02:02:05.0222396+00:00",
+  "Source": "live Cosmos machines container",
+  "TotalMachines": 2213,
+  "TotalSlugged": 150,
+  "ManufacturerStats": {
+    "aaamusements": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "achilleandchalvignac": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "alben": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "alliedleisure": {
+      "MachineCount": 16,
+      "SluggedCount": 0
+    },
+    "alvingco": {
+      "MachineCount": 7,
+      "SluggedCount": 0
+    },
+    "americangirl": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "americanpinball": {
+      "MachineCount": 6,
+      "SluggedCount": 1
+    },
+    "ami": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "appletime": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "arkon": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "astrogames": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "atari": {
+      "MachineCount": 11,
+      "SluggedCount": 0
+    },
+    "automaticos": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "bally": {
+      "MachineCount": 232,
+      "SluggedCount": 0
+    },
+    "bandainamco": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "barni": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "barrelsoffun": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "bellcoinmatic": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "bellgames": {
+      "MachineCount": 20,
+      "SluggedCount": 0
+    },
+    "bem": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "bigliardinielettronicimilano": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "briarwood": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "brunswick": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "capcom": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "cea": {
+      "MachineCount": 5,
+      "SluggedCount": 0
+    },
+    "centromatic": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "cgc": {
+      "MachineCount": 13,
+      "SluggedCount": 13
+    },
+    "chicagocoin": {
+      "MachineCount": 70,
+      "SluggedCount": 0
+    },
+    "cicplay": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "cisco": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "coffeemat": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "damasrl": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "dataeast": {
+      "MachineCount": 27,
+      "SluggedCount": 0
+    },
+    "deeproot": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "dutch": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "elbos": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "electromaticbrasil": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "ericpriepke": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "europlay": {
+      "MachineCount": 10,
+      "SluggedCount": 0
+    },
+    "exhibit": {
+      "MachineCount": 20,
+      "SluggedCount": 0
+    },
+    "fascinationgame": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "fliperbol": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "foramusementonlygames": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "gameplan": {
+      "MachineCount": 21,
+      "SluggedCount": 0
+    },
+    "geiger": {
+      "MachineCount": 7,
+      "SluggedCount": 0
+    },
+    "genco": {
+      "MachineCount": 30,
+      "SluggedCount": 0
+    },
+    "giorgiomassiniero": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "giulianolodola": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "gottlieb": {
+      "MachineCount": 481,
+      "SluggedCount": 0
+    },
+    "grandproducts": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "haggis": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "hanilamatic": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "hankin": {
+      "MachineCount": 5,
+      "SluggedCount": 0
+    },
+    "heighwaypinball": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "hexapinball": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "hispamatic": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "homepin": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "ianharrowergames": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "idi": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "idsa": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "inder": {
+      "MachineCount": 31,
+      "SluggedCount": 0
+    },
+    "innovativeconceptsice": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "interflip": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "international": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "jacvanham": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "jeutel": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "jjp": {
+      "MachineCount": 16,
+      "SluggedCount": 5
+    },
+    "jocmatic": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "joctronic": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "juegospopulares": {
+      "MachineCount": 8,
+      "SluggedCount": 0
+    },
+    "kctabart": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "keeney": {
+      "MachineCount": 8,
+      "SluggedCount": 0
+    },
+    "komplett": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "komputerdynamics": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "ltddobrasil": {
+      "MachineCount": 5,
+      "SluggedCount": 0
+    },
+    "maguinasmacpinball": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "mali": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "mambelli": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "manilamatic": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "maresa": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "marsa": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "marsaplay": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "marvel": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "mattel": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "megaverseproject": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "midway": {
+      "MachineCount": 5,
+      "SluggedCount": 0
+    },
+    "mircogames": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "mocean": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "mondialmatic": {
+      "MachineCount": 8,
+      "SluggedCount": 0
+    },
+    "mrgame": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "multimorphic": {
+      "MachineCount": 19,
+      "SluggedCount": 12
+    },
+    "nordamatic": {
+      "MachineCount": 9,
+      "SluggedCount": 0
+    },
+    "northstar": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "nsm": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "pedrettigaming": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "petaco": {
+      "MachineCount": 11,
+      "SluggedCount": 0
+    },
+    "peyper": {
+      "MachineCount": 6,
+      "SluggedCount": 0
+    },
+    "pinballadventures": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "pinballbrothers": {
+      "MachineCount": 4,
+      "SluggedCount": 4
+    },
+    "pinballmanufacturinginc": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "pinballshop": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "pinnovating": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "pinstar": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "playbar": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "playmatic": {
+      "MachineCount": 53,
+      "SluggedCount": 0
+    },
+    "playmecflippers": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "quetzalpinball": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "rally": {
+      "MachineCount": 21,
+      "SluggedCount": 0
+    },
+    "rampspinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "rebellionpinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "recel": {
+      "MachineCount": 31,
+      "SluggedCount": 0
+    },
+    "recreativosfranco": {
+      "MachineCount": 10,
+      "SluggedCount": 0
+    },
+    "redbaronamusements": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "retropinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "riotpinball": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "rmg": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "rowamet": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "sankyoseiki": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "sega": {
+      "MachineCount": 37,
+      "SluggedCount": 0
+    },
+    "segaenterprises": {
+      "MachineCount": 27,
+      "SluggedCount": 0
+    },
+    "segasa": {
+      "MachineCount": 22,
+      "SluggedCount": 0
+    },
+    "skitbpinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "sleic": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "sonic": {
+      "MachineCount": 17,
+      "SluggedCount": 0
+    },
+    "spinball": {
+      "MachineCount": 3,
+      "SluggedCount": 0
+    },
+    "spooky": {
+      "MachineCount": 15,
+      "SluggedCount": 5
+    },
+    "sportmatic": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "staal": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "stern": {
+      "MachineCount": 190,
+      "SluggedCount": 110
+    },
+    "suncoastpinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "taito": {
+      "MachineCount": 17,
+      "SluggedCount": 0
+    },
+    "teampinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "tecnoplay": {
+      "MachineCount": 5,
+      "SluggedCount": 0
+    },
+    "thbergmann": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "turnerpinball": {
+      "MachineCount": 4,
+      "SluggedCount": 0
+    },
+    "unidesa": {
+      "MachineCount": 7,
+      "SluggedCount": 0
+    },
+    "united": {
+      "MachineCount": 23,
+      "SluggedCount": 0
+    },
+    "universal": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "valley": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "vectorpinball": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "ventureline": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "videodens": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "vizamanufacturing": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "whizbangpinball": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "wico": {
+      "MachineCount": 2,
+      "SluggedCount": 0
+    },
+    "williams": {
+      "MachineCount": 370,
+      "SluggedCount": 0
+    },
+    "wonderlandamusements": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    },
+    "zaccaria": {
+      "MachineCount": 47,
+      "SluggedCount": 0
+    },
+    "zidware": {
+      "MachineCount": 1,
+      "SluggedCount": 0
+    }
+  },
+  "Entries": [
+    {
+      "MachineId": "G4JZ4-ML0pL",
+      "Title": "High Roller Casino",
+      "ManufacturerKey": "stern",
+      "Slug": "high-roller-casino"
+    },
+    {
+      "MachineId": "G5WoB-MDyNZ",
+      "Title": "The Sopranos",
+      "ManufacturerKey": "stern",
+      "Slug": "the-sopranos"
+    },
+    {
+      "MachineId": "GredR-MDE2K",
+      "Title": "The Rolling Stones",
+      "ManufacturerKey": "stern",
+      "Slug": "the-rolling-stones"
+    },
+    {
+      "MachineId": "G417d-MJkXV",
+      "Title": "Wheel of Fortune",
+      "ManufacturerKey": "stern",
+      "Slug": "wheel-of-fortune-2"
+    },
+    {
+      "MachineId": "Grj6X-MJwj5",
+      "Title": "X-Men",
+      "ManufacturerKey": "stern",
+      "Slug": "x-men-pro"
+    },
+    {
+      "MachineId": "GrEkZ-ML13O",
+      "Title": "24",
+      "ManufacturerKey": "stern",
+      "Slug": "24-2"
+    },
+    {
+      "MachineId": "GRnPz-MLBzV",
+      "Title": "Transformers",
+      "ManufacturerKey": "stern",
+      "Slug": "transformers"
+    },
+    {
+      "MachineId": "GRVq4-MLyxq",
+      "Title": "Iron Man",
+      "ManufacturerKey": "stern",
+      "Slug": "iron-man-vault-edition"
+    },
+    {
+      "MachineId": "GrPKO-MLO5X",
+      "Title": "Playboy",
+      "ManufacturerKey": "stern",
+      "Slug": "playboy"
+    },
+    {
+      "MachineId": "G4qbX-MJw5r",
+      "Title": "Elvis",
+      "ManufacturerKey": "stern",
+      "Slug": "elvis"
+    },
+    {
+      "MachineId": "G5poe-MQrb5",
+      "Title": "World Poker Tour",
+      "ManufacturerKey": "stern",
+      "Slug": "world-poker-tour"
+    },
+    {
+      "MachineId": "G4yZN-MDEP7",
+      "Title": "Iron Maiden",
+      "ManufacturerKey": "stern",
+      "Slug": "iron-maiden"
+    },
+    {
+      "MachineId": "GrPOR-MLq5x",
+      "Title": "Mustang",
+      "ManufacturerKey": "stern",
+      "Slug": "mustang"
+    },
+    {
+      "MachineId": "G56lO-MDXpW",
+      "Title": "Harley Davidson",
+      "ManufacturerKey": "stern",
+      "Slug": "harley-davidson"
+    },
+    {
+      "MachineId": "G4e1d-MJ5Bj",
+      "Title": "Indiana Jones",
+      "ManufacturerKey": "stern",
+      "Slug": "indiana-jones"
+    },
+    {
+      "MachineId": "GRBE4-MJ9rE",
+      "Title": "Metallica",
+      "ManufacturerKey": "stern",
+      "Slug": "metallica"
+    },
+    {
+      "MachineId": "GRwv0-MJ99E",
+      "Title": "Sharkey\u0027s Shootout",
+      "ManufacturerKey": "stern",
+      "Slug": "sharkeys-shootout"
+    },
+    {
+      "MachineId": "GR91N-MLOyE",
+      "Title": "Terminator 3: Rise of the Machines",
+      "ManufacturerKey": "stern",
+      "Slug": "terminator-3-rise-of-the-machines"
+    },
+    {
+      "MachineId": "G4doo-MLEj1",
+      "Title": "Lexy Lightspeed - Escape From Earth",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "lexy-lightspeed-escape-from-earth"
+    },
+    {
+      "MachineId": "GrZBr-MDbx7",
+      "Title": "Avatar",
+      "ManufacturerKey": "stern",
+      "Slug": "avatar"
+    },
+    {
+      "MachineId": "Grj6X-MJNV1",
+      "Title": "X-Men",
+      "ManufacturerKey": "stern",
+      "Slug": "x-men-pro"
+    },
+    {
+      "MachineId": "GRVq4-MDRKr",
+      "Title": "Iron Man",
+      "ManufacturerKey": "stern",
+      "Slug": "iron-man-vault-edition"
+    },
+    {
+      "MachineId": "GRWyB-MLz6Z",
+      "Title": "Ripley\u0027s Believe It or Not!",
+      "ManufacturerKey": "stern",
+      "Slug": "ripleys-believe-it-or-not"
+    },
+    {
+      "MachineId": "G4qX5-MJN17",
+      "Title": "KISS",
+      "ManufacturerKey": "stern",
+      "Slug": "kiss"
+    },
+    {
+      "MachineId": "GRBE4-MQK1Z",
+      "Title": "Metallica",
+      "ManufacturerKey": "stern",
+      "Slug": "metallica"
+    },
+    {
+      "MachineId": "GrPOR-MJK2k",
+      "Title": "Mustang",
+      "ManufacturerKey": "stern",
+      "Slug": "mustang"
+    },
+    {
+      "MachineId": "G48w3-Mq1Zk",
+      "Title": "Monopoly",
+      "ManufacturerKey": "stern",
+      "Slug": "monopoly"
+    },
+    {
+      "MachineId": "GRnPz-Mx0XO",
+      "Title": "Transformers",
+      "ManufacturerKey": "stern",
+      "Slug": "transformers"
+    },
+    {
+      "MachineId": "G43BW-M3dKV",
+      "Title": "Austin Powers",
+      "ManufacturerKey": "stern",
+      "Slug": "austin-powers"
+    },
+    {
+      "MachineId": "G41d5-MKNwX",
+      "Title": "Game of Thrones",
+      "ManufacturerKey": "stern",
+      "Slug": "game-of-thrones"
+    },
+    {
+      "MachineId": "Gryw4-MRj4O",
+      "Title": "Star Trek",
+      "ManufacturerKey": "stern",
+      "Slug": "star-trek"
+    },
+    {
+      "MachineId": "G5K19-MBRlz",
+      "Title": "NBA",
+      "ManufacturerKey": "stern",
+      "Slug": "nba-2"
+    },
+    {
+      "MachineId": "G41d5-M9REd",
+      "Title": "Game of Thrones",
+      "ManufacturerKey": "stern",
+      "Slug": "game-of-thrones"
+    },
+    {
+      "MachineId": "G43W4-MXrPx",
+      "Title": "AC/DC",
+      "ManufacturerKey": "stern",
+      "Slug": "ac-dc"
+    },
+    {
+      "MachineId": "G4qX5-Mz2Pp",
+      "Title": "KISS",
+      "ManufacturerKey": "stern",
+      "Slug": "kiss"
+    },
+    {
+      "MachineId": "Grybw-M5R0n",
+      "Title": "RollerCoaster Tycoon",
+      "ManufacturerKey": "stern",
+      "Slug": "rollercoaster-tycoon"
+    },
+    {
+      "MachineId": "GRvBL-MP3Ev",
+      "Title": "The Simpsons Pinball Party",
+      "ManufacturerKey": "stern",
+      "Slug": "the-simpsons-pinball-party"
+    },
+    {
+      "MachineId": "Gryw4-MwNky",
+      "Title": "Star Trek",
+      "ManufacturerKey": "stern",
+      "Slug": "star-trek"
+    },
+    {
+      "MachineId": "Gryw4-MNEKn",
+      "Title": "Star Trek",
+      "ManufacturerKey": "stern",
+      "Slug": "star-trek"
+    },
+    {
+      "MachineId": "G41d5-M0ovk",
+      "Title": "Game of Thrones",
+      "ManufacturerKey": "stern",
+      "Slug": "game-of-thrones"
+    },
+    {
+      "MachineId": "GRoz4-MjBV6",
+      "Title": "Batman 66",
+      "ManufacturerKey": "stern",
+      "Slug": "batman-66"
+    },
+    {
+      "MachineId": "GrPOR-M61Pw",
+      "Title": "Mustang",
+      "ManufacturerKey": "stern",
+      "Slug": "mustang"
+    },
+    {
+      "MachineId": "GRoz4-MrRPw",
+      "Title": "Batman 66",
+      "ManufacturerKey": "stern",
+      "Slug": "batman-66"
+    },
+    {
+      "MachineId": "GR9Nr-Mz2dY",
+      "Title": "Ghostbusters",
+      "ManufacturerKey": "stern",
+      "Slug": "ghostbusters"
+    },
+    {
+      "MachineId": "GR9Nr-MVKol",
+      "Title": "Ghostbusters",
+      "ManufacturerKey": "stern",
+      "Slug": "ghostbusters"
+    },
+    {
+      "MachineId": "GR9Nr-M5RxE",
+      "Title": "Ghostbusters",
+      "ManufacturerKey": "stern",
+      "Slug": "ghostbusters"
+    },
+    {
+      "MachineId": "G5pe4-MkPRV",
+      "Title": "Medieval Madness",
+      "ManufacturerKey": "cgc",
+      "Slug": "medieval-madness"
+    },
+    {
+      "MachineId": "G43W4-MKNW0",
+      "Title": "AC/DC",
+      "ManufacturerKey": "stern",
+      "Slug": "ac-dc"
+    },
+    {
+      "MachineId": "GredR-Mb5jN",
+      "Title": "The Rolling Stones",
+      "ManufacturerKey": "stern",
+      "Slug": "the-rolling-stones"
+    },
+    {
+      "MachineId": "G56lO-Mq153",
+      "Title": "Harley Davidson",
+      "ManufacturerKey": "stern",
+      "Slug": "harley-davidson"
+    },
+    {
+      "MachineId": "G43W4-MrRpw",
+      "Title": "AC/DC",
+      "ManufacturerKey": "stern",
+      "Slug": "ac-dc"
+    },
+    {
+      "MachineId": "GRVq4-M4oNp",
+      "Title": "Iron Man",
+      "ManufacturerKey": "stern",
+      "Slug": "iron-man-vault-edition"
+    },
+    {
+      "MachineId": "G56lO-MZeRq",
+      "Title": "Harley Davidson",
+      "ManufacturerKey": "stern",
+      "Slug": "harley-davidson"
+    },
+    {
+      "MachineId": "G5pe4-MyNkp",
+      "Title": "Medieval Madness",
+      "ManufacturerKey": "cgc",
+      "Slug": "medieval-madness"
+    },
+    {
+      "MachineId": "G4do5-MkPnV",
+      "Title": "Attack from Mars",
+      "ManufacturerKey": "cgc",
+      "Slug": "attack-from-mars"
+    },
+    {
+      "MachineId": "G4do5-MW9z8",
+      "Title": "Attack from Mars",
+      "ManufacturerKey": "cgc",
+      "Slug": "attack-from-mars"
+    },
+    {
+      "MachineId": "G4qX5-Ml9jb",
+      "Title": "KISS",
+      "ManufacturerKey": "stern",
+      "Slug": "kiss"
+    },
+    {
+      "MachineId": "G43W4-MdEjy",
+      "Title": "AC/DC",
+      "ManufacturerKey": "stern",
+      "Slug": "ac-dc"
+    },
+    {
+      "MachineId": "G43W4-MKNX0",
+      "Title": "AC/DC",
+      "ManufacturerKey": "stern",
+      "Slug": "ac-dc"
+    },
+    {
+      "MachineId": "GRBE4-MOE4l",
+      "Title": "Metallica",
+      "ManufacturerKey": "stern",
+      "Slug": "metallica"
+    },
+    {
+      "MachineId": "Gr16e-MnKEX",
+      "Title": "Aerosmith",
+      "ManufacturerKey": "stern",
+      "Slug": "aerosmith"
+    },
+    {
+      "MachineId": "Gr16e-Mq1k3",
+      "Title": "Aerosmith",
+      "ManufacturerKey": "stern",
+      "Slug": "aerosmith"
+    },
+    {
+      "MachineId": "Gr16e-M5Rbv",
+      "Title": "Aerosmith",
+      "ManufacturerKey": "stern",
+      "Slug": "aerosmith"
+    },
+    {
+      "MachineId": "GRWvz-Mp4yl",
+      "Title": "Guardians of the Galaxy",
+      "ManufacturerKey": "stern",
+      "Slug": "guardians-of-the-galaxy"
+    },
+    {
+      "MachineId": "GRWvz-Mx0eb",
+      "Title": "Guardians of the Galaxy",
+      "ManufacturerKey": "stern",
+      "Slug": "guardians-of-the-galaxy"
+    },
+    {
+      "MachineId": "GRWvz-MP37P",
+      "Title": "Guardians of the Galaxy",
+      "ManufacturerKey": "stern",
+      "Slug": "guardians-of-the-galaxy"
+    },
+    {
+      "MachineId": "Gryw4-MOE7P",
+      "Title": "Star Trek",
+      "ManufacturerKey": "stern",
+      "Slug": "star-trek"
+    },
+    {
+      "MachineId": "Gryw4-MwNwZ",
+      "Title": "Star Trek",
+      "ManufacturerKey": "stern",
+      "Slug": "star-trek"
+    },
+    {
+      "MachineId": "GvBQX-M0ody",
+      "Title": "Houdini: Master of Mystery",
+      "ManufacturerKey": "americanpinball",
+      "Slug": "houdini"
+    },
+    {
+      "MachineId": "G4do5-MjBp2",
+      "Title": "Attack from Mars",
+      "ManufacturerKey": "cgc",
+      "Slug": "attack-from-mars"
+    },
+    {
+      "MachineId": "G6lnq-Mq1kv",
+      "Title": "Deadpool",
+      "ManufacturerKey": "stern",
+      "Slug": "deadpool"
+    },
+    {
+      "MachineId": "G6lnq-MRj7Z",
+      "Title": "Deadpool",
+      "ManufacturerKey": "stern",
+      "Slug": "deadpool"
+    },
+    {
+      "MachineId": "G6lnq-M6153",
+      "Title": "Deadpool",
+      "ManufacturerKey": "stern",
+      "Slug": "deadpool"
+    },
+    {
+      "MachineId": "Gr3EW-M3dBn",
+      "Title": "Monster Bash",
+      "ManufacturerKey": "cgc",
+      "Slug": "monster-bash"
+    },
+    {
+      "MachineId": "Gr3EW-MXryE",
+      "Title": "Monster Bash",
+      "ManufacturerKey": "cgc",
+      "Slug": "monster-bash"
+    },
+    {
+      "MachineId": "Gr3EW-M1r9Y",
+      "Title": "Monster Bash",
+      "ManufacturerKey": "cgc",
+      "Slug": "monster-bash"
+    },
+    {
+      "MachineId": "G0l8P-M85d9",
+      "Title": "Beatles",
+      "ManufacturerKey": "stern",
+      "Slug": "beatles"
+    },
+    {
+      "MachineId": "GbPde-M5Rkv",
+      "Title": "The Munsters",
+      "ManufacturerKey": "stern",
+      "Slug": "the-munsters"
+    },
+    {
+      "MachineId": "GbPde-Mp43l",
+      "Title": "The Munsters",
+      "ManufacturerKey": "stern",
+      "Slug": "the-munsters"
+    },
+    {
+      "MachineId": "GD7Ld-ME0BP",
+      "Title": "Black Knight: Sword of Rage",
+      "ManufacturerKey": "stern",
+      "Slug": "black-knight"
+    },
+    {
+      "MachineId": "GD7Ld-MBRP4",
+      "Title": "Black Knight: Sword of Rage",
+      "ManufacturerKey": "stern",
+      "Slug": "black-knight"
+    },
+    {
+      "MachineId": "GZVOd-MwNxZ",
+      "Title": "Elvira\u0027s House of Horrors",
+      "ManufacturerKey": "stern",
+      "Slug": "elviras-house-of-horrors"
+    },
+    {
+      "MachineId": "Gzy89-MNEeO",
+      "Title": "Stranger Things",
+      "ManufacturerKey": "stern",
+      "Slug": "stranger-things"
+    },
+    {
+      "MachineId": "Gzy89-M0oPy",
+      "Title": "Stranger Things",
+      "ManufacturerKey": "stern",
+      "Slug": "stranger-things"
+    },
+    {
+      "MachineId": "Gd2Xb-Mq1qv",
+      "Title": "Teenage Mutant Ninja Turtles",
+      "ManufacturerKey": "stern",
+      "Slug": "tmnt"
+    },
+    {
+      "MachineId": "Gd2Xb-MRjpZ",
+      "Title": "Teenage Mutant Ninja Turtles",
+      "ManufacturerKey": "stern",
+      "Slug": "tmnt"
+    },
+    {
+      "MachineId": "G5pe4-MrR1B",
+      "Title": "Medieval Madness",
+      "ManufacturerKey": "cgc",
+      "Slug": "medieval-madness"
+    },
+    {
+      "MachineId": "G18pJ-Mz2bl",
+      "Title": "Heist",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "heist"
+    },
+    {
+      "MachineId": "Gj66P-M3dxn",
+      "Title": "Avengers: Infinity Quest",
+      "ManufacturerKey": "stern",
+      "Slug": "avengers-infinity-quest"
+    },
+    {
+      "MachineId": "Gj66P-MXr0E",
+      "Title": "Avengers: Infinity Quest",
+      "ManufacturerKey": "stern",
+      "Slug": "avengers-infinity-quest"
+    },
+    {
+      "MachineId": "GqZZ1-M1r5Y",
+      "Title": "Guns N\u0027 Roses",
+      "ManufacturerKey": "jjp",
+      "Slug": "guns-n-roses-pinball-limited-edition"
+    },
+    {
+      "MachineId": "GqZZ1-M85y9",
+      "Title": "Guns N\u0027 Roses",
+      "ManufacturerKey": "jjp",
+      "Slug": "guns-n-roses-pinball-limited-edition"
+    },
+    {
+      "MachineId": "GqZZ1-MZeoE",
+      "Title": "Guns N\u0027 Roses",
+      "ManufacturerKey": "jjp",
+      "Slug": "guns-n-roses-pinball-limited-edition"
+    },
+    {
+      "MachineId": "GPBB9-M5R9v",
+      "Title": "Cosmic Cart Racing",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "cosmic-cart-racing"
+    },
+    {
+      "MachineId": "Gweel-M9Rk0",
+      "Title": "Led Zeppelin",
+      "ManufacturerKey": "stern",
+      "Slug": "led-zeppelin"
+    },
+    {
+      "MachineId": "Gweel-ME0pP",
+      "Title": "Led Zeppelin",
+      "ManufacturerKey": "stern",
+      "Slug": "led-zeppelin"
+    },
+    {
+      "MachineId": "G4PBO-MyNeb",
+      "Title": "Alien",
+      "ManufacturerKey": "pinballbrothers",
+      "Slug": "alien"
+    },
+    {
+      "MachineId": "GBLLP-MkPpr",
+      "Title": "The Mandalorian",
+      "ManufacturerKey": "stern",
+      "Slug": "the-mandalorian"
+    },
+    {
+      "MachineId": "GBLLP-MW900",
+      "Title": "The Mandalorian",
+      "ManufacturerKey": "stern",
+      "Slug": "the-mandalorian"
+    },
+    {
+      "MachineId": "G6llq-MwNOZ",
+      "Title": "Cannon Lagoon",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "cannon-lagoon"
+    },
+    {
+      "MachineId": "GN66q-MeP0V",
+      "Title": "Shoot \u0027n Scoot",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "shoot-n-scoot"
+    },
+    {
+      "MachineId": "Glllz-M2Ypn",
+      "Title": "Barnyard",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "barnyard"
+    },
+    {
+      "MachineId": "GpeeL-MYez0",
+      "Title": "Lexy Lightspeed \u2013 Secret Agent Showdown",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "lexy-lightspeed-secret-agent-showdown"
+    },
+    {
+      "MachineId": "Gd22x-MNElO",
+      "Title": "ROCs",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "rocs"
+    },
+    {
+      "MachineId": "Gj66Z-Mp4BN",
+      "Title": "Halloween",
+      "ManufacturerKey": "spooky",
+      "Slug": "halloween"
+    },
+    {
+      "MachineId": "G8llL-MyNwq",
+      "Title": "Sorcerer\u0027s Apprentice",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "sorcerers-apprentice"
+    },
+    {
+      "MachineId": "GweeP-MW95j",
+      "Title": "Godzilla",
+      "ManufacturerKey": "stern",
+      "Slug": "godzilla"
+    },
+    {
+      "MachineId": "GweeP-Ml9pZ",
+      "Title": "Godzilla",
+      "ManufacturerKey": "stern",
+      "Slug": "godzilla"
+    },
+    {
+      "MachineId": "GBLLd-MdEON",
+      "Title": "Ultraman",
+      "ManufacturerKey": "spooky",
+      "Slug": "ultraman"
+    },
+    {
+      "MachineId": "G4835-M2YPK",
+      "Title": "Cactus Canyon",
+      "ManufacturerKey": "cgc",
+      "Slug": "cactus-canyon"
+    },
+    {
+      "MachineId": "G2Lkd-MNEdK",
+      "Title": "Rush",
+      "ManufacturerKey": "stern",
+      "Slug": "rush"
+    },
+    {
+      "MachineId": "G2Lkd-M0ope",
+      "Title": "Rush",
+      "ManufacturerKey": "stern",
+      "Slug": "rush"
+    },
+    {
+      "MachineId": "GN6WW-MnKPq",
+      "Title": "Weird Al\u0027s Museum of Natural Hilarity",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "wamonh"
+    },
+    {
+      "MachineId": "G5pe4-M61y6",
+      "Title": "Medieval Madness",
+      "ManufacturerKey": "cgc",
+      "Slug": "medieval-madness"
+    },
+    {
+      "MachineId": "GJ2o0-MrRye",
+      "Title": "Toy Story 4",
+      "ManufacturerKey": "jjp",
+      "Slug": "toy-story-4-pinball-game-limited-edition"
+    },
+    {
+      "MachineId": "GQKyP-Mx0O4",
+      "Title": "James Bond 007",
+      "ManufacturerKey": "stern",
+      "Slug": "james-bond-007"
+    },
+    {
+      "MachineId": "GQKyP-MP3OK",
+      "Title": "James Bond 007",
+      "ManufacturerKey": "stern",
+      "Slug": "james-bond-007"
+    },
+    {
+      "MachineId": "GpeoL-MyNPq",
+      "Title": "Foo Fighters",
+      "ManufacturerKey": "stern",
+      "Slug": "foo-fighters"
+    },
+    {
+      "MachineId": "GpeoL-MkPz1",
+      "Title": "Foo Fighters",
+      "ManufacturerKey": "stern",
+      "Slug": "foo-fighters"
+    },
+    {
+      "MachineId": "Gd2ox-MW9qj",
+      "Title": "The Godfather",
+      "ManufacturerKey": "jjp",
+      "Slug": "the-godfather-pinball-game-limited-edition"
+    },
+    {
+      "MachineId": "GELkO-Ml9zZ",
+      "Title": "Queen",
+      "ManufacturerKey": "pinballbrothers",
+      "Slug": "queen"
+    },
+    {
+      "MachineId": "GoEkx-MdEzN",
+      "Title": "Pulp Fiction",
+      "ManufacturerKey": "cgc",
+      "Slug": "pulp-fiction"
+    },
+    {
+      "MachineId": "G187W-MKNro",
+      "Title": "Final Resistance",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "final-resistance"
+    },
+    {
+      "MachineId": "G3EBl-Mq1zy",
+      "Title": "Venom",
+      "ManufacturerKey": "stern",
+      "Slug": "venom"
+    },
+    {
+      "MachineId": "G3EBl-MRj6e",
+      "Title": "Venom",
+      "ManufacturerKey": "stern",
+      "Slug": "venom"
+    },
+    {
+      "MachineId": "GLWll-MXr4N",
+      "Title": "JAWS",
+      "ManufacturerKey": "stern",
+      "Slug": "jaws"
+    },
+    {
+      "MachineId": "GLWll-M1r8O",
+      "Title": "JAWS",
+      "ManufacturerKey": "stern",
+      "Slug": "jaws"
+    },
+    {
+      "MachineId": "GJ2K0-M85re",
+      "Title": "Looney Tunes",
+      "ManufacturerKey": "spooky",
+      "Slug": "looneytoons"
+    },
+    {
+      "MachineId": "Ge1py-MkPj1",
+      "Title": "ABBA",
+      "ManufacturerKey": "pinballbrothers",
+      "Slug": "abba"
+    },
+    {
+      "MachineId": "GQK1P-MW9pj",
+      "Title": "John Wick",
+      "ManufacturerKey": "stern",
+      "Slug": "john-wick"
+    },
+    {
+      "MachineId": "GQK1P-Ml95Z",
+      "Title": "John Wick",
+      "ManufacturerKey": "stern",
+      "Slug": "john-wick"
+    },
+    {
+      "MachineId": "G7ZEz-MBRYn",
+      "Title": "The Uncanny X-Men",
+      "ManufacturerKey": "stern",
+      "Slug": "the-uncanny-x-men"
+    },
+    {
+      "MachineId": "G7ZEz-MyN3K",
+      "Title": "The Uncanny X-Men",
+      "ManufacturerKey": "stern",
+      "Slug": "the-uncanny-x-men"
+    },
+    {
+      "MachineId": "GYWvw-MKNP4",
+      "Title": "Evil Dead",
+      "ManufacturerKey": "spooky",
+      "Slug": "evil_dead"
+    },
+    {
+      "MachineId": "GO0q3-MOEy8",
+      "Title": "Metallica Remastered",
+      "ManufacturerKey": "stern",
+      "Slug": "metallica-remastered"
+    },
+    {
+      "MachineId": "GK1Ej-MwNZr",
+      "Title": "Dungeons \u0026 Dragons: The Tyrant\u0027s Eye",
+      "ManufacturerKey": "stern",
+      "Slug": "dungeons-dragons"
+    },
+    {
+      "MachineId": "GK1Ej-MePok",
+      "Title": "Dungeons \u0026 Dragons: The Tyrant\u0027s Eye",
+      "ManufacturerKey": "stern",
+      "Slug": "dungeons-dragons"
+    },
+    {
+      "MachineId": "GEL0V-MBRyb",
+      "Title": "King Kong",
+      "ManufacturerKey": "stern",
+      "Slug": "king-kong"
+    },
+    {
+      "MachineId": "GEL0V-MyN8E",
+      "Title": "King Kong",
+      "ManufacturerKey": "stern",
+      "Slug": "king-kong"
+    },
+    {
+      "MachineId": "Gwe3B-MnKrO",
+      "Title": "Predator",
+      "ManufacturerKey": "pinballbrothers",
+      "Slug": "predator"
+    },
+    {
+      "MachineId": "Gxv81-M610r",
+      "Title": "Star Wars: Fall of the Empire",
+      "ManufacturerKey": "stern",
+      "Slug": "star-wars-fall-of-the-empire"
+    },
+    {
+      "MachineId": "Gxv81-Mo1rp",
+      "Title": "Star Wars: Fall of the Empire",
+      "ManufacturerKey": "stern",
+      "Slug": "star-wars-fall-of-the-empire"
+    },
+    {
+      "MachineId": "G5pe4-MrRrv",
+      "Title": "Medieval Madness",
+      "ManufacturerKey": "cgc",
+      "Slug": "medieval-madness"
+    },
+    {
+      "MachineId": "Gj6DE-MePEz",
+      "Title": "The Walking Dead Remastered",
+      "ManufacturerKey": "stern",
+      "Slug": "the-walking-dead-remastered"
+    },
+    {
+      "MachineId": "GqZVo-Mb5xK",
+      "Title": "Beetlejuice",
+      "ManufacturerKey": "spooky",
+      "Slug": "beetlejuice"
+    },
+    {
+      "MachineId": "GV8wB-Mq12N",
+      "Title": "Pok\u00E9mon",
+      "ManufacturerKey": "stern",
+      "Slug": "pokemon"
+    },
+    {
+      "MachineId": "GV8wB-MRjKd",
+      "Title": "Pok\u00E9mon",
+      "ManufacturerKey": "stern",
+      "Slug": "pokemon"
+    },
+    {
+      "MachineId": "GBLzz-M4ok4",
+      "Title": "Transformers: More Than Meets the Eye",
+      "ManufacturerKey": "stern",
+      "Slug": "transformers-more-than-meets-the-eye"
+    },
+    {
+      "MachineId": "GBLzz-M7Zd5",
+      "Title": "Transformers: More Than Meets the Eye",
+      "ManufacturerKey": "stern",
+      "Slug": "transformers-more-than-meets-the-eye"
+    },
+    {
+      "MachineId": "G0lJE-MP3vX",
+      "Title": "Dungeon Crawler Carl",
+      "ManufacturerKey": "multimorphic",
+      "Slug": "dcc-game-kit"
+    }
+  ]
+}
