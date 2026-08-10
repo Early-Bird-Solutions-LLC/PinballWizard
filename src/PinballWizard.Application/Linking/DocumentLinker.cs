@@ -69,9 +69,9 @@ public sealed class DocumentLinker : IDocumentLinker
     // loader was supplied (pre-migration construction path, used by existing tests).
     // Every tier checks for null and falls back to its legacy path, so a
     // partially-migrated linker is never in an undefined state.
-    private IMachineResolver? _resolver;
-    private IReadOnlyDictionary<string, Machine> _machinesById =
-        new Dictionary<string, Machine>(StringComparer.Ordinal);
+    private MachineResolver? _resolver;
+    private Dictionary<string, Machine> _machinesById =
+        new(StringComparer.Ordinal);
 
     // Test-only observability of the built index size.
     internal int ResolverVariantCountForTest { get; private set; }
@@ -702,6 +702,14 @@ public sealed class DocumentLinker : IDocumentLinker
         var normFilename = LinkingUtilities.NormalizeForMatch(filename);
         if (string.IsNullOrEmpty(normFilename)) return null;
 
+        // ADR-0054 Tier 2 migration: consult the resolver first; the legacy index
+        // below remains the fallback until Task 8 retires it.
+        if (_resolver is not null)
+        {
+            var viaResolver = TryTier2ViaResolver(raw, filename);
+            if (viaResolver is not null) return viaResolver;
+        }
+
         // Collect the longest-slug match set, keeping ALL machines tied at the
         // winning length so a manufacturer hint can break the tie.
         int bestSlugLength = 0;
@@ -785,6 +793,61 @@ public sealed class DocumentLinker : IDocumentLinker
             "filename_slug",
             [best.Id],
             FailureReason: null);
+    }
+
+    // ADR-0054 Tier 2. Filename is FUZZY evidence, so MachineResolver applies a HARD
+    // manufacturer filter — matching the pre-migration NarrowToSourceManufacturer contract.
+    // Ambiguity returns null here and is converted to needs_review by the caller in Task 7;
+    // never guessed.
+    private LinkingResult? TryTier2ViaResolver(RawDocumentRecord raw, string filename)
+    {
+        var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
+        var outcome = _resolver!.Resolve(new ResolutionQuery(filename, EvidenceKind.Filename, mfrKey));
+
+        switch (outcome)
+        {
+            case ResolutionResult.Resolved r:
+                _logger.LogDebug("Tier2 resolver: {DocumentId} → {MachineId} via {Variant}.",
+                    raw.DocumentId, r.MachineId, r.Evidence.MatchedVariant);
+                // A group-bearing machine must carry the correct EditionScope
+                // (SingleEdition, not the FranchiseWide default) — same routing as the
+                // legacy single-candidate path below. ResolveEditionFamily on a
+                // one-candidate family deterministically returns that machine with
+                // SingleEdition, so this cannot fall through on the happy path.
+                if (_machinesById.TryGetValue(r.MachineId, out var resolvedMachine)
+                    && IsEditionFamily([resolvedMachine]))
+                {
+                    return ResolveEditionFamily(raw, [resolvedMachine], filename, page1Text: null,
+                        "filename_resolver_edition", "filename_resolver_edition_group");
+                }
+                return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_resolver",
+                    [r.MachineId], FailureReason: null);
+
+            case ResolutionResult.ResolvedFamily f:
+                // Edition disambiguation still belongs to EditionResolver — the resolver
+                // narrows to the family, EditionResolver picks within it.
+                var family = f.MachineIds
+                    .Where(_machinesById.ContainsKey)
+                    .Select(id => _machinesById[id])
+                    .ToList();
+                return family.Count == 0
+                    ? null
+                    : ResolveEditionFamily(raw, family, filename, page1Text: null,
+                        "filename_resolver_edition", "filename_resolver_edition_group");
+
+            case ResolutionResult.Ambiguous:
+                return null;   // Task 7 converts this to needs_review
+
+            case ResolutionResult.NoMatch:
+                return null;
+
+            // ResolutionResult is convention-closed, NOT compiler-closed (ADR-0054).
+            // Invariant #17: an unrecognised outcome must never degrade into a silent
+            // non-attribution — throw so it is seen, not swallowed.
+            default:
+                throw new InvalidOperationException(
+                    $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in Tier 2.");
+        }
     }
 
     // Returns (doc, false) on success, (null, false) when the blob is absent or extraction

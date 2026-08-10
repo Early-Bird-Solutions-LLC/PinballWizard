@@ -512,6 +512,16 @@ git commit -m "feat(linking) build ADR-0054 resolver index in DocumentLinker; co
 
 Lowest-trust tier, highest gain, and fully covered by the golden set. Migrating it first surfaces mis-attribution risk while the blast radius is one tier.
 
+> **Implementation correction (2026-08-10):** Step 1's first test as written paired an
+> `americanpinball` machine with `SourceType.ManualsPage`, which `InferManufacturerKey`
+> maps to **stern** — under the fuzzy tiers' hard manufacturer filter (which this plan
+> itself says the resolver mirrors) that test is unsatisfiable for any implementation.
+> Implemented with `SourceType.AmericanPinballGamePage` plus a strategy assertion
+> (`filename_resolver`), and a third, resolver-only red test was added
+> (`Tier2_CuratedAlias_LinksAcronymFilename`) because the legacy title fallback already
+> links multi-token slug-less titles — the curated-alias path is what only the resolver
+> can do.
+
 **Files:**
 - Modify: `src/PinballWizard.Application/Linking/DocumentLinker.cs:644-739` (`TryTier2FilenameSlug`)
 - Test: `tests/PinballWizard.Application.Tests/Linking/DocumentLinkerResolverTests.cs`
@@ -520,7 +530,7 @@ Lowest-trust tier, highest gain, and fully covered by the golden set. Migrating 
 - Consumes: `_resolver`, `_machinesById` from Task 3; `ResolutionQuery(string Text, EvidenceKind EvidenceKind, string? ManufacturerHint = null)`; `EvidenceKind.Filename`; `ResolutionResult.{Resolved,ResolvedFamily,Ambiguous,NoMatch}`.
 - Produces: `LinkingResult? TryTier2ViaResolver(RawDocumentRecord raw)` — returns `null` to fall through to the page tiers, consumed by no later task but mirrored by Task 5.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```csharp
 [Fact]
@@ -556,12 +566,12 @@ public async Task Tier2_SingleTokenTrailingQualifier_DoesNotMatch()
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter Tier2_`
 Expected: first test FAILS with `NotInCatalog` (no slug, legacy index cannot reach it). The second may already pass — that is fine and expected; it is a **regression guard**, and it must still pass after Step 3.
 
-- [ ] **Step 3: Add the resolver path**
+- [x] **Step 3: Add the resolver path**
 
 Insert at the top of `TryTier2FilenameSlug`, after `normFilename` is computed:
 
@@ -623,22 +633,22 @@ Then add the method:
 
 Add `using PinballWizard.Application.Resolution;` to the file's usings.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter Tier2_`
 Expected: BOTH PASS.
 
-- [ ] **Step 5: Run the golden-set replay**
+- [x] **Step 5: Run the golden-set replay**
 
 Run: `dotnet test --filter GoldenLinkSet`
 Expected: PASS with **zero** `linked → different machine`. Report the `not_in_catalog → linked` count in the commit body — that number is the point of the whole migration.
 
-- [ ] **Step 6: Full build and suite**
+- [x] **Step 6: Full build and suite**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors, all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Linking/DocumentLinker.cs \
