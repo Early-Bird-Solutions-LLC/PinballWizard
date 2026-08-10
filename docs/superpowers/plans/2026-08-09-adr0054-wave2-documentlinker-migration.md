@@ -22,17 +22,15 @@
 
 ---
 
-## PRECONDITION — arm the gate before Task 3
+## PRECONDITION — arm the gate before Task 3 ✅ SATISFIED 2026-08-10
 
-**Tasks 1–2 are safe to land without it. Tasks 3 onward MUST NOT merge until this is done.**
+**Both preconditions shipped; Tasks 3-8 are unblocked.** The golden-set fixture capture
+shipped in PR #801 (`ef2fe57`) — both `.captured.json` fixtures are committed and
+`GoldenLinkSet_Replays_WithNoMisattribution` runs for real (543 documents → 734 fan-out
+entries at capture). The CLI-image seed packaging shipped in PR #798. The original
+precondition text is retained below for context.
 
-ADR-0054 requires the golden link set be captured **from live, before any migration**, and every migration PR gated on it. The harness exists; the fixture does not:
-
-```
-tests/PinballWizard.Application.Tests/Fixtures/Linking/golden-link-set.captured.json   # ABSENT
-```
-
-`GoldenLinkSetReplayTests.GoldenLinkSet_Replays_WithNoMisattribution` skips explicitly while it is absent — a visible skip, not a false green. To arm it:
+ADR-0054 requires the golden link set be captured **from live, before any migration**, and every migration PR gated on it. The capture command:
 
 ```bash
 dotnet run --project src/PinballWizard.Cli -c Release -- --capture-golden-set
@@ -40,9 +38,9 @@ dotnet run --project src/PinballWizard.Cli -c Release -- --capture-golden-set
 
 This needs live dev Cosmos **data-plane** access. If it fails on authorization, that is issue #744 (developer data-plane RBAC being stripped from `developerObjectId`); the value removed from the deleted local bicepparam was `fb4fdb3e-bc36-44b4-a06c-39627e98183f`. See `tests/PinballWizard.Application.Tests/Fixtures/Linking/CAPTURE.md`.
 
-### Second precondition, found during Task 2: ship the alias seed into the CLI image
+### Second precondition, found during Task 2: ship the alias seed into the CLI image ✅ shipped in #798
 
-**Discovered 2026-08-09 while implementing Task 2; blocks Task 3, not Task 2.**
+**Discovered 2026-08-09 while implementing Task 2; blocked Task 3, not Task 2.**
 
 `MachineAliasLoader` is **fail-closed** and resolves `data/seeds/machine_aliases.v1.json`
 at load time. That file is **not published into the CLI container**:
@@ -105,7 +103,7 @@ Outcome policy the replay enforces (unchanged by this plan):
 - Consumes: `LinkReviewInfo`, `LinkReviewCandidate` (`PinballWizard.Core.Models`, already shipped).
 - Produces: `UpdateLinkStatusAsync(string documentId, LinkStatus status, string? resolutionStrategy, string? failureReason, string? overrideId, CancellationToken cancellationToken, LinkReviewInfo? linkReview = null)`. The optional trailing parameter keeps all existing call sites compiling unchanged.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 // tests/PinballWizard.Infrastructure.Tests/Persistence/RawDocumentLinkReviewTests.cs
@@ -138,12 +136,12 @@ public async Task UpdateLinkStatusAsync_WithLinkReview_PersistsCandidates()
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `dotnet test tests/PinballWizard.Infrastructure.Tests --filter UpdateLinkStatusAsync_WithLinkReview_PersistsCandidates`
 Expected: FAIL — compile error, `UpdateLinkStatusAsync` takes 6 arguments not 7.
 
-- [ ] **Step 3: Add the parameter to the interface**
+- [x] **Step 3: Add the parameter to the interface**
 
 ```csharp
 // IRawDocumentRepository.cs — replace lines 51-58
@@ -160,7 +158,7 @@ Expected: FAIL — compile error, `UpdateLinkStatusAsync` takes 6 arguments not 
         LinkReviewInfo? linkReview = null);
 ```
 
-- [ ] **Step 4: Implement in the Cosmos repository**
+- [x] **Step 4: Implement in the Cosmos repository**
 
 In `CosmosRawDocumentRepository.UpdateLinkStatusAsync`, add the parameter with the same default, and set the wire field alongside the existing status assignments:
 
@@ -185,17 +183,17 @@ In `CosmosRawDocumentRepository.UpdateLinkStatusAsync`, add the parameter with t
             : null;
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Infrastructure.Tests --filter RawDocumentLinkReview`
 Expected: PASS.
 
-- [ ] **Step 6: Run the full suite and build**
+- [x] **Step 6: Run the full suite and build**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors, all green. Existing `UpdateLinkStatusAsync` callers still compile — the new parameter is optional.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Persistence/IRawDocumentRepository.cs \
@@ -219,7 +217,7 @@ git commit -m "feat(linking) persist needs_review candidates from the linker (AD
 - Consumes: `IMachineAliasCatalog` (`GroupExistsAsync`, `MachineExistsAsync`), `IMachineAliasLoader.LoadAsync(CancellationToken) → Task<IReadOnlyList<MachineAliasEntry>>`, `IMachineRepository`.
 - Produces: `CosmosMachineAliasCatalog(IMachineRepository) : IMachineAliasCatalog`, and DI registrations for `IMachineAliasCatalog` + `IMachineAliasLoader` consumed by Task 3.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 // tests/PinballWizard.Infrastructure.Tests/Resolution/CosmosMachineAliasCatalogTests.cs
@@ -244,12 +242,12 @@ public async Task MachineExistsAsync_ReturnsFalse_WhenManufacturerDiffers()
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `dotnet test tests/PinballWizard.Infrastructure.Tests --filter CosmosMachineAliasCatalog`
 Expected: FAIL — `CosmosMachineAliasCatalog` does not exist.
 
-- [ ] **Step 3: Implement the catalog**
+- [x] **Step 3: Implement the catalog**
 
 ```csharp
 // src/PinballWizard.Infrastructure/Resolution/CosmosMachineAliasCatalog.cs
@@ -314,7 +312,7 @@ public sealed class CosmosMachineAliasCatalog : IMachineAliasCatalog
 }
 ```
 
-- [ ] **Step 4: Register both services**
+- [x] **Step 4: Register both services**
 
 In `ServiceCollectionExtensions.cs`, immediately **before** the `IDocumentLinker` registration at line 241:
 
@@ -332,17 +330,17 @@ In `ServiceCollectionExtensions.cs`, immediately **before** the `IDocumentLinker
 
 Before writing this, open `src/PinballWizard.Application/Resolution/MachineAliasLoader.cs` and match its **actual** constructor parameter order and types. If it differs from the two arguments above, use the real signature — do not change the loader to fit this plan.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Infrastructure.Tests --filter CosmosMachineAliasCatalog`
 Expected: PASS.
 
-- [ ] **Step 6: Verify the container actually resolves**
+- [x] **Step 6: Verify the container actually resolves**
 
 Run: `dotnet test --filter ServiceCollection`
 Expected: PASS. If no DI-composition test exists, add one asserting `sp.GetRequiredService<IMachineAliasLoader>()` returns non-null — a registration that throws only at runtime in an ACA job is a 2am failure.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/PinballWizard.Infrastructure/Resolution/CosmosMachineAliasCatalog.cs \
@@ -370,7 +368,7 @@ The current log at `DocumentLinker.cs:179-182` reports `bySlug.Count` — **slug
 - Consumes: `InMemoryMachineIndex.Build(IEnumerable<Machine>, IReadOnlyList<MachineAliasEntry>)`, `MachineResolver(InMemoryMachineIndex, IReadOnlyDictionary<string, Machine>)`, `IMachineAliasLoader.LoadAsync`.
 - Produces: a private `IMachineResolver? _resolver` and `IReadOnlyDictionary<string, Machine> _machinesById` on `DocumentLinker`, consumed by Tasks 4-7. New optional constructor parameter `IMachineAliasLoader? aliasLoader = null` — when null the resolver is not built and every tier keeps its pre-migration behaviour, so existing tests constructing `DocumentLinker` directly continue to pass untouched.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 // tests/PinballWizard.Application.Tests/Linking/DocumentLinkerResolverTests.cs
@@ -409,12 +407,12 @@ private static Machine MakeMachine(
 
 `BuildLinkerWithResolverAsync` mirrors `GoldenLinkSetReplayTests.BuildLinkerAsync` (lines 71-101), additionally passing an `IMachineAliasLoader` substitute whose `LoadAsync` returns `Array.Empty<MachineAliasEntry>()`. Copy `MakeRaw` from `GoldenLinkSetReplayTests:104-137` — note its `sourceType` parameter is load-bearing, since `LinkingUtilities.InferManufacturerKey` derives the manufacturer hint from it.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter InitializeAsync_WithAliasLoader`
 Expected: FAIL — no such constructor parameter, no `ResolverVariantCountForTest`.
 
-- [ ] **Step 3: Add the resolver build to `InitializeAsync`**
+- [x] **Step 3: Add the resolver build to `InitializeAsync`**
 
 Add fields and constructor parameter:
 
@@ -455,7 +453,7 @@ At the **end** of `InitializeAsync`, after `_machineSlugIndex = slugIndex;`:
 
 To make `allMachines` available, add `var allMachines = new List<Machine>();` before the `await foreach` at line 104 and `allMachines.Add(machine);` immediately after `totalMachines++;`.
 
-- [ ] **Step 4: Correct the misleading coverage log**
+- [x] **Step 4: Correct the misleading coverage log**
 
 Replace the `else` branch at `DocumentLinker.cs:178-182`:
 
@@ -476,27 +474,30 @@ Replace the `else` branch at `DocumentLinker.cs:178-182`:
         }
 ```
 
-- [ ] **Step 5: Wire the loader into DI**
+- [x] **Step 5: Wire the loader into DI**
 
 In `ServiceCollectionExtensions.cs`, inside the `IDocumentLinker` factory, resolve and pass the loader:
 
 ```csharp
-            var aliasLoader = sp.GetService<IMachineAliasLoader>();
+            // GetRequiredService, not GetService: the loader is registered unconditionally
+            // in this same method, so a null could only be a DI regression and must throw,
+            // not silently run resolver-less (invariant #17). Implemented this way in Task 3.
+            var aliasLoader = sp.GetRequiredService<IMachineAliasLoader>();
             return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger,
                 cosmosWriteConcurrency: concurrency, blobStore: blobStore, aliasLoader: aliasLoader);
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter DocumentLinkerResolver`
 Expected: PASS.
 
-- [ ] **Step 7: Run the golden-set replay and the full suite**
+- [x] **Step 7: Run the golden-set replay and the full suite**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors. `GoldenLinkSet_Replays_WithNoMisattribution` **runs** (does not skip) and passes with **zero** `linked → different machine`. If it still skips, the precondition was not met — **stop and capture the fixture**.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Linking/DocumentLinker.cs \
