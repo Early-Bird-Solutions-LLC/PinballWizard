@@ -592,13 +592,62 @@ public sealed class DocumentLinker : IDocumentLinker
         // cross-reference URL (which is a heuristic parse of a link found
         // elsewhere on the site), since it's the manufacturer scraper's direct
         // classification of which game's page produced this document.
-        if (raw.Game?.Slug is { Length: > 0 } gameSlug
-            && seenSlugs.Add(gameSlug)
-            && _machinesBySlug.TryGetValue(gameSlug, out var gameCandidates))
+        if (raw.Game?.Slug is { Length: > 0 } gameSlug && seenSlugs.Add(gameSlug))
         {
-            resolved = ResolveSlugToResult(
-                raw, gameCandidates, filename, mfrHint,
-                "game_slug", "game_slug_edition", "game_slug_edition_group");
+            // ADR-0054 Tier 1 migration: ProvenanceSlug evidence makes manufacturer
+            // scoping a SOFT preference inside the resolver — preserving the deliberate
+            // PreferByManufacturer-vs-NarrowToSourceManufacturer split (a scraper's own
+            // game-page classification is trusted even to a lone other-manufacturer
+            // machine). The legacy lookup below stays as fallback until Task 8.
+            if (_resolver is not null)
+            {
+                var outcome = _resolver.Resolve(
+                    new ResolutionQuery(gameSlug, EvidenceKind.ProvenanceSlug, mfrHint));
+
+                switch (outcome)
+                {
+                    case ResolutionResult.Resolved r:
+                        resolved = new LinkingResult(
+                            raw.DocumentId, LinkStatus.Linked, "game_slug_resolver",
+                            [r.MachineId], FailureReason: null);
+                        break;
+
+                    case ResolutionResult.ResolvedFamily f:
+                        var family = f.MachineIds.Where(_machinesById.ContainsKey)
+                            .Select(id => _machinesById[id]).ToList();
+                        if (family.Count == 0)
+                        {
+                            // Index/machine-map drift must be visible, not a silent
+                            // fall-through to the legacy tier (invariant #17). Same
+                            // guard as Tiers 2-4.
+                            _logger.LogWarning(
+                                "Tier1 resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
+                                f.GroupId, f.MachineIds.Count, raw.DocumentId);
+                            break;
+                        }
+                        // ResolveEditionFamily may return null (unresolved edition) —
+                        // the legacy fallback below still runs in that case.
+                        resolved = ResolveEditionFamily(raw, family, filename, page1Text: null,
+                            "game_slug_resolver_edition", "game_slug_resolver_edition_group");
+                        break;
+
+                    case ResolutionResult.Ambiguous:
+                    case ResolutionResult.NoMatch:
+                        break;   // fall through to the legacy lookup below
+
+                    // Invariant #17 — never silently degrade an unknown outcome.
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in Tier 1.");
+                }
+            }
+
+            if (resolved is null && _machinesBySlug.TryGetValue(gameSlug, out var gameCandidates))
+            {
+                resolved = ResolveSlugToResult(
+                    raw, gameCandidates, filename, mfrHint,
+                    "game_slug", "game_slug_edition", "game_slug_edition_group");
+            }
         }
 
         foreach (var xref in raw.CrossReferences)

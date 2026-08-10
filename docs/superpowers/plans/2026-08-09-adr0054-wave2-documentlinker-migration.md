@@ -767,7 +767,13 @@ git commit -m "feat(linking) migrate page-text tiers to MachineResolver (ADR-005
 
 ### Task 6: Migrate Tier 1 (provenance slug) to the resolver
 
-Highest-trust tier, migrated last. `EvidenceKind.ProvenanceSlug` makes manufacturer scoping a **soft preference**, which preserves the deliberate `PreferByManufacturer`-vs-`NarrowToSourceManufacturer` split documented at `DocumentLinker.cs:494-508`.
+Highest-trust tier, migrated last.
+
+> **Implementation note (2026-08-10):** in addition to the plan's soft-preference
+> regression guard, a resolver-only red test was added
+> (`Tier1_ProvenanceSlug_LinksSlugLessMachine_ViaResolver`) — the legacy `_machinesBySlug`
+> index is built from `ManufacturerSlugs` alone, so a slug-less machine is unreachable by
+> provenance slug pre-migration; the resolver's title-derived variants reach it. `EvidenceKind.ProvenanceSlug` makes manufacturer scoping a **soft preference**, which preserves the deliberate `PreferByManufacturer`-vs-`NarrowToSourceManufacturer` split documented at `DocumentLinker.cs:494-508`.
 
 **Files:**
 - Modify: `src/PinballWizard.Application/Linking/DocumentLinker.cs:529-613`
@@ -777,7 +783,7 @@ Highest-trust tier, migrated last. `EvidenceKind.ProvenanceSlug` makes manufactu
 - Consumes: `_resolver`, `EvidenceKind.ProvenanceSlug`.
 - Produces: no new public surface.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 [Fact]
@@ -803,12 +809,12 @@ public async Task Tier1_ProvenanceSlug_LinksToOtherManufacturer_WhenSoleCandidat
 }
 ```
 
-- [ ] **Step 2: Run test to verify it passes pre-change**
+- [x] **Step 2: Run test to verify it passes pre-change**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter Tier1_ProvenanceSlug`
 Expected: PASS. This is the behaviour that must survive; if it fails now, the migration premise is wrong — stop.
 
-- [ ] **Step 3: Route the game slug through the resolver**
+- [x] **Step 3: Route the game slug through the resolver**
 
 In `TryTier1ProvenanceSlug`, replace the `_machinesBySlug.TryGetValue(gameSlug, ...)` branch body with a resolver call when `_resolver is not null`, keeping the legacy lookup as the fallback:
 
@@ -852,17 +858,17 @@ In `TryTier1ProvenanceSlug`, replace the `_machinesBySlug.TryGetValue(gameSlug, 
 
 Guard: `ResolveEditionFamily` returns `null` on an empty candidate list, so the legacy fallback still runs — do not let an empty family short-circuit the tier.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter Tier1_`
 Expected: PASS.
 
-- [ ] **Step 5: Golden-set replay + full suite**
+- [x] **Step 5: Golden-set replay + full suite**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors; `GoldenLinkSet` green with zero mis-attributions. Tier 1 carries most currently-linked documents — a regression here is the most likely place for the gate to fire. **If it fires, revert this task and investigate; do not weaken the gate.**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Linking/DocumentLinker.cs \

@@ -189,6 +189,79 @@ public sealed class DocumentLinkerResolverTests
         Assert.Equal("page_1_resolver", result.ResolutionStrategy);
     }
 
+    // ── Task 6: Tier 1 (provenance slug) via the resolver ──────────────────────
+
+    [Fact]
+    public async Task Tier1_ProvenanceSlug_LinksToOtherManufacturer_WhenSoleCandidate()
+    {
+        // Regression guard: provenance scoping is a SOFT preference, so a
+        // Stern-sourced doc whose slug resolves only to a Sega machine still links.
+        // Must pass identically pre- and post-migration — if it fails pre-change,
+        // the migration premise is wrong.
+        var machines = new[]
+        {
+            MakeMachine("Sega-Godzilla-1998", "Godzilla", "sega",
+                slugs: new Dictionary<string, string> { ["sega"] = "godzilla" }),
+        };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-gz", "https://sternpinball.com/doc.pdf",
+            gameSlug: "godzilla", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["Sega-Godzilla-1998"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task Tier1_ProvenanceSlug_LinksSlugLessMachine_ViaResolver()
+    {
+        // Resolver-only capability at Tier 1: the legacy _machinesBySlug index is
+        // built from ManufacturerSlugs alone, so a slug-less machine is unreachable
+        // by provenance slug — the resolver's title-derived variants reach it.
+        var machines = new[] { MakeMachine("AP-Hot-Wheels", "Hot Wheels", "americanpinball") };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-hw-slug", "https://americanpinball.com/some-opaque-doc.pdf",
+            gameSlug: "hot-wheels", manufacturerKey: "americanpinball",
+            sourceType: SourceType.AmericanPinballGamePage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["AP-Hot-Wheels"], result.LinkedMachineIds);
+        // Pins that the RESOLVER handled it — the legacy index cannot see this machine.
+        Assert.Equal("game_slug_resolver", result.ResolutionStrategy);
+    }
+
+    [Fact]
+    public async Task Tier1_ProvenanceSlug_EditionFamily_FansOutGroupLevelDoc()
+    {
+        // The resolver's ResolvedFamily arm at Tier 1: two editions share a slug and
+        // a GroupId; a group-level doc (rulesheet) must fan out to BOTH bases via
+        // EditionResolver — the resolver narrows to the family, EditionResolver
+        // decides within it.
+        var machines = new[]
+        {
+            MakeMachine("BM66-Pro", "Batman '66", "stern", groupId: "G-bm66",
+                slugs: new Dictionary<string, string> { ["stern"] = "batman-66" }),
+            MakeMachine("BM66-Prem", "Batman '66", "stern", groupId: "G-bm66",
+                slugs: new Dictionary<string, string> { ["stern"] = "batman-66" }),
+        };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-bm66", "https://sternpinball.com/batman-66-rulesheet.pdf",
+            gameSlug: "batman-66", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(2, result.LinkedMachineIds.Count);
+        Assert.Equal("game_slug_resolver_edition_group", result.ResolutionStrategy);
+        Assert.Equal(EditionScope.FranchiseWide, result.EditionScope);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     // Mirrors GoldenLinkSetReplayTests.MakeMachine but adds groupId and makes slugs
