@@ -57,6 +57,84 @@ public sealed class DocumentLinkerResolverTests
         Assert.Equal(0, linker.ResolverVariantCountForTest);
     }
 
+    // ── Task 4: Tier 2 (filename) via the resolver ─────────────────────────────
+
+    [Fact]
+    public async Task Tier2_LinksSlugLessMachine_ByFranchiseTitle()
+    {
+        // NOTE: the plan's version of this test used SourceType.ManualsPage, which
+        // InferManufacturerKey maps to STERN — under the fuzzy tiers' hard
+        // manufacturer filter (NarrowToSourceManufacturer contract, mirrored by the
+        // resolver) an americanpinball machine is then unreachable by design, so
+        // that test was unsatisfiable. AmericanPinballGamePage is what the AP
+        // scraper actually stamps.
+        var machines = new[] { MakeMachine("AP-Hot-Wheels", "Hot Wheels", "americanpinball") };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-hw", "https://americanpinball.com/hot-wheels-manual.pdf",
+            gameSlug: "", manufacturerKey: "americanpinball",
+            sourceType: SourceType.AmericanPinballGamePage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["AP-Hot-Wheels"], result.LinkedMachineIds);
+        // Pins that the RESOLVER path linked it — the legacy title fallback would
+        // report "filename_slug", and Task 8 will delete that fallback.
+        Assert.Equal("filename_resolver", result.ResolutionStrategy);
+    }
+
+    [Fact]
+    public async Task Tier2_CuratedAlias_LinksAcronymFilename()
+    {
+        // The alias is the resolver-only capability: "MTMTE" appears in no title or
+        // slug, so the legacy index can never reach the machine — only the curated
+        // alias (machine_aliases.v1.json shape) resolves it. This is the red test
+        // that proves Tier 2 actually consults the resolver.
+        var machines = new[]
+        {
+            MakeMachine("GBLzz-M4ok4", "Transformers: More Than Meets the Eye", "stern",
+                groupId: "GBLzz"),
+        };
+        var aliases = new[]
+        {
+            new MachineAliasEntry("MTMTE", OpdbGroupId: "GBLzz", MachineId: null,
+                ManufacturerKey: "stern", Notes: "test", AddedBy: "test"),
+        };
+        var linker = await BuildLinkerWithResolverAsync(machines, aliases);
+
+        var raw = MakeRaw("doc-mtmte", "https://sternpinball.com/Transformers_MTMTE_Pro_web.pdf",
+            gameSlug: "", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GBLzz-M4ok4"], result.LinkedMachineIds);
+        // The machine belongs to a group, so the resolver's Resolved arm must route
+        // through ResolveEditionFamily and stamp SingleEdition — a bare
+        // "filename_resolver" result here would carry the FranchiseWide default,
+        // which mis-scopes a single-edition manual across the whole family.
+        Assert.Equal("filename_resolver_edition", result.ResolutionStrategy);
+        Assert.Equal(EditionScope.SingleEdition, result.EditionScope);
+    }
+
+    [Fact]
+    public async Task Tier2_SingleTokenTrailingQualifier_DoesNotMatch()
+    {
+        // The 172-document incident: a machine literally titled "Pinball" must not absorb
+        // every document whose filename contains the word "pinball".
+        var machines = new[] { MakeMachine("Stern-Pinball-1977", "Pinball", "stern") };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-generic", "https://sternpinball.com/service-bulletin-pinball.pdf",
+            gameSlug: "", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Empty(result.LinkedMachineIds);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     // Mirrors GoldenLinkSetReplayTests.MakeMachine but adds groupId and makes slugs
@@ -80,16 +158,49 @@ public sealed class DocumentLinkerResolverTests
         };
 
     // Mirrors GoldenLinkSetReplayTests.BuildLinkerAsync, additionally passing an
-    // IMachineAliasLoader whose LoadAsync returns an empty alias list.
+    // IMachineAliasLoader whose LoadAsync returns the given aliases (empty by default).
     private static Task<DocumentLinker> BuildLinkerWithResolverAsync(
         IEnumerable<Machine> machines,
+        IReadOnlyList<MachineAliasEntry>? aliases = null,
         CancellationToken ct = default)
     {
         var aliasLoader = Substitute.For<IMachineAliasLoader>();
         aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<MachineAliasEntry>());
+            .Returns(aliases ?? []);
         return BuildLinkerAsync(machines, aliasLoader, ct);
     }
+
+    // Mirrors GoldenLinkSetReplayTests.MakeRaw. The sourceType parameter is
+    // load-bearing: LinkingUtilities.InferManufacturerKey derives the manufacturer
+    // hint FROM SourceType, and that hint drives the Tier-2 manufacturer scoping.
+    private static RawDocumentRecord MakeRaw(
+        string documentId,
+        string fileUrl,
+        string gameSlug,
+        string manufacturerKey,
+        DocumentType docType = DocumentType.Manual,
+        SourceType sourceType = SourceType.ManualsPage)
+        => new()
+        {
+            DocumentId = documentId,
+            DocumentUrl = fileUrl,
+            DocumentType = docType,
+            Source = new SourceInfo
+            {
+                DiscoveryUrl = $"https://example.com/{manufacturerKey}/manuals/",
+                DiscoveryContext = $"{manufacturerKey} Manuals page",
+                FileUrl = fileUrl,
+                ScrapedAt = DateTime.UtcNow,
+                SourceType = sourceType,
+            },
+            Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
+            Game = new GameReference
+            {
+                Title = gameSlug.Replace('-', ' '),
+                Slug = gameSlug,
+                GamePageUrl = $"https://example.com/{manufacturerKey}/game/{gameSlug}/",
+            },
+        };
 
     private static async Task<DocumentLinker> BuildLinkerAsync(
         IEnumerable<Machine> machines,
