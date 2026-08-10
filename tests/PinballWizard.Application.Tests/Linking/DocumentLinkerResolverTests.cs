@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Application.Resolution;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
@@ -135,6 +137,58 @@ public sealed class DocumentLinkerResolverTests
         Assert.Empty(result.LinkedMachineIds);
     }
 
+    // ── Task 5: page tiers (3-4) via the resolver ──────────────────────────────
+
+    [Fact]
+    public async Task PageTier_DoesNotLinkAcrossManufacturers()
+    {
+        // Page prose mentions many titles. A Stern manual saying "8 ball" must NOT bind
+        // to the Williams machine — PageText is fuzzy, so scoping is a HARD filter.
+        // This is the guard the migration must not break: it passes pre-change (the
+        // legacy hard filter already does this) and must still pass after.
+        var machines = new[] { MakeMachine("Williams-8Ball", "Eight Ball", "williams") };
+        var linker = await BuildLinkerWithResolverAsync(
+            machines, pageText: "eight ball is mentioned here");
+
+        var raw = MakeRaw("doc-stern", "https://sternpinball.com/batman-manual.pdf",
+            gameSlug: "", manufacturerKey: "stern", sourceType: SourceType.ManualsPage,
+            localPath: "docs/batman-manual.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+    }
+
+    [Fact]
+    public async Task PageTier_CuratedAlias_LinksAcronymPageText()
+    {
+        // Resolver-only capability at the page tiers: "MTMTE" appears in no title or
+        // slug, so the legacy page-text index can never reach the machine. An opaque
+        // filename keeps Tier 2 out of the way; only page-1 text carries the signal.
+        var machines = new[]
+        {
+            MakeMachine("GBLzz-M4ok4", "Transformers: More Than Meets the Eye", "stern",
+                groupId: "GBLzz"),
+        };
+        var aliases = new[]
+        {
+            new MachineAliasEntry("MTMTE", OpdbGroupId: "GBLzz", MachineId: null,
+                ManufacturerKey: "stern", Notes: "test", AddedBy: "test"),
+        };
+        var linker = await BuildLinkerWithResolverAsync(
+            machines, aliases, pageText: "MTMTE pinball machine service manual");
+
+        var raw = MakeRaw("doc-mtmte-page", "https://sternpinball.com/doc123.pdf",
+            gameSlug: "", manufacturerKey: "stern", sourceType: SourceType.ManualsPage,
+            localPath: "docs/doc123.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GBLzz-M4ok4"], result.LinkedMachineIds);
+        Assert.Equal("page_1_resolver", result.ResolutionStrategy);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     // Mirrors GoldenLinkSetReplayTests.MakeMachine but adds groupId and makes slugs
@@ -162,12 +216,13 @@ public sealed class DocumentLinkerResolverTests
     private static Task<DocumentLinker> BuildLinkerWithResolverAsync(
         IEnumerable<Machine> machines,
         IReadOnlyList<MachineAliasEntry>? aliases = null,
+        string? pageText = null,
         CancellationToken ct = default)
     {
         var aliasLoader = Substitute.For<IMachineAliasLoader>();
         aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
             .Returns(aliases ?? []);
-        return BuildLinkerAsync(machines, aliasLoader, ct);
+        return BuildLinkerAsync(machines, aliasLoader, pageText, ct);
     }
 
     // Mirrors GoldenLinkSetReplayTests.MakeRaw. The sourceType parameter is
@@ -179,12 +234,20 @@ public sealed class DocumentLinkerResolverTests
         string gameSlug,
         string manufacturerKey,
         DocumentType docType = DocumentType.Manual,
-        SourceType sourceType = SourceType.ManualsPage)
+        SourceType sourceType = SourceType.ManualsPage,
+        string? localPath = null)
         => new()
         {
             DocumentId = documentId,
             DocumentUrl = fileUrl,
             DocumentType = docType,
+            File = localPath is null
+                ? null
+                : new DownloadedFileInfo
+                {
+                    LocalPath = localPath,
+                    Filename = Path.GetFileName(localPath),
+                },
             Source = new SourceInfo
             {
                 DiscoveryUrl = $"https://example.com/{manufacturerKey}/manuals/",
@@ -205,6 +268,7 @@ public sealed class DocumentLinkerResolverTests
     private static async Task<DocumentLinker> BuildLinkerAsync(
         IEnumerable<Machine> machines,
         IMachineAliasLoader? aliasLoader,
+        string? pageText = null,
         CancellationToken ct = default)
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
@@ -219,11 +283,28 @@ public sealed class DocumentLinkerResolverTests
         machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(machineList.ToAsyncEnumerable());
 
+        // Page tiers run only when extractor + blob store are wired and the raw
+        // record carries a File.LocalPath (see LinkAsync's Tier 3-4 guard).
+        IDocumentTextExtractor? textExtractor = null;
+        IDocumentBlobStore? blobStore = null;
+        if (pageText is not null)
+        {
+            textExtractor = Substitute.For<IDocumentTextExtractor>();
+            textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                .Returns(new ExtractedDocument(
+                    ExtractionStatus.Success, pageText,
+                    [new ExtractedPage(1, pageText)], [], Error: null));
+
+            blobStore = Substitute.For<IDocumentBlobStore>();
+            blobStore.TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(_ => new MemoryStream());
+        }
+
         var linker = new DocumentLinker(
             rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor: null,
+            textExtractor: textExtractor,
             NullLogger<DocumentLinker>.Instance,
-            blobStore: null,
+            blobStore: blobStore,
             aliasLoader: aliasLoader);
 
         await linker.InitializeAsync(ct);
