@@ -64,16 +64,26 @@ Foundry and AI Search require a live Azure identity. The emulator containers are
 
 ## Step 1 — Isolate your Azure identity
 
-PinballWizard authenticates to live Azure services (Foundry, AI Search) via `DefaultAzureCredential -> AzureCliCredential`. The machine-default `~/.azure` CLI session may be signed in to a different tenant (such as a work Microsoft 365 tenant). An `.azure-local` directory in the repo root provides an isolated CLI session scoped to the personal pinwiz.ai identity.
+PinballWizard authenticates to live Azure services (Foundry, AI Search) via `DefaultAzureCredential -> AzureCliCredential`. The machine-default `~/.azure` CLI session may be signed in to a different tenant (such as a work Microsoft 365 tenant). A **per-org** config directory provides an isolated CLI session scoped to the personal pinwiz.ai identity.
 
 The VS Code workspace settings wire this automatically for integrated terminals:
 
 ```json
-// .vscode/settings.json (committed, portable)
+// .vscode/settings.json (committed)
 "terminal.integrated.env.windows": {
-    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+    "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
 }
 ```
+
+> **Why an absolute per-org path and not `${workspaceFolder}/.azure-local`?** A
+> per-project config dir is *not* org isolation — it still gets contaminated by
+> whatever tenant is active, and a set-but-not-per-org dir is exactly the case the
+> az-isolation rule flags as "set, not global, still wrong". One dir per org also
+> means every clone of this repo shares a single authenticated session rather than
+> each maintaining its own drifting token cache.
+>
+> The path is Windows-specific and is repeated in the `osx`/`linux` blocks. On those
+> platforms, substitute your own equivalent per-org directory.
 
 **First-time setup (one-time, any OS):** open a new terminal inside VS Code (so `AZURE_CONFIG_DIR` is already set), then sign in:
 
@@ -83,12 +93,12 @@ az login
 # Select subscription: b1f33f17 (pinwiz.ai)
 ```
 
-The credentials land in `.azure-local/` (gitignored) and persist across sessions. Subsequent terminal sessions in VS Code reuse them automatically. The AppHost relays `AZURE_CONFIG_DIR` to the orchestrated `Api` and `Web` children so their `DefaultAzureCredential` resolves the same personal identity.
+The credentials land in the per-org directory (gitignored in the config repo that hosts it) and persist across sessions. Subsequent terminal sessions in VS Code reuse them automatically. The AppHost relays `AZURE_CONFIG_DIR` to the orchestrated `Api` and `Web` children so their `DefaultAzureCredential` resolves the same personal identity.
 
 > **Never run `az login` without `AZURE_CONFIG_DIR` set in this project.** Doing so writes to `~/.azure` and may overwrite a different active session on the machine. The VS Code terminal sets it automatically; PowerShell sessions outside VS Code need it set manually:
 >
 > ```pwsh
-> $env:AZURE_CONFIG_DIR = "<repo-root>/.azure-local"
+> $env:AZURE_CONFIG_DIR = "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
 > ```
 >
 > **`AZURE_TOKEN_CREDENTIALS=dev` is required when running against live Azure from a local machine.** Without it, `DefaultAzureCredential` probes IMDS (the Azure managed-identity endpoint) first and blocks for several seconds before falling through to `AzureCliCredential`. On a local dev box IMDS never resolves, so Cosmos and AI Search writes time out silently rather than failing fast. Set it before any CLI command that touches live Azure:
@@ -216,7 +226,7 @@ If you see "Outside My Coverage" or a generic refusal, work through this checkli
 | Refusal for any machine | `machines` container empty | Re-run Step 3 |
 | Refusal despite machines present | `matchTokens` is a flat array | Re-seed via CLI (not Data Explorer) |
 | Answer but no citations | AI Search index empty | Run `--ensure-ai-search`; check RAG worker logs in Aspire dashboard |
-| Foundry auth error in AppHost console | `AZURE_CONFIG_DIR` not set | Open a fresh VS Code terminal; or set `$env:AZURE_CONFIG_DIR` manually |
+| Foundry auth error in AppHost console | `AZURE_CONFIG_DIR` not set | Open a fresh VS Code terminal; or set `$env:AZURE_CONFIG_DIR = "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"` manually |
 | `cosmos` resource stays "Starting" | Docker not running or volume conflict | Restart Docker Desktop; re-run `start-apphost.ps1` |
 
 ---
