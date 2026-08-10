@@ -344,23 +344,33 @@ public sealed class ReconcilerParityReplayTests
         // Act
         var result = await service.ReconcileAsync(catalog, CancellationToken.None);
 
+        // The baseline is the number of DISTINCT games in the catalog, not the number of
+        // captured entries. Editions legitimately share a slug within a manufacturer
+        // (stern/transformers covers both Pro and LE), so the DistinctBy above collapses
+        // them into one GameRecord — the live capture holds 150 entries across just 88
+        // distinct (manufacturer, slug) pairs. MatchedBySlug counts games reconciled, so
+        // fixture.Entries.Count overstates the ceiling and made this assertion
+        // unsatisfiable by construction for any corpus containing a shared slug.
+        //
+        // This does not weaken the gate: a normalization or key-lookup regression still
+        // drops MatchedBySlug below the distinct-game count and fires here.
+        var expectedMatchCount = games.Count;
         var capturedSlugCount = fixture.Entries.Count;
 
-        // A drop in MatchedBySlug means a normalization change broke slug resolution
-        // for machines that previously resolved. This is the regression the gate exists
-        // to detect.
         Assert.True(
-            result.MatchedBySlug >= capturedSlugCount,
-            $"Reconciler slug-count regression: expected >= {capturedSlugCount} MatchedBySlug " +
-            $"(captured total) but got {result.MatchedBySlug}. " +
+            result.MatchedBySlug >= expectedMatchCount,
+            $"Reconciler slug-count regression: expected >= {expectedMatchCount} MatchedBySlug " +
+            $"(distinct games in the captured catalog; {capturedSlugCount} raw slug entries) " +
+            $"but got {result.MatchedBySlug}. " +
             $"This means a normalization or key-lookup change broke slug resolution for " +
-            $"{capturedSlugCount - result.MatchedBySlug} machine(s). " +
+            $"{expectedMatchCount - result.MatchedBySlug} game(s). " +
             $"Check ScraperManufacturerKey, ScraperReconciliationService.FindMatch, and " +
             $"LinkingUtilities.NormalizeForMatch for regressions.");
 
         Console.WriteLine(
             $"[ReconcilerParity] MatchedBySlug={result.MatchedBySlug} " +
-            $"(captured={capturedSlugCount}, delta={result.MatchedBySlug - capturedSlugCount:+#;-#;0})");
+            $"(distinct games={expectedMatchCount}, raw slug entries={capturedSlugCount}, " +
+            $"delta={result.MatchedBySlug - expectedMatchCount:+#;-#;0})");
     }
 
     // ── Fixture DTO types (read-side) ──────────────────────────────────────────

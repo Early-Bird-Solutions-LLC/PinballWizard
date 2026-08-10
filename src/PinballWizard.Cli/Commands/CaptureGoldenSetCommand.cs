@@ -27,7 +27,8 @@ internal static class CaptureGoldenSetCommand
         CancellationToken cancellationToken)
     {
         var rawRepo = services.GetService<IRawDocumentRepository>();
-        if (rawRepo is null)
+        var scrapedRepo = services.GetService<IScrapedDocumentRepository>();
+        if (rawRepo is null || scrapedRepo is null)
         {
             Console.Error.WriteLine(
                 "--capture-golden-set requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
@@ -40,13 +41,23 @@ internal static class CaptureGoldenSetCommand
 
         var entries = new List<GoldenLinkEntry>();
         var docCount = 0;
+        var documentsWithoutFanOut = 0;
 
         await foreach (var raw in rawRepo.StreamByStatusAsync(
             [LinkStatus.Linked, LinkStatus.ManuallyLinked], cancellationToken))
         {
             docCount++;
-            foreach (var machineId in raw.LinkedMachineIds)
+            var fanOutCount = 0;
+
+            // The authoritative document→machine binding is the scraped_documents fan-out
+            // row, NOT raw.LinkedMachineIds. Despite its name and comment, that field is
+            // never written by the linker — nothing in src/ assigns it on the Cosmos wire
+            // model, and live `link_status: "linked"` documents all carry an empty array.
+            // Capturing from it produced a 543-document, 0-entry fixture that left the
+            // Wave-2 gate unarmed. The dead field itself is tracked in #800.
+            await foreach (var machineId in scrapedRepo.StreamByDocumentIdAsync(raw.DocumentId, cancellationToken))
             {
+                fanOutCount++;
                 entries.Add(new GoldenLinkEntry
                 {
                     DocumentId = raw.DocumentId,
@@ -58,13 +69,19 @@ internal static class CaptureGoldenSetCommand
                     ExpectedMachineId = machineId,
                 });
             }
+
+            if (fanOutCount == 0)
+            {
+                documentsWithoutFanOut++;
+            }
         }
 
         var capturedAt = DateTimeOffset.UtcNow;
         var fixture = new GoldenLinkSetFixture
         {
             CapturedAt = capturedAt,
-            Source = "live Cosmos scraped_documents_raw where link_status in (Linked, ManuallyLinked)",
+            Source = "live Cosmos scraped_documents_raw (link_status in Linked, ManuallyLinked) "
+                + "joined to scraped_documents fan-out rows",
             DocumentCount = docCount,
             EntryCount = entries.Count,
             Entries = entries,
@@ -88,10 +105,16 @@ internal static class CaptureGoldenSetCommand
 
             | Field | Value |
             |---|---|
-            | Source | live Cosmos `scraped_documents_raw` (link_status = Linked / ManuallyLinked) |
+            | Source | live Cosmos `scraped_documents_raw` (link_status = Linked / ManuallyLinked), joined to `scraped_documents` fan-out rows |
             | Captured at | {capturedAt:O} |
             | Documents | {docCount} |
             | Fan-out entries | {entries.Count} |
+            | Documents with NO fan-out row | {documentsWithoutFanOut} |
+
+            A document counted in the last row is marked linked but has no
+            `scraped_documents` row, so it contributes nothing to the gate. A non-zero
+            value is not fatal, but it means the corpus and the fan-out container
+            disagree — worth investigating before treating this fixture as a baseline.
 
             ## What the replay test checks
 
@@ -116,7 +139,8 @@ internal static class CaptureGoldenSetCommand
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--capture-golden-set complete: {docCount} documents, {entries.Count} fan-out entries → {fixturePath}");
+            $"--capture-golden-set complete: {docCount} documents, {entries.Count} fan-out entries "
+            + $"({documentsWithoutFanOut} linked document(s) had no fan-out row) → {fixturePath}");
     }
 
     internal static async Task RunReconcilerParityAsync(
@@ -216,8 +240,10 @@ internal static class CaptureGoldenSetCommand
 
             The test seeds `IMachineRepository.StreamByManufacturerAsync` with the captured
             machines and builds a synthetic `GameCatalog` matching those slugs. It then runs
-            `ScraperReconciliationService.ReconcileAsync` and asserts `MatchedBySlug` equals
-            the number of slug entries. Any regression in the slug-matching algorithm — a
+            `ScraperReconciliationService.ReconcileAsync` and asserts `MatchedBySlug` is at
+            least the number of DISTINCT (manufacturer, slug) pairs — not the raw entry
+            count, since editions legitimately share a slug and collapse into one game.
+            Any regression in the slug-matching algorithm — a
             normalization change, a wrong-key lookup, a missing manufacturer prefix — shows up
             as a match-count drop.
 
