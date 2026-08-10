@@ -17,6 +17,12 @@ namespace PinballWizard.Cli.Tests.Cli;
 /// The capture writes its fixture to a path relative to the current directory,
 /// so each test runs inside a temp directory and restores the original after —
 /// otherwise the command would overwrite the real captured fixture in the repo.
+///
+/// Directory.SetCurrentDirectory is process-global, so this is only safe because
+/// the "ConsoleCapture" collection is declared DisableParallelization = true (see
+/// ConsoleCaptureMarker) and therefore never runs alongside another collection.
+/// Moving this class out of that collection would let a concurrent test observe
+/// the mutated working directory. Keep it here.
 /// </summary>
 [Collection("ConsoleCapture")]
 public sealed class CaptureGoldenSetCommandTests : IDisposable
