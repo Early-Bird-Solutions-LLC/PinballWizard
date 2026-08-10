@@ -54,10 +54,11 @@
         // AzureCliCredential resolves the PERSONAL pinwiz.ai identity (where the
         // Bicep-managed Foundry lives) instead of the machine default ~/.azure
         // (which may be signed in to another tenant). The AppHost relays this to
-        // its orchestrated children. First-time setup: open a terminal, set
-        // $env:AZURE_CONFIG_DIR to this dir, `az login`, select the pinwiz.ai
-        // subscription. The dir is gitignored (it holds a live MSAL token cache).
-        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+        // its orchestrated children. First-time setup: open a NEW terminal in
+        // VS Code (settings.json sets this automatically), run `az login`, then
+        // select the pinwiz.ai subscription. The dir lives in the config repo and
+        // is gitignored there — it holds a live MSAL token cache.
+        "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
       }
     },
     {
@@ -73,7 +74,7 @@
         "DOTNET_ENVIRONMENT": "Development",
         "ASPNETCORE_ENVIRONMENT": "Development",
         // See the AppHost (Aspire) AZURE_CONFIG_DIR note — personal-identity isolation.
-        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+        "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
       },
       "console": "integratedTerminal"
     },
@@ -88,7 +89,7 @@
         "DOTNET_ENVIRONMENT": "Development",
         "ASPNETCORE_ENVIRONMENT": "Development",
         // See the AppHost (Aspire) AZURE_CONFIG_DIR note — personal-identity isolation.
-        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+        "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
       },
       "console": "integratedTerminal"
     },
@@ -112,7 +113,7 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "ASPNETCORE_URLS": "http://localhost:15120",
         // See the AppHost (Aspire) AZURE_CONFIG_DIR note — personal-identity isolation.
-        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+        "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
       },
       "console": "integratedTerminal"
     }

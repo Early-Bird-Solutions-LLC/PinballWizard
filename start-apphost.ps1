@@ -9,7 +9,7 @@
 # These require a personal pinwiz.ai Azure sign-in. If you haven't signed
 # in yet, or your token is stale, run:
 #
-#   $env:AZURE_CONFIG_DIR = "$env:USERPROFILE\.azure-pinwiz"
+#   $env:AZURE_CONFIG_DIR = "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
 #   az login --use-device-code
 #   az account set --subscription "pinwiz.ai"
 #
@@ -19,8 +19,13 @@
 # Emulated locally (no Azure needed): Cosmos DB, Azure Storage (Azurite).
 
 # ── Azure auth — personal pinwiz.ai identity ──────────────────────────────
-# Isolated config dir so the work/APS ~/.azure is never touched.
-$env:AZURE_CONFIG_DIR = "$env:USERPROFILE\.azure-pinwiz"
+# The PER-ORG isolated config dir, so the work/APS ~/.azure is never touched.
+# This must be the canonical per-org path, not a ~/.azure-<name> dir: the
+# az-isolation rule treats "set, but not a per-org dir" as a red flag, because
+# it still gets contaminated by whatever tenant is active. Keeping this script,
+# .vscode/settings.json and launch.json on one dir also means they share a
+# single authenticated session instead of three drifting token caches.
+$env:AZURE_CONFIG_DIR = "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
 
 # AZURE_TOKEN_CREDENTIALS=dev tells DefaultAzureCredential to use only
 # developer credentials (Azure CLI) and skip the managed-identity IMDS probe

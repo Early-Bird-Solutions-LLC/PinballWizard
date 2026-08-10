@@ -1,22 +1,34 @@
 {
   // Integrated-terminal environment for this repo.
   //
-  // AZURE_CONFIG_DIR points the Azure CLI at an isolated, gitignored config dir
-  // (.azure-local) so commands run here — `az login`, `dotnet user-secrets`,
-  // `dotnet run` — resolve the PERSONAL pinwiz.ai identity (where the Bicep-managed
-  // Foundry lives) without disturbing the machine-default ~/.azure session (which
-  // may be signed in to another tenant). The F5 debug configs set the same var in
-  // launch.json, and the AppHost relays it to its orchestrated children. First-time:
-  // open a NEW terminal so this applies, run `az login`, then select the pinwiz.ai
-  // subscription. ${workspaceFolder} keeps this portable across machines/clones.
-  // Set for all three host OSes so a macOS/Linux contributor gets the same isolation.
+  // AZURE_CONFIG_DIR points the Azure CLI at the PER-ORG isolated config dir for
+  // pinwiz.ai. Commands run here — `az login`, `dotnet user-secrets`, `dotnet run` —
+  // resolve the pinwiz.ai identity (where the Bicep-managed Foundry lives) without
+  // touching the machine-default ~/.azure session, which may be signed in to another
+  // tenant. The F5 debug configs set the same var in launch.json, and the AppHost
+  // relays it to its orchestrated children. First-time: open a NEW terminal so this
+  // applies, run `az login`, then select the pinwiz.ai subscription.
+  //
+  // This MUST be the absolute per-org path, not ${workspaceFolder}/.azure-local.
+  // A per-project dir is not org isolation: it still gets contaminated by whatever
+  // tenant is active, and the az-isolation guard treats a non-per-org dir as a red
+  // flag ("set, not global, still wrong"). The global ~/.azure mixes tenants across
+  // every org on the machine, which produces 401s that look like bad credentials but
+  // are really config-dir contamination. Keeping every clone pointed at one per-org
+  // dir is also what lets a second clone share the same authenticated session.
+  //
+  // Caveat: the value below is a Windows path, and it is repeated verbatim in the
+  // osx/linux blocks. A macOS or Linux contributor MUST substitute their own
+  // equivalent per-org dir — otherwise the variable points at a path that does not
+  // exist and the isolation silently does nothing. The previous
+  // ${workspaceFolder}-relative form was portable but, as above, was not isolation.
   "terminal.integrated.env.windows": {
-    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+    "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
   },
   "terminal.integrated.env.osx": {
-    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+    "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
   },
   "terminal.integrated.env.linux": {
-    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+    "AZURE_CONFIG_DIR": "D:/Projects/APS.ClaudeCodeConfig/orgs/pinwiz/azure"
   }
 }

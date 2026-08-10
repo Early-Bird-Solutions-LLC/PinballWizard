@@ -128,7 +128,7 @@ dotnet run --project src/PinballWizard.Cli -- --status
 For first-time setup and seeding the Cosmos emulator with a functional machine catalog,
 see [`docs/local-development.md`](local-development.md). That guide covers:
 
-- Azure identity isolation (`.azure-local` + `AZURE_CONFIG_DIR`)
+- Azure identity isolation (the per-org `AZURE_CONFIG_DIR`)
 - Starting the AppHost (`start-apphost.ps1`) and locating the Web URL
 - The seed sequence (`--ensure-cosmos-containers`, `--seed-ingestion-sources`, `--seed-featured-machines` / `--source opdb`)
 - The `matchTokens` nested-array contract and silent-refusal symptom
