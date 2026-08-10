@@ -261,8 +261,12 @@ public static class ServiceCollectionExtensions
             var settings = sp.GetService<IOptions<ScraperSettings>>();
             var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
             var blobStore = sp.GetService<IDocumentBlobStore>();
+            // ADR-0054: the alias loader turns on the resolver index inside the linker.
+            // GetRequiredService — it is registered unconditionally above, and silently
+            // running without the resolver would hide a DI regression (invariant #17).
+            var aliasLoader = sp.GetRequiredService<IMachineAliasLoader>();
             return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger,
-                cosmosWriteConcurrency: concurrency, blobStore: blobStore);
+                cosmosWriteConcurrency: concurrency, blobStore: blobStore, aliasLoader: aliasLoader);
         });
 
         // Document downloader (--download-documents) — fetches not-yet-downloaded

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
+using PinballWizard.Application.Resolution;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 
@@ -32,6 +33,7 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly ILogger<DocumentLinker> _logger;
     private readonly IDocumentBlobStore? _blobStore;
     private readonly int _cosmosWriteConcurrency;
+    private readonly IMachineAliasLoader? _aliasLoader;
 
     private static readonly Meter LinkerMeter =
         new("PinballWizard.Linking", "1.0");
@@ -62,6 +64,18 @@ public sealed class DocumentLinker : IDocumentLinker
 
     private IReadOnlyList<(Machine Machine, string NormalizedSlug)> _machineSlugIndex = [];
 
+    // ADR-0054: identity-derived resolver index, built by InitializeAsync alongside the
+    // legacy slug index. Null until InitializeAsync runs, and stays null when no alias
+    // loader was supplied (pre-migration construction path, used by existing tests).
+    // Every tier checks for null and falls back to its legacy path, so a
+    // partially-migrated linker is never in an undefined state.
+    private IMachineResolver? _resolver;
+    private IReadOnlyDictionary<string, Machine> _machinesById =
+        new Dictionary<string, Machine>(StringComparer.Ordinal);
+
+    // Test-only observability of the built index size.
+    internal int ResolverVariantCountForTest { get; private set; }
+
     public DocumentLinker(
         IRawDocumentRepository rawRepo,
         ILinkOverrideRepository overrideRepo,
@@ -70,7 +84,8 @@ public sealed class DocumentLinker : IDocumentLinker
         IDocumentTextExtractor? textExtractor,
         ILogger<DocumentLinker> logger,
         int cosmosWriteConcurrency = 20,
-        IDocumentBlobStore? blobStore = null)
+        IDocumentBlobStore? blobStore = null,
+        IMachineAliasLoader? aliasLoader = null)
     {
         ArgumentNullException.ThrowIfNull(rawRepo);
         ArgumentNullException.ThrowIfNull(overrideRepo);
@@ -85,6 +100,7 @@ public sealed class DocumentLinker : IDocumentLinker
         _logger = logger;
         _blobStore = blobStore;
         _cosmosWriteConcurrency = cosmosWriteConcurrency;
+        _aliasLoader = aliasLoader;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -98,12 +114,14 @@ public sealed class DocumentLinker : IDocumentLinker
         var slugIndex = new List<(Machine Machine, string NormalizedSlug)>();
         var bySlug = new Dictionary<string, List<Machine>>(StringComparer.OrdinalIgnoreCase);
         var totalMachines = 0;
+        var allMachines = new List<Machine>();
 
         // StreamAllAsync issues a single cross-partition query — no need to
         // enumerate a hard-coded manufacturer list in the Application layer.
         await foreach (var machine in _machineRepo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
         {
             totalMachines++;
+            allMachines.Add(machine);
             foreach (var (_, slug) in machine.ManufacturerSlugs)
             {
                 if (string.IsNullOrWhiteSpace(slug)) continue;
@@ -176,9 +194,40 @@ public sealed class DocumentLinker : IDocumentLinker
         }
         else
         {
+            // MachinesWithSlugs counts machines reachable via ManufacturerSlugs ONLY.
+            // TitleIndexed counts the multi-token-title fallback added for slug-less
+            // machines. Reporting only the former understated real coverage and is the
+            // source of the long-quoted "87 of 2213" figure. Both counts are DISTINCT
+            // MACHINES, not index entries — bySlug.Count would count distinct slug
+            // strings, which over/undercounts whenever a machine has several slugs or
+            // a slug collides across manufacturers (Sega + Stern "godzilla").
+            var machinesWithSlugs = bySlug.Values
+                .SelectMany(machines => machines)
+                .Select(m => m.Id)
+                .Distinct(StringComparer.Ordinal)
+                .Count();
             _logger.LogInformation(
-                "DocumentLinker: indexed {Count} machine slugs across {MachinesWithSlugs} machines (of {Total} total).",
-                slugIndex.Count, bySlug.Count, totalMachines);
+                "DocumentLinker: indexed {Count} index entries — {MachinesWithSlugs} machines via slugs, "
+                + "{TitleIndexed} additional via title fallback (of {Total} total).",
+                slugIndex.Count,
+                machinesWithSlugs,
+                slugIndex.Select(e => e.Machine.Id).Distinct(StringComparer.Ordinal).Count() - machinesWithSlugs,
+                totalMachines);
+        }
+
+        // ADR-0054: build the identity-derived index alongside the legacy slug index.
+        // Behaviour is unchanged until a tier consults _resolver (Tasks 4-7).
+        if (_aliasLoader is not null)
+        {
+            var aliases = await _aliasLoader.LoadAsync(cancellationToken).ConfigureAwait(false);
+            var index = InMemoryMachineIndex.Build(allMachines, aliases);
+            _machinesById = allMachines.ToDictionary(m => m.Id, StringComparer.Ordinal);
+            _resolver = new MachineResolver(index, _machinesById);
+            ResolverVariantCountForTest = index.VariantCount;
+
+            _logger.LogInformation(
+                "DocumentLinker: resolver index built — {Variants} variants across {Machines} machines (ADR-0054).",
+                index.VariantCount, allMachines.Count);
         }
     }
 
