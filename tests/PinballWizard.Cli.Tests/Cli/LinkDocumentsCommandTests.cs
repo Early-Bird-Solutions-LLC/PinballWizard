@@ -121,7 +121,7 @@ public sealed class LinkDocumentsCommandTests : IDisposable
         // configure it explicitly using positional tuple syntax (no named elements)
         // to satisfy the CS8123-as-error rule in Directory.Build.props.
         linker.RunBatchAsync(Arg.Any<CancellationToken>())
-              .Returns((0, 0, 0, 0, 0));
+              .Returns((0, 0, 0, 0, 0, 0));
 
         using var provider = BuildProviderWith(linker);
         var callOrder = new List<string>();
@@ -140,9 +140,9 @@ public sealed class LinkDocumentsCommandTests : IDisposable
     public async Task RunAsync_WhenLinkerRegistered_WritesCountsToStdout()
     {
         var linker = Substitute.For<IDocumentLinker>();
-        // (Processed=10, Linked=7, PlatformGeneric=1, NotInCatalog=1, Failed=1)
+        // (Processed=10, Linked=7, PlatformGeneric=1, NotInCatalog=1, Failed=1, NeedsReview=0)
         linker.RunBatchAsync(Arg.Any<CancellationToken>())
-              .Returns((10, 7, 1, 1, 1));
+              .Returns((10, 7, 1, 1, 1, 0));
 
         using var provider = BuildProviderWith(linker);
 
@@ -160,9 +160,9 @@ public sealed class LinkDocumentsCommandTests : IDisposable
     public async Task RunAsync_WhenRunBatchReportsFailed_SetsExitCode1()
     {
         var linker = Substitute.For<IDocumentLinker>();
-        // (Processed=5, Linked=3, PlatformGeneric=0, NotInCatalog=1, Failed=1)
+        // (Processed=5, Linked=3, PlatformGeneric=0, NotInCatalog=1, Failed=1, NeedsReview=0)
         linker.RunBatchAsync(Arg.Any<CancellationToken>())
-              .Returns((5, 3, 0, 1, 1));
+              .Returns((5, 3, 0, 1, 1, 0));
 
         using var provider = BuildProviderWith(linker);
 
@@ -175,9 +175,9 @@ public sealed class LinkDocumentsCommandTests : IDisposable
     public async Task RunAsync_WhenRunBatchReturnsZeroFailed_LeavesExitCodeAt0()
     {
         var linker = Substitute.For<IDocumentLinker>();
-        // (Processed=5, Linked=5, PlatformGeneric=0, NotInCatalog=0, Failed=0)
+        // (Processed=5, Linked=5, PlatformGeneric=0, NotInCatalog=0, Failed=0, NeedsReview=0)
         linker.RunBatchAsync(Arg.Any<CancellationToken>())
-              .Returns((5, 5, 0, 0, 0));
+              .Returns((5, 5, 0, 0, 0, 0));
 
         using var provider = BuildProviderWith(linker);
         Environment.ExitCode = 0;

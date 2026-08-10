@@ -46,13 +46,13 @@ internal static class LinkDocumentsCommand
         }
 
         Console.WriteLine("Linking documents — scanning for pending, failed, and not_in_catalog records...");
-        var (processed, linked, platformGeneric, notInCatalog, failed) =
+        var (processed, linked, platformGeneric, notInCatalog, failed, needsReview) =
             await linker.RunBatchAsync(cancellationToken);
 
         Console.WriteLine();
         Console.WriteLine($"--link-documents complete: " +
             $"processed={processed} linked={linked} platform_generic={platformGeneric} " +
-            $"not_in_catalog={notInCatalog} failed={failed}");
+            $"not_in_catalog={notInCatalog} failed={failed} needs_review={needsReview}");
 
         if (failed > 0)
             Environment.ExitCode = 1;

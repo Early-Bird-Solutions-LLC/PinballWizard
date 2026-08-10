@@ -205,7 +205,7 @@ public sealed class DownloadAndLinkCommandTests : IDisposable
     public async Task RunAsync_WhenDownloadHasPartialFailures_StillCallsLinkStage()
     {
         var linker = Substitute.For<IDocumentLinker>();
-        linker.RunBatchAsync(Arg.Any<CancellationToken>()).Returns((0, 0, 0, 0, 0));
+        linker.RunBatchAsync(Arg.Any<CancellationToken>()).Returns((0, 0, 0, 0, 0, 0));
         using var provider = BuildProviderWithPartialDownloadFailure(linker);
 
         await InvokeRunAsync(provider);
@@ -218,7 +218,7 @@ public sealed class DownloadAndLinkCommandTests : IDisposable
     public async Task RunAsync_WhenDownloadHasPartialFailures_PropagatesExitCode1()
     {
         var linker = Substitute.For<IDocumentLinker>();
-        linker.RunBatchAsync(Arg.Any<CancellationToken>()).Returns((0, 0, 0, 0, 0));
+        linker.RunBatchAsync(Arg.Any<CancellationToken>()).Returns((0, 0, 0, 0, 0, 0));
         using var provider = BuildProviderWithPartialDownloadFailure(linker);
 
         await InvokeRunAsync(provider);
