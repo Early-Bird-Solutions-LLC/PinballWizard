@@ -2,9 +2,10 @@ namespace PinballWizard.Application.Ai.Tools;
 
 // DTO returned by the getMachineByTitle Foundry function tool.
 // Carries every field the Wizard / Valuation / Rules / Repair sub-agents
-// need from a single Machine record plus the citation surface — OpdbId
-// + OpdbSourceUrl pin the citation chain back to OPDB so the agent's
-// answer can include a link directly.
+// need from a single Machine record plus the citation surface. Base and
+// edition OPDB ids/URLs stay adjacent to the facts they support so the
+// agent never has to borrow the primary machine's provenance for a
+// sibling or edition-specific claim.
 //
 // S5 (ADR-0029): GroupId and Siblings surface the sibling base-machine
 // records that share the same leading OPDB group segment so the agent
@@ -39,14 +40,24 @@ public sealed record MachineEditionGroundingDto(
     string Name,
     string? Msrp,
     string? Availability,
-    string? Description);
+    string? Description)
+{
+    // Keep the edition evidence and its provenance together. These fields
+    // are optional because manufacturer-enriched editions may have feature
+    // data without an OPDB alias, while OPDB aliases may have provenance
+    // without manufacturer-authored feature text.
+    public IReadOnlyList<string> UniqueFeatures { get; init; } = [];
+    public string? OpdbAliasId { get; init; }
+    public string? OpdbSourceUrl { get; init; }
+}
 
 // A sibling base-machine record within the same OPDB group — a distinct
 // Pro / Premium / LE / Collector edition of the same franchise title.
 // Carries the fields the agent needs to enumerate and NAME editions for
-// R1/R2/R3 edition reasoning (Task 7, AB#259): OpdbId (citation anchor),
-// Title (display name), Year, Editions (per-sibling MSRP / availability),
-// plus EditionLabel + EditionTokens.
+// R1/R2/R3 edition reasoning (Task 7, AB#259): OpdbId + OpdbSourceUrl
+// (citation anchor), Title (display name), Manufacturer + Year
+// (disambiguation), Editions (per-sibling facts), plus EditionLabel +
+// EditionTokens.
 //
 // EditionLabel is the edition-qualified OPDB label for this base when it
 // shares a franchise — e.g. "Pro", "Premium/LE" — so the Wizard can name
@@ -63,4 +74,11 @@ public sealed record MachineSiblingGroundingDto(
     int? Year,
     IReadOnlyList<MachineEditionGroundingDto> Editions,
     string? EditionLabel,
-    IReadOnlyList<string> EditionTokens);
+    IReadOnlyList<string> EditionTokens)
+{
+    // TitleCollisions must identify candidates by manufacturer + year, and
+    // every sibling/collision needs its own provenance rather than borrowing
+    // the primary machine's OPDB URL.
+    public string Manufacturer { get; init; } = string.Empty;
+    public string? OpdbSourceUrl { get; init; }
+}

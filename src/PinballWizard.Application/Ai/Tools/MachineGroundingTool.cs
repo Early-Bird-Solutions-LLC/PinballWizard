@@ -153,7 +153,7 @@ public sealed class MachineGroundingTool
         return score;
     }
 
-    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. The response may also include TitleCollisions: machines from DIFFERENT OPDB groups that share a related title — either the same franchise title (e.g. Sega Godzilla 1998 alongside Stern Godzilla 2021) OR where the resolved game's title is a subtitle-prefix of a different group's longer title (e.g. Iron Maiden 1981 alongside Iron Maiden: Legacy of the Beast 2018). When TitleCollisions is non-empty: if the user gave a qualifier (manufacturer, year, or full subtitle), ground definitively on that game; otherwise ask ONE targeted clarifying question naming 2–3 candidates (manufacturer + year/subtitle where they differ) before answering. Returns null if no machine matches the title.")]
+    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, and OPDB provenance. Each edition includes unique features plus its own OPDB alias id/source URL when available. Siblings and TitleCollisions each include manufacturer, year, and their own OPDB source URL. Siblings are base-machine records in the same OPDB group for version-dependent questions. TitleCollisions are machines from DIFFERENT OPDB groups that share a related title — either the same franchise title (e.g. Sega Godzilla 1998 alongside Stern Godzilla 2021) OR where the resolved game's title is a subtitle-prefix of a different group's longer title (e.g. Iron Maiden 1981 alongside Iron Maiden: Legacy of the Beast 2018). When TitleCollisions is non-empty: if the user gave a qualifier (manufacturer, year, or full subtitle), ground definitively on that game; otherwise ask ONE targeted clarifying question naming 2–3 candidates (manufacturer + year/subtitle where they differ) before answering. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
         [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name if the user stated it (for example: 'Stern Godzilla', 'Foo Fighters', 'Attack from Mars Remake'). The manufacturer qualifier resolves ambiguity when multiple machines share the same franchise title (e.g. Sega vs Stern Godzilla). Keep the FULL game title, including any subtitle after a colon — a subtitle denotes a DISTINCT game, not an edition: pass 'Iron Maiden: Legacy of the Beast' (2018), NOT 'Iron Maiden' (the 1981 game); 'Transformers: More Than Meets the Eye', NOT 'Transformers'. Only Pro/Premium/LE/Standard are edition suffixes to omit on an initial lookup — those are surfaced via the returned Siblings list. When re-calling to resolve a specific edition named by the user, include the edition qualifier (e.g. 'Godzilla Premium', 'Attack from Mars Remake').")] string title,
         CancellationToken cancellationToken = default)
@@ -499,7 +499,11 @@ public sealed class MachineGroundingTool
                     // Wizard name a sibling's edition and match a user-named
                     // edition to the right base for R2/R3 reasoning.
                     EditionLabel: sibling.EditionLabel,
-                    EditionTokens: sibling.EditionTokens.AsReadOnly()));
+                    EditionTokens: sibling.EditionTokens.AsReadOnly())
+                {
+                    Manufacturer = sibling.ManufacturerDisplayName,
+                    OpdbSourceUrl = sibling.OpdbSourceUrl,
+                });
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -590,7 +594,11 @@ public sealed class MachineGroundingTool
                     Year: candidate.Year,
                     Editions: ProjectEditions(candidate.Editions),
                     EditionLabel: candidate.EditionLabel,
-                    EditionTokens: candidate.EditionTokens.AsReadOnly()));
+                    EditionTokens: candidate.EditionTokens.AsReadOnly())
+                {
+                    Manufacturer = candidate.ManufacturerDisplayName,
+                    OpdbSourceUrl = candidate.OpdbSourceUrl,
+                });
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -891,7 +899,11 @@ public sealed class MachineGroundingTool
                     Year: candidate.Year,
                     Editions: ProjectEditions(candidate.Editions),
                     EditionLabel: candidate.EditionLabel,
-                    EditionTokens: candidate.EditionTokens.AsReadOnly()));
+                    EditionTokens: candidate.EditionTokens.AsReadOnly())
+                {
+                    Manufacturer = candidate.ManufacturerDisplayName,
+                    OpdbSourceUrl = candidate.OpdbSourceUrl,
+                });
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -989,7 +1001,11 @@ public sealed class MachineGroundingTool
                 Year: machine.Year,
                 Editions: ProjectEditions(machine.Editions),
                 EditionLabel: machine.EditionLabel,
-                EditionTokens: machine.EditionTokens.AsReadOnly()));
+                EditionTokens: machine.EditionTokens.AsReadOnly())
+            {
+                Manufacturer = machine.ManufacturerDisplayName,
+                OpdbSourceUrl = machine.OpdbSourceUrl,
+            });
 
             if (collisions.Count >= MaxFuzzyCollisionGroups)
                 break;
@@ -1010,6 +1026,11 @@ public sealed class MachineGroundingTool
                 Name: e.Name,
                 Msrp: e.Msrp,
                 Availability: e.Availability,
-                Description: e.Description))
+                Description: e.Description)
+            {
+                UniqueFeatures = e.UniqueFeatures.AsReadOnly(),
+                OpdbAliasId = e.OpdbAliasId,
+                OpdbSourceUrl = e.OpdbSourceUrl,
+            })
             .ToList();
 }

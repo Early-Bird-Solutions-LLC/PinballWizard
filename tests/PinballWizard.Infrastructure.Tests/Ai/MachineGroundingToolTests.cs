@@ -30,7 +30,14 @@ public sealed class MachineGroundingToolTests
             OpdbSourceUrl = "https://opdb.org/machines/GRBN-MQR4P",
             Editions =
             [
-                new MachineEdition { Name = "Pro", Msrp = "$7,000" },
+                new MachineEdition
+                {
+                    Name = "Pro",
+                    Msrp = "$7,000",
+                    UniqueFeatures = ["Upper playfield"],
+                    OpdbAliasId = "GRBN-MQR4P-A97X1",
+                    OpdbSourceUrl = "https://opdb.org/search?q=GRBN-MQR4P-A97X1",
+                },
                 new MachineEdition { Name = "Premium", Msrp = "$9,500" },
             ],
             FirstSeenAt = DateTimeOffset.UtcNow,
@@ -55,6 +62,9 @@ public sealed class MachineGroundingToolTests
         Assert.Equal(2, result.Editions.Count);
         Assert.Equal("Pro", result.Editions[0].Name);
         Assert.Equal("$7,000", result.Editions[0].Msrp);
+        Assert.Equal(["Upper playfield"], result.Editions[0].UniqueFeatures);
+        Assert.Equal("GRBN-MQR4P-A97X1", result.Editions[0].OpdbAliasId);
+        Assert.Equal("https://opdb.org/search?q=GRBN-MQR4P-A97X1", result.Editions[0].OpdbSourceUrl);
     }
 
     [Fact]
@@ -334,9 +344,29 @@ public sealed class MachineGroundingToolTests
         // Sega (1995) — earlier; Stern (2021) — newer. Both have equal
         // completeness, so Year is the deciding dimension.
         repo.GetByOpdbIdAsync("GRBN-G1995", "sega", Arg.Any<CancellationToken>())
-            .Returns(NewMachine("GRBN-G1995", "Godzilla", 1995));
+            .Returns(new Machine
+            {
+                Id = "GRBN-G1995",
+                PartitionKey = "sega",
+                ManufacturerDisplayName = "Sega",
+                Title = "Godzilla",
+                Year = 1995,
+                OpdbSourceUrl = "https://opdb.org/machines/GRBN-G1995",
+                FirstSeenAt = DateTimeOffset.UtcNow,
+                LastSeenAt = DateTimeOffset.UtcNow,
+            });
         repo.GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>())
-            .Returns(NewMachine("GRBN-G2021", "Godzilla", 2021));
+            .Returns(new Machine
+            {
+                Id = "GRBN-G2021",
+                PartitionKey = "stern",
+                ManufacturerDisplayName = "Stern Pinball",
+                Title = "Godzilla",
+                Year = 2021,
+                OpdbSourceUrl = "https://opdb.org/machines/GRBN-G2021",
+                FirstSeenAt = DateTimeOffset.UtcNow,
+                LastSeenAt = DateTimeOffset.UtcNow,
+            });
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
@@ -348,6 +378,8 @@ public sealed class MachineGroundingToolTests
         // can disambiguate ("Sega 1995 or Stern 2021?").
         Assert.Single(result.TitleCollisions);
         Assert.Equal("GRBN-G1995", result.TitleCollisions[0].OpdbId);
+        Assert.Equal("Sega", result.TitleCollisions[0].Manufacturer);
+        Assert.Equal("https://opdb.org/machines/GRBN-G1995", result.TitleCollisions[0].OpdbSourceUrl);
     }
 
     // ── ADR-0029 S5: sibling-returning behavior ───────────────────────
@@ -382,9 +414,20 @@ public sealed class MachineGroundingToolTests
             Title = "Godzilla Premium/LE",
             Year = 2021,
             GroupId = "GweeP",
+            OpdbSourceUrl = "https://opdb.org/machines/GweeP-Ml9pZ",
             EditionLabel = "Premium/LE",
             EditionTokens = ["premium", "le", "70th"],
-            Editions = [new MachineEdition { Name = "Premium", Msrp = "$9,999" }],
+            Editions =
+            [
+                new MachineEdition
+                {
+                    Name = "Premium",
+                    Msrp = "$9,999",
+                    UniqueFeatures = ["Mechagodzilla and bridge mechs"],
+                    OpdbAliasId = "GweeP-Ml9pZ-PREMIUM",
+                    OpdbSourceUrl = "https://opdb.org/search?q=GweeP-Ml9pZ-PREMIUM",
+                },
+            ],
             FirstSeenAt = DateTimeOffset.UtcNow,
             LastSeenAt = DateTimeOffset.UtcNow,
         };
@@ -412,7 +455,14 @@ public sealed class MachineGroundingToolTests
         Assert.Single(result.Siblings);
         Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
         Assert.Equal("Godzilla Premium/LE", result.Siblings[0].Title);
+        Assert.Equal("Stern Pinball", result.Siblings[0].Manufacturer);
+        Assert.Equal("https://opdb.org/machines/GweeP-Ml9pZ", result.Siblings[0].OpdbSourceUrl);
         Assert.Equal("Premium", result.Siblings[0].Editions[0].Name);
+        Assert.Equal(["Mechagodzilla and bridge mechs"], result.Siblings[0].Editions[0].UniqueFeatures);
+        Assert.Equal("GweeP-Ml9pZ-PREMIUM", result.Siblings[0].Editions[0].OpdbAliasId);
+        Assert.Equal(
+            "https://opdb.org/search?q=GweeP-Ml9pZ-PREMIUM",
+            result.Siblings[0].Editions[0].OpdbSourceUrl);
         // Task 7 (AB#259): EditionLabel + EditionTokens surfaced so the
         // Wizard can name the edition and match a user-named edition.
         Assert.Equal("Premium/LE", result.Siblings[0].EditionLabel);

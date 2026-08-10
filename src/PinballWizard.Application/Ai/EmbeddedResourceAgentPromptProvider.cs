@@ -51,9 +51,13 @@ namespace PinballWizard.Application.Ai;
 // retry dropped the machineId and returned unrelated machines' records. Cache
 // key in AiRouter is (normalized, promptVersion) — bumping evicts stale answers
 // generated under the old unscoped-retry behavior.
+// Bumped to "v10.2026.08" (grounding provenance + trust boundary): edition
+// facts now carry their own OPDB provenance, collision candidates identify
+// their manufacturer/source, and every agent treats retrieved content as
+// untrusted data rather than executable instructions.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v9.2026.07";
+    public const string CurrentPromptVersion = "v10.2026.08";
 
     private readonly Dictionary<string, string> _prompts;
 
