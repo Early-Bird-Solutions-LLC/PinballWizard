@@ -251,6 +251,86 @@ public sealed class DocumentLinkerResolverTests
         Assert.Equal(EditionScope.FranchiseWide, result.EditionScope);
     }
 
+    // ── Issue #825: pure-numeric title / PageText evidence guard ──────────────
+
+    [Fact]
+    public async Task PageTier_PureNumericTitle_DoesNotLinkFromPageText()
+    {
+        // RED → GREEN mechanism test (issue #825).
+        //
+        // The mis-attribution path: AP bulletin scraper uses SourceType.ServiceBulletinPage,
+        // which InferManufacturerKey maps to "stern". The Stern machine titled "24" has
+        // variant "24" (single token, FullTitle). Page text of an AP service bulletin
+        // contains "24 VDC" (coil voltage) → containment match → AP bulletin linked to
+        // Stern "24". After the fix, pure-numeric single-token variants are excluded from
+        // PageText evidence so the result must not be Linked.
+        var machines = new[] { MakeMachine("GrEkZ-ML13O", "24", "stern") };
+        var linker = await BuildLinkerWithResolverAsync(
+            machines,
+            pageText: "Coil voltage: 24 VDC. Check bar door alignment. See Fig. 3.");
+
+        // ServiceBulletinPage maps to manufacturer hint "stern" — exactly the live scenario.
+        var raw = MakeRaw("doc-f2aa7aa77a787783",
+            "http://s4.american-pinball.com/img/support/2019-7/Bar-Door-Check.pdf",
+            gameSlug: "",
+            manufacturerKey: "stern",
+            sourceType: SourceType.ServiceBulletinPage,
+            localPath: "docs/Bar-Door-Check.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.NotEqual(LinkStatus.Linked, result.FinalStatus);
+        Assert.Empty(result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task PageTier_PureNumericTitle_StillLinksViaFilename()
+    {
+        // Numeric variants are only excluded from page-text evidence; a filename
+        // that literally contains "24" (e.g. "24Manual.pdf") is an intentional
+        // reference and must still link via the filename tier.
+        var machines = new[] { MakeMachine("GrEkZ-ML13O", "24", "stern") };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-24-manual",
+            "https://sternpinball.com/wp-content/uploads/2018/11/24Manual.pdf",
+            gameSlug: "",
+            manufacturerKey: "stern",
+            sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GrEkZ-ML13O"], result.LinkedMachineIds);
+        Assert.Equal("filename_resolver", result.ResolutionStrategy);
+    }
+
+    [Fact]
+    public async Task PageTier_AlphaTitleMachine_StillLinksFromPageText()
+    {
+        // Non-numeric machines are unaffected: "Godzilla" appearing in page text
+        // must still resolve the Godzilla machine via the page tier.
+        var machines = new[]
+        {
+            MakeMachine("GweeP-M1", "Godzilla", "stern"),
+        };
+        var linker = await BuildLinkerWithResolverAsync(
+            machines, pageText: "This Godzilla pinball machine service manual covers all models.");
+
+        var raw = MakeRaw("doc-gz-page",
+            "https://sternpinball.com/some-opaque-bulletin.pdf",
+            gameSlug: "",
+            manufacturerKey: "stern",
+            sourceType: SourceType.ManualsPage,
+            localPath: "docs/some-opaque-bulletin.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GweeP-M1"], result.LinkedMachineIds);
+        Assert.Equal("page_1_resolver", result.ResolutionStrategy);
+    }
+
     // ── Task 7: ambiguity becomes needs_review, never a silent drop ────────────
 
     [Fact]

@@ -187,4 +187,90 @@ public class MachineResolverTests
 
         Assert.IsType<ResolutionResult.Ambiguous>(r);
     }
+
+    // ── Pure-numeric title / PageText evidence guard (issue #825) ─────────────
+    //
+    // The AP bulletin mis-attribution mechanism: the AP scraper uses
+    // SourceType.ServiceBulletinPage which InferManufacturerKey maps to "stern",
+    // so an AP bulletin's page-text query carries ManufacturerHint="stern". The
+    // Stern machine titled "24" has a single-token FullTitle variant "24". Technical
+    // documents routinely contain numbers (voltages, part counts, bulletin IDs,
+    // dates), so "24 VDC" in an AP service bulletin page matched the Stern machine
+    // and produced a cross-manufacturer mis-link. ADR-0054 §5: ambiguity is never
+    // guessed — weak page-text evidence must not override a missing slug signal.
+
+    private static readonly Machine Stern24 = M("GrEkZ-ML13O", "24", "G24", "stern", 2009);
+
+    [Fact]
+    public void Resolve_PureNumericSingleToken_NotEligibleForPageTextEvidence()
+    {
+        // RED → GREEN mechanism test. Before the fix this returns Resolved(Stern24);
+        // after the fix pure-numeric single-token variants are excluded from PageText
+        // matching so the result must be NoMatch (no other machine matches the text).
+        var r = Build(Stern24, GodzPro).Resolve(
+            new ResolutionQuery(
+                "Coil voltage: 24 VDC. Check bar door alignment.",
+                EvidenceKind.PageText,
+                "stern"));
+
+        Assert.IsType<ResolutionResult.NoMatch>(r);
+    }
+
+    [Fact]
+    public void Resolve_PureNumericSingleToken_StillEligibleForFilenameEvidence()
+    {
+        // Filename evidence is NOT blocked: a file named "24Manual.pdf" is an
+        // intentional reference, unlike the number appearing in prose. The "24"
+        // containment match must survive for Filename evidence.
+        var r = Build(Stern24, GodzPro).Resolve(
+            new ResolutionQuery("24Manual.pdf", EvidenceKind.Filename, "stern"));
+
+        var resolved = Assert.IsType<ResolutionResult.Resolved>(r);
+        Assert.Equal("GrEkZ-ML13O", resolved.MachineId);
+    }
+
+    [Fact]
+    public void Resolve_PureNumericSingleToken_StillEligibleForProvenanceSlugEvidence()
+    {
+        // ProvenanceSlug evidence is also NOT blocked: a slug "24" is the
+        // manufacturer's own classification of which game page produced the document.
+        var r = Build(Stern24, GodzPro).Resolve(
+            new ResolutionQuery("24", EvidenceKind.ProvenanceSlug, "stern"));
+
+        var resolved = Assert.IsType<ResolutionResult.Resolved>(r);
+        Assert.Equal("GrEkZ-ML13O", resolved.MachineId);
+    }
+
+    [Fact]
+    public void Resolve_AlphaTitle_StillResolvesFromPageText()
+    {
+        // Non-numeric single-token FranchiseTitles are unaffected by the guard.
+        // "godzilla" in page text must still bind to the Godzilla machine.
+        var r = Build(GodzPro, HotWheels).Resolve(
+            new ResolutionQuery(
+                "This is a Godzilla pinball machine service manual.",
+                EvidenceKind.PageText,
+                "stern"));
+
+        var resolved = Assert.IsType<ResolutionResult.Resolved>(r);
+        Assert.Equal("GZ-M1", resolved.MachineId);
+    }
+
+    [Theory]
+    [InlineData("301")]   // three-digit numeric title
+    [InlineData("007")]   // three-digit all-digit title
+    [InlineData("8")]     // single digit
+    public void Resolve_OtherPureNumericTitles_NotEligibleForPageTextEvidence(string numericTitle)
+    {
+        // The rule generalises to any purely-numeric machine title, not just "24".
+        // "301", "007", "8" appearing in page prose must not bind a document.
+        var machine = M("G-numeric", numericTitle, "G-n", "stern", 2000);
+        var r = Build(machine, GodzPro).Resolve(
+            new ResolutionQuery(
+                $"Service bulletin: {numericTitle} volt coil replacement procedure.",
+                EvidenceKind.PageText,
+                "stern"));
+
+        Assert.IsType<ResolutionResult.NoMatch>(r);
+    }
 }
