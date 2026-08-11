@@ -23,9 +23,9 @@ public sealed class ScrapedDocumentIngestionPipelineTests
     [Fact]
     public async Task IngestAsync_DocumentTypeFiltered_ReturnsDocumentTypeFiltered_NoExtraction()
     {
-        // Filter 2: the curated machine is in scope but the document
-        // type isn't (e.g., a Schematic where only Manual + ServiceBulletin
-        // are accepted).
+        // Filter 1: document type is not in the accepted set (e.g., Schematic
+        // where only Manual + ServiceBulletin are accepted). The pipeline must
+        // return the filtered outcome and not attempt extraction.
         var fakes = new Fakes();
         var pipeline = fakes.BuildPipeline();
 
@@ -36,6 +36,27 @@ public sealed class ScrapedDocumentIngestionPipelineTests
 
         Assert.Equal(IngestionOutcome.Skipped_DocumentTypeFiltered, outcome);
         await fakes.Extractor.DidNotReceiveWithAnyArgs().ExtractAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task IngestAsync_DocumentTypeFiltered_RecordsSkipStatusOnIndexState()
+    {
+        // Issue #815: a type-filtered skip must stamp an explicit terminal status
+        // on the index-state store so "filtered by design" is distinguishable from
+        // "never reached the RAG worker" (no row in rag_index_state).
+        var fakes = new Fakes();
+        var pipeline = fakes.BuildPipeline();
+
+        var change = NewChange(documentType: DocumentType.Schematic);
+        await using var stream = NewStream();
+
+        await pipeline.IngestAsync(change, stream, CancellationToken.None);
+
+        await fakes.IndexState.Received(1).RecordSkippedAsync(
+            change.DocumentId,
+            change.MachineId,
+            IngestionOutcome.Skipped_DocumentTypeFiltered,
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

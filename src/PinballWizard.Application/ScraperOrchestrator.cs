@@ -264,7 +264,7 @@ public sealed class ScraperOrchestrator
             },
             Classification = new ClassificationInfo
             {
-                DocumentType = ClassifyDocumentType(link, item.DiscoveryContext),
+                DocumentType = ClassifyDocumentType(link, item.DiscoveryContext, item.SourceType),
                 FileFormat = string.IsNullOrEmpty(fileFormat) ? "unknown" : fileFormat
             },
             Game = BuildGameReference(item),
@@ -302,8 +302,21 @@ public sealed class ScraperOrchestrator
         };
     }
 
-    internal static DocumentType ClassifyDocumentType(DiscoveredLink link, string context)
+    internal static DocumentType ClassifyDocumentType(DiscoveredLink link, string context, SourceType sourceType)
     {
+        // Source type provides an unambiguous signal for certain page types.
+        // ServiceBulletinPage always yields service-bulletin content — the AP
+        // support page carries this type but its context ("American Pinball
+        // Support Page") and bare link texts ("Bar Door Check") contain no
+        // bulletin keyword, so the heuristics below would silently fall through
+        // to Other and the AP corpus would be dropped from RAG ingestion.
+        // ManualsPage is equally unambiguous: every link on a manuals listing
+        // is a manual. Mixed-content page types (GamePage, SpookyPinballSupportPage,
+        // JjpSupportPage, etc.) are intentionally excluded here so their heuristics
+        // continue to decide per-document.
+        if (sourceType == SourceType.ServiceBulletinPage) return DocumentType.ServiceBulletin;
+        if (sourceType == SourceType.ManualsPage) return DocumentType.Manual;
+
         var url = link.FileUrl.ToLowerInvariant();
         var text = (link.LinkText ?? "").ToLowerInvariant();
         var ctx = context.ToLowerInvariant();

@@ -31,9 +31,16 @@ namespace PinballWizard.Application.Rag.Ingestion;
 // indexes.
 //
 // `RecordIndexedAsync` is called only on the happy path
-// (IngestionOutcome.Indexed). Skipped / dead-lettered outcomes do
-// NOT update state — re-delivery should re-evaluate, not be silenced
-// by a stale "indexed" record.
+// (IngestionOutcome.Indexed). Transient skips (hash-unchanged,
+// extraction-failed) do NOT update state — re-delivery should
+// re-evaluate, not be silenced by a stale record.
+//
+// `RecordSkippedAsync` is called for TERMINAL skips where re-delivery
+// will always produce the same result until the configuration or
+// classification logic changes (e.g., a document type not in the
+// accepted set). Recording these makes "filtered by design" queryable
+// in rag_index_state, distinguishing it from "never reached the RAG
+// worker" (no row at all).
 public interface IIndexState
 {
     Task<string?> GetLastIndexedHashAsync(
@@ -47,5 +54,11 @@ public interface IIndexState
         string contentHash,
         int chunkCount,
         int failureCount,
+        CancellationToken cancellationToken);
+
+    Task RecordSkippedAsync(
+        string documentId,
+        string machineId,
+        IngestionOutcome skipOutcome,
         CancellationToken cancellationToken);
 }
