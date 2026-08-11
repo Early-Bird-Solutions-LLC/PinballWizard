@@ -59,6 +59,15 @@ public sealed class OpdbSyncServiceTests : IDisposable
         });
 
         _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);
+
+        // Phase (g) of SyncAsync queries cross-partition for every newly inserted machine.
+        // Default to an empty stream so pre-existing tests (which don't set up stale copies)
+        // do not throw NullReferenceException when phase (g) runs.
+        _repository.StreamCrossPartitionAsync(
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyDictionary<string, object>?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyMachineStream());
     }
 
     public void Dispose()
@@ -1423,6 +1432,86 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, run!.DocumentsNew);
+    }
+
+    // ── Phase (g) stale old-partition cleanup (GitHub #814) ─────────────────
+
+    [Fact]
+    public async Task SyncAsync_ManufacturerReattribution_DeletesStaleOldPartitionCopy()
+    {
+        // Root-cause reproduction for GitHub #814.
+        // OPDB re-attributes "Sega Classics" from partition "sega" to "segaenterprises".
+        // The previous sync stored the machine under "sega". This sync:
+        //   - sees the machine arrive under manufacturer "Sega Enterprises" → partition "segaenterprises"
+        //   - GetByOpdbIdAsync("SEGA-001", "segaenterprises") returns null → INSERT path
+        //   - Phase (g) cross-partition query finds the stale "sega" copy
+        //   - DeleteAsync removes it so DocumentLinker never sees duplicate machine ids.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
+
+        // Machine arrives under the new partition; it looks like a new insert.
+        _repository.GetByOpdbIdAsync("SEGA-001", "segaenterprises", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        // The stale copy still lives under the old "sega" partition.
+        var staleCopy = new Machine
+        {
+            Id = "SEGA-001",
+            PartitionKey = "sega",
+            ManufacturerDisplayName = "Sega",
+            Title = "Sega Classics",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+
+        // Cross-partition query for this id returns the stale copy (override the default empty stub).
+        _repository.StreamCrossPartitionAsync(
+            Arg.Is<string>(q => q.Contains("@id")),
+            Arg.Is<IReadOnlyDictionary<string, object>?>(d =>
+                d != null && d.ContainsKey("id") && (string)d["id"] == "SEGA-001"),
+            Arg.Any<CancellationToken>())
+            .Returns(_ => SingleMachineStream(staleCopy));
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups,
+            NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Inserted);
+        Assert.Equal(0, result.Updated);
+
+        // Phase (g) cleaned up the stale old-partition copy.
+        Assert.Equal(1, result.StalePartitionsCleaned);
+        await _repository.Received(1).DeleteAsync("SEGA-001", "sega", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_DoesNotRunStalePartitionCleanup()
+    {
+        // Phase (g) is guarded by !isDryRun — a dry-run projection run must not
+        // delete any Cosmos documents.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
+
+        _repository.GetByOpdbIdAsync("SEGA-001", "segaenterprises", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups,
+            NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
+
+        Assert.Equal(0, result.StalePartitionsCleaned);
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _repository.DidNotReceive().StreamCrossPartitionAsync(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>?>(), Arg.Any<CancellationToken>());
+    }
+
+    private static async IAsyncEnumerable<Machine> EmptyMachineStream()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    private static async IAsyncEnumerable<Machine> SingleMachineStream(Machine machine)
+    {
+        await Task.CompletedTask;
+        yield return machine;
     }
 
     private static string GroupJson(string segment, string name) =>

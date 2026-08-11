@@ -117,6 +117,21 @@ public sealed class CrossPartitionQueryAllowListTests
             "StreamCrossPartitionAsync in StreamAllManufacturersAsync; admin-only /manufacturers " +
             "page; bounded ~30-50 docs (one per OPDB manufacturer); dynamic discovery needed " +
             "for defunct manufacturers (Williams, Bally, Gottlieb, etc.) that have no scraper.",
+
+        // StreamCrossPartitionAsync — PurgeStalePartitionCopiesAsync (phase g) queries
+        // by exact machine id equality (SELECT * WHERE c.id = @id) to find stale copies
+        // left behind when OPDB re-attributes a machine to a different manufacturer
+        // partition (e.g. "sega" → "segaenterprises"). Executes at most once per INSERTED
+        // machine per sync run — updated machines are in-partition so they never appear
+        // here. A given machine id resolves to at most one stale copy (ids are unique in
+        // OPDB); the cross-partition fan-out is the minimum required to locate it.
+        // OPDB sync-only path (apply mode); not user-facing. Bounded by insert count
+        // (~30 stale copies was the maximum observed in the incident that prompted #814).
+        ["OpdbSyncService.cs"] =
+            "StreamCrossPartitionAsync in PurgeStalePartitionCopiesAsync (phase g, apply mode only); " +
+            "SELECT * WHERE c.id = @id equality match; at most one stale copy per machine id; " +
+            "only inserted machines are checked (never updated); bounded by OPDB re-attribution " +
+            "count (observed max ~30 per sync); OPDB sync job path, not user-facing (#814).",
     };
 
     [Fact]

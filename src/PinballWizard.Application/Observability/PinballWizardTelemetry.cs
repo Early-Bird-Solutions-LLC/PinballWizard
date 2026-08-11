@@ -53,6 +53,16 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of an OPDB sync run in milliseconds.");
 
+    // Stale old-partition copies found and deleted by phase (g) of SyncAsync. A non-zero
+    // rate confirms the cleanup path is exercised after an OPDB manufacturer re-attribution
+    // (e.g. sega → segaenterprises). Tagged with mode (apply | dry_run) for dashboard
+    // filtering; in practice this counter only increments in apply mode since dry-run
+    // does not perform any writes. See GitHub issue #814.
+    public static readonly Counter<long> OpdbSyncStalePartitionsCleaned = Meter.CreateCounter<long>(
+        "pinwiz.opdb.sync.stale_partitions_cleaned",
+        unit: "{machine}",
+        description: "Old-partition copies of a machine deleted after OPDB re-attributed the machine to a different manufacturer. Non-zero rate after a sync run confirms stale Cosmos documents are being removed on the re-attribution path (#814). Tagged with mode.");
+
     // ── Pinball Map fetch instrumentation ────────────────────────────────
     // Pinball Map fetches are per-region (1 fetch = 1 region's locations),
     // not bulk-streamed like OPDB. Counters carry a `cache_outcome`
