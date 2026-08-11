@@ -56,6 +56,12 @@ public sealed class ApDocumentClassificationTests
         KnownGenericFilenames.Contains(Path.GetFileName(url));
 
     // ── Named examples from the captured list ─────────────────────────────
+    //
+    // These tests pass SourceType.GamePage (a mixed-content type with no
+    // blanket mapping) to exercise the URL/filename heuristics rather than
+    // the source-type shortcut. That exercises the heuristic path that
+    // serves the reclassifier (which has source_type from stored records
+    // and can use the shortcut) and validates the heuristics remain correct.
 
     [Theory]
     [InlineData("Houdini--Quick-Reference-Guide.pdf", DocumentType.Manual)]
@@ -70,7 +76,8 @@ public sealed class ApDocumentClassificationTests
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(
             Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
-            ApSupportContext);
+            ApSupportContext,
+            SourceType.GamePage);
 
         Assert.Equal(expected, actual);
     }
@@ -85,11 +92,31 @@ public sealed class ApDocumentClassificationTests
 
         foreach (var url in urls)
         {
-            var t = ScraperOrchestrator.ClassifyDocumentType(Link(url), ApSupportContext);
+            var t = ScraperOrchestrator.ClassifyDocumentType(Link(url), ApSupportContext, SourceType.GamePage);
             Assert.True(
                 t != DocumentType.Other || IsKnownGenericDoc(url),
                 $"{url} classified Other and is not a known generic/platform doc — RAG would skip it.");
         }
+    }
+
+    // Issue #815: the live AP scraper sets source_type=ServiceBulletinPage.
+    // Documents with bare titles that contain no keyword (e.g. "Bar Door Check",
+    // "Tank Treads Installation") must classify as ServiceBulletin via the
+    // source-type shortcut so they are admitted to RAG ingestion.
+    [Theory]
+    [InlineData("Bar-Door-Check.pdf", "Bar Door Check")]
+    [InlineData("Tank-Treads-Installation.pdf", "Tank Treads Installation")]
+    public void ClassifyDocumentType_ApWithServiceBulletinPageSourceType_ReturnsServiceBulletin(string filename, string linkText)
+    {
+        var link = new DiscoveredLink
+        {
+            FileUrl = $"http://s4.american-pinball.com/img/support/2022-04/{filename}",
+            LinkText = linkText,
+        };
+
+        var actual = ScraperOrchestrator.ClassifyDocumentType(link, ApSupportContext, SourceType.ServiceBulletinPage);
+
+        Assert.Equal(DocumentType.ServiceBulletin, actual);
     }
 
     // ── The AP heuristics must not leak to other manufacturers ─────────────
@@ -106,7 +133,7 @@ public sealed class ApDocumentClassificationTests
     [InlineData("https://pinballbrothers.com/docs/Alien-prefix-notes.pdf")]
     public void ClassifyDocumentType_NonApUrl_DoesNotInheritApBulletinHeuristics(string url)
     {
-        var actual = ScraperOrchestrator.ClassifyDocumentType(Link(url), "Support");
+        var actual = ScraperOrchestrator.ClassifyDocumentType(Link(url), "Support", SourceType.GamePage);
         Assert.NotEqual(DocumentType.ServiceBulletin, actual);
     }
 
@@ -120,7 +147,8 @@ public sealed class ApDocumentClassificationTests
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(
             Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
-            ApSupportContext);
+            ApSupportContext,
+            SourceType.GamePage);
 
         Assert.NotEqual(DocumentType.ServiceBulletin, actual);
     }
@@ -135,7 +163,8 @@ public sealed class ApDocumentClassificationTests
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(
             Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
-            ApSupportContext);
+            ApSupportContext,
+            SourceType.GamePage);
 
         Assert.Equal(DocumentType.ServiceBulletin, actual);
     }

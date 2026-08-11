@@ -320,9 +320,9 @@ public sealed class SpookySupportPageScraperTests
         // Verify classification via orchestrator helper (unit-tests the classification
         // logic without needing a full orchestrator).
         var rulesType = PinballWizard.Application.ScraperOrchestrator.ClassifyDocumentType(
-            rulesItem.Link!, rulesItem.DiscoveryContext);
+            rulesItem.Link!, rulesItem.DiscoveryContext, rulesItem.SourceType);
         var manualType = PinballWizard.Application.ScraperOrchestrator.ClassifyDocumentType(
-            manualItem.Link!, manualItem.DiscoveryContext);
+            manualItem.Link!, manualItem.DiscoveryContext, manualItem.SourceType);
 
         Assert.Equal(DocumentType.Rulesheet, rulesType);
         Assert.Equal(DocumentType.Manual, manualType);

@@ -115,4 +115,44 @@ public sealed class CosmosBackedIndexState : IIndexState
             "RAG index state: recorded document={DocumentId} machine={MachineId} hash={Hash} chunks={Chunks} failures={Failures}.",
             documentId, machineId, contentHash, chunkCount, failureCount);
     }
+
+    public async Task RecordSkippedAsync(
+        string documentId,
+        string machineId,
+        IngestionOutcome skipOutcome,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+
+        var record = new IndexStateDocument
+        {
+            Id = IndexStateDocument.ComposeRowId(documentId, machineId),
+            DocumentId = documentId,
+            MachineId = machineId,
+            LastIndexedHash = string.Empty,
+            ChunkCount = 0,
+            FailureCount = 0,
+            RecordedUtc = _clock.GetUtcNow(),
+            SkipReason = skipOutcome.ToString(),
+        };
+
+        await CosmosMetricsHelper.ExecuteWithMetricsAsync(
+            _container.Id,
+            "upsert",
+            _logger,
+            async ct =>
+            {
+                var response = await _container.UpsertItemAsync(
+                    record,
+                    new PartitionKey(documentId),
+                    cancellationToken: ct).ConfigureAwait(false);
+                return (true, response.RequestCharge);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        _logger.LogDebug(
+            "RAG index state: recorded skip document={DocumentId} machine={MachineId} reason={SkipReason}.",
+            documentId, machineId, skipOutcome);
+    }
 }

@@ -71,7 +71,8 @@ public sealed class DocumentReclassifier : IDocumentReclassifier
 
                 var newType = ScraperOrchestrator.ClassifyDocumentType(
                     link,
-                    raw.Source.DiscoveryContext);
+                    raw.Source.DiscoveryContext,
+                    raw.Source.SourceType);
 
                 if (newType == raw.DocumentType)
                 {
