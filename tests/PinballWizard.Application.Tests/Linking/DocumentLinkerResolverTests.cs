@@ -47,17 +47,6 @@ public sealed class DocumentLinkerResolverTests
             () => BuildLinkerAsync(machines, aliasLoader));
     }
 
-    [Fact]
-    public async Task InitializeAsync_WithoutAliasLoader_DoesNotBuildResolverIndex()
-    {
-        // The pre-migration construction path (no alias loader) must stay inert:
-        // no resolver index, so every tier keeps its legacy behaviour.
-        var machines = new[] { MakeMachine("AP-Hot-Wheels", "Hot Wheels", "americanpinball") };
-
-        var linker = await BuildLinkerAsync(machines, aliasLoader: null);
-
-        Assert.Equal(0, linker.ResolverVariantCountForTest);
-    }
 
     // ── Task 4: Tier 2 (filename) via the resolver ─────────────────────────────
 
@@ -303,13 +292,14 @@ public sealed class DocumentLinkerResolverTests
     }
 
     [Fact]
-    public async Task Tier1Ambiguity_DoesNotLeakInto_FilenameAmbiguityBail()
+    public async Task Tier1Ambiguity_SurfacesAsNeedsReview_WithTier1Candidates()
     {
-        // Cross-tier guard: a Tier-1 (ProvenanceSlug) ambiguity concerns machines X/Y;
-        // the legacy filename tier independently finds a DIFFERENT ambiguity (P/Q,
-        // whose single-token trailing-qualifier slug the resolver refuses to match).
-        // The filename bail must NOT defer to the needs_review conversion here —
-        // deferring would write X/Y as the candidate list for a P/Q decision.
+        // A Tier-1 (ProvenanceSlug) ambiguity concerns machines X/Y. The filename
+        // carries only a single-token trailing-qualifier slug ("pinball" — the
+        // 172-document guard), which the resolver refuses to match, so no filename
+        // decision exists (the legacy index that once tied P/Q on it was retired in
+        // Task 8). The genuine Tier-1 ambiguity must surface as needs_review with
+        // TIER 1's candidates — and only those; P/Q must not appear.
         var machines = new[]
         {
             MakeMachine("Stern-X", "Mystery Alpha", "stern", groupId: "GrpX",
@@ -321,17 +311,26 @@ public sealed class DocumentLinkerResolverTests
             MakeMachine("Stern-Q", "Pinball Ultra", "stern", groupId: "GrpQ",
                 slugs: new Dictionary<string, string> { ["stern"] = "pinball" }),
         };
-        var linker = await BuildLinkerWithResolverAsync(machines);
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var linker = await BuildLinkerWithResolverAsync(machines, rawRepo: rawRepo);
 
         var raw = MakeRaw("doc-cross", "https://sternpinball.com/service-pinball.pdf",
             gameSlug: "mystery", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
 
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-        // Pre-migration behaviour preserved: the filename tier's own explicit
-        // ambiguity bail wins, not a needs_review record carrying Tier 1's candidates.
-        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
-        Assert.Contains("Ambiguous filename match", result.FailureReason);
+        Assert.Equal(LinkStatus.NeedsReview, result.FinalStatus);
+        await rawRepo.Received(1).UpdateLinkStatusAsync(
+            Arg.Is("doc-cross"), Arg.Is(LinkStatus.NeedsReview),
+            Arg.Is<string?>(s => s == null),
+            Arg.Any<string?>(),
+            Arg.Is<string?>(s => s == null),
+            Arg.Any<CancellationToken>(),
+            Arg.Is<LinkReviewInfo?>(r =>
+                r != null
+                && r.Candidates.Count == 2
+                && r.Candidates.Any(c => c.MachineId == "Stern-X")
+                && r.Candidates.Any(c => c.MachineId == "Stern-Y")));
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -413,7 +412,7 @@ public sealed class DocumentLinkerResolverTests
 
     private static async Task<DocumentLinker> BuildLinkerAsync(
         IEnumerable<Machine> machines,
-        IMachineAliasLoader? aliasLoader,
+        IMachineAliasLoader aliasLoader,
         string? pageText = null,
         IRawDocumentRepository? rawRepo = null,
         CancellationToken ct = default)

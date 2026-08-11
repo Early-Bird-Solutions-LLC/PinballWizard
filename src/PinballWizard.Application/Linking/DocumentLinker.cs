@@ -17,7 +17,7 @@ namespace PinballWizard.Application.Linking;
 // Tier 1 — Provenance slug: raw.Game.Slug (the scraper's own game-page
 //          classification, tried first) or a cross-reference /game/{slug}/ URL.
 // Tier 2 — Filename word-boundary: normalized filename ⊃ normalized machine slug.
-// Tier 3 — Page-1 text: extract first page text, word-boundary match against slug index.
+// Tier 3 — Page-1 text: extract first page text, resolve via the ADR-0054 resolver index.
 // Tier 4 — Page-2 fallback: same as Tier 3 but on page index 1 (covers letterhead-only p.1).
 // Tier 5 — ADI OCR stub: deferred until IDocumentTextExtractor exposes an OCR mode.
 //
@@ -34,7 +34,7 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly ILogger<DocumentLinker> _logger;
     private readonly IDocumentBlobStore? _blobStore;
     private readonly int _cosmosWriteConcurrency;
-    private readonly IMachineAliasLoader? _aliasLoader;
+    private readonly IMachineAliasLoader _aliasLoader;
 
     private static readonly Meter LinkerMeter =
         new("PinballWizard.Linking", "1.0");
@@ -54,23 +54,14 @@ public sealed class DocumentLinker : IDocumentLinker
     private IReadOnlyDictionary<string, LinkOverrideRecord> _overrides
         = new Dictionary<string, LinkOverrideRecord>(StringComparer.Ordinal);
 
-    // Slug → ALL machines sharing that normalized slug. Title slugs collide
-    // across manufacturers (e.g. "godzilla" = Sega 1998 + Stern 2021 remake),
-    // so this MUST keep every colliding machine; the linker disambiguates by
-    // manufacturer provenance (see PreferByManufacturer). A prior single-valued
-    // "last writer wins" dict silently dropped all-but-one and mis-resolved
-    // every Stern remake to the original manufacturer.
-    private Dictionary<string, List<Machine>> _machinesBySlug
-        = new Dictionary<string, List<Machine>>(StringComparer.OrdinalIgnoreCase);
-
-    private IReadOnlyList<(Machine Machine, string NormalizedSlug)> _machineSlugIndex = [];
-
-    // ADR-0054: identity-derived resolver index, built by InitializeAsync alongside the
-    // legacy slug index. Null until InitializeAsync runs, and stays null when no alias
-    // loader was supplied (pre-migration construction path, used by existing tests).
-    // Every tier checks for null and falls back to its legacy path, so a
-    // partially-migrated linker is never in an undefined state.
+    // ADR-0054: the identity-derived resolver index is the ONLY matching index — the
+    // legacy ManufacturerSlugs/title index was retired in Wave 2 Task 8. Null until
+    // InitializeAsync runs; the Resolver property makes premature use an honest error.
     private MachineResolver? _resolver;
+
+    private MachineResolver Resolver => _resolver
+        ?? throw new InvalidOperationException(
+            "DocumentLinker.InitializeAsync must complete before linking (resolver index not built).");
     private Dictionary<string, Machine> _machinesById =
         new(StringComparer.Ordinal);
 
@@ -95,15 +86,16 @@ public sealed class DocumentLinker : IDocumentLinker
         IScrapedDocumentRepository docWriter,
         IDocumentTextExtractor? textExtractor,
         ILogger<DocumentLinker> logger,
+        IMachineAliasLoader aliasLoader,
         int cosmosWriteConcurrency = 20,
-        IDocumentBlobStore? blobStore = null,
-        IMachineAliasLoader? aliasLoader = null)
+        IDocumentBlobStore? blobStore = null)
     {
         ArgumentNullException.ThrowIfNull(rawRepo);
         ArgumentNullException.ThrowIfNull(overrideRepo);
         ArgumentNullException.ThrowIfNull(machineRepo);
         ArgumentNullException.ThrowIfNull(docWriter);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(aliasLoader);
         _rawRepo = rawRepo;
         _overrideRepo = overrideRepo;
         _machineRepo = machineRepo;
@@ -120,127 +112,60 @@ public sealed class DocumentLinker : IDocumentLinker
         _overrides = await _overrideRepo.LoadAllAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("DocumentLinker: loaded {Count} overrides.", _overrides.Count);
 
-        // Load all machines and build a slug index.
-        // ManufacturerSlugs is a dictionary keyed by manufacturer name (e.g., "stern")
-        // mapping to the manufacturer's canonical slug for the machine.
-        var slugIndex = new List<(Machine Machine, string NormalizedSlug)>();
-        var bySlug = new Dictionary<string, List<Machine>>(StringComparer.OrdinalIgnoreCase);
-        var totalMachines = 0;
-        var allMachines = new List<Machine>();
-
         // StreamAllAsync issues a single cross-partition query — no need to
         // enumerate a hard-coded manufacturer list in the Application layer.
+        var allMachines = new List<Machine>();
         await foreach (var machine in _machineRepo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
         {
-            totalMachines++;
             allMachines.Add(machine);
+        }
+
+        // Operability: surface cross-manufacturer slug collisions (every future Stern
+        // remake of a classic title) so they are visible in logs. The resolver
+        // disambiguates them by source provenance at resolve time; this transient
+        // scan is observability only, not a matching index.
+        var mfrsBySlug = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var machine in allMachines)
+        {
             foreach (var (_, slug) in machine.ManufacturerSlugs)
             {
                 if (string.IsNullOrWhiteSpace(slug)) continue;
-                var normSlug = LinkingUtilities.NormalizeForMatch(slug);
-                if (string.IsNullOrEmpty(normSlug)) continue;
-
-                // Keep EVERY machine for a slug — title collisions across
-                // manufacturers are expected (Stern remakes of classic titles).
-                // Disambiguation happens at resolve time via manufacturer
-                // provenance, not by dropping colliding entries here.
-                if (!bySlug.TryGetValue(slug, out var list))
+                if (!mfrsBySlug.TryGetValue(slug, out var set))
                 {
-                    list = [];
-                    bySlug[slug] = list;
+                    set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    mfrsBySlug[slug] = set;
                 }
-                if (!list.Any(m => m.Id == machine.Id))
-                {
-                    list.Add(machine);
-                }
-                slugIndex.Add((machine, normSlug));
-            }
-
-            // Title-match fallback (corpus-mislink bug 1b): index the normalized
-            // machine TITLE so machines that were never game-page-scraped (empty
-            // ManufacturerSlugs — metadata/rulesheet-only OPDB entries, e.g.
-            // slug-less Stern Jurassic Park GK17D / Star Wars G5vLR) are still
-            // linkable by a document's filename/page title. The FULL normalized
-            // title must word-boundary-match (TryTier2FilenameSlug / TryMatchPage),
-            // and PreferByManufacturer still disambiguates collisions, so this
-            // widens reach without weakening the manufacturer-provenance guard.
-            //
-            // GUARD: only index MULTI-TOKEN titles. A single generic word is not a
-            // reliable identifier — the Stern Electronics 1977 game titled
-            // literally "Pinball" (slug-less) otherwise matched the word "pinball"
-            // that appears in nearly every document in this corpus, capturing 172
-            // unrelated docs. Multi-word franchise titles ("Jurassic Park",
-            // "Star Wars") are distinctive; single words are dropped (a benign
-            // missing-link — a wrong link is worse than an honest gap). Slug-having
-            // machines are unaffected (they still match by slug above).
-            var normTitle = LinkingUtilities.NormalizeForMatch(machine.Title);
-            if (!string.IsNullOrEmpty(normTitle) && normTitle.Contains(' ', StringComparison.Ordinal))
-            {
-                slugIndex.Add((machine, normTitle));
+                set.Add(machine.PartitionKey);
             }
         }
-
-        // Operability: surface cross-manufacturer slug collisions so new ones
-        // (every future Stern remake) are visible in logs rather than silently
-        // mis-resolved.
-        foreach (var (slug, machines) in bySlug)
+        foreach (var (slug, mfrs) in mfrsBySlug)
         {
-            var distinctMfrs = machines.Select(m => m.PartitionKey).Distinct().ToList();
-            if (distinctMfrs.Count > 1)
+            if (mfrs.Count > 1)
             {
                 _logger.LogWarning(
                     "DocumentLinker: slug '{Slug}' collides across {Count} manufacturers ({Mfrs}); " +
                     "documents will be disambiguated by source provenance.",
-                    slug, distinctMfrs.Count, string.Join(",", distinctMfrs));
+                    slug, mfrs.Count, string.Join(",", mfrs));
             }
         }
 
-        _machinesBySlug = bySlug;
-        _machineSlugIndex = slugIndex;
+        // ADR-0054: the identity-derived resolver index is the ONLY matching index
+        // (the legacy ManufacturerSlugs index was retired in Wave 2 Task 8).
+        var aliases = await _aliasLoader.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var index = InMemoryMachineIndex.Build(allMachines, aliases);
+        _machinesById = allMachines.ToDictionary(m => m.Id, StringComparer.Ordinal);
+        _resolver = new MachineResolver(index, _machinesById);
+        ResolverVariantCountForTest = index.VariantCount;
 
-        if (bySlug.Count == 0)
+        if (allMachines.Count == 0)
         {
             _logger.LogWarning(
-                "DocumentLinker: indexed 0 slugs across {Total} machines — ManufacturerSlugs are empty. Run scrapers before --link-documents to populate them.",
-                totalMachines);
-        }
-        else
-        {
-            // MachinesWithSlugs counts machines reachable via ManufacturerSlugs ONLY.
-            // TitleIndexed counts the multi-token-title fallback added for slug-less
-            // machines. Reporting only the former understated real coverage and is the
-            // source of the long-quoted "87 of 2213" figure. Both counts are DISTINCT
-            // MACHINES, not index entries — bySlug.Count would count distinct slug
-            // strings, which over/undercounts whenever a machine has several slugs or
-            // a slug collides across manufacturers (Sega + Stern "godzilla").
-            var machinesWithSlugs = bySlug.Values
-                .SelectMany(machines => machines)
-                .Select(m => m.Id)
-                .Distinct(StringComparer.Ordinal)
-                .Count();
-            _logger.LogInformation(
-                "DocumentLinker: indexed {Count} index entries — {MachinesWithSlugs} machines via slugs, "
-                + "{TitleIndexed} additional via title fallback (of {Total} total).",
-                slugIndex.Count,
-                machinesWithSlugs,
-                slugIndex.Select(e => e.Machine.Id).Distinct(StringComparer.Ordinal).Count() - machinesWithSlugs,
-                totalMachines);
+                "DocumentLinker: machine catalog is EMPTY — nothing is linkable. Run --sync-opdb before --link-documents.");
         }
 
-        // ADR-0054: build the identity-derived index alongside the legacy slug index.
-        // Behaviour is unchanged until a tier consults _resolver (Tasks 4-7).
-        if (_aliasLoader is not null)
-        {
-            var aliases = await _aliasLoader.LoadAsync(cancellationToken).ConfigureAwait(false);
-            var index = InMemoryMachineIndex.Build(allMachines, aliases);
-            _machinesById = allMachines.ToDictionary(m => m.Id, StringComparer.Ordinal);
-            _resolver = new MachineResolver(index, _machinesById);
-            ResolverVariantCountForTest = index.VariantCount;
-
-            _logger.LogInformation(
-                "DocumentLinker: resolver index built — {Variants} variants across {Machines} machines (ADR-0054).",
-                index.VariantCount, allMachines.Count);
-        }
+        _logger.LogInformation(
+            "DocumentLinker: resolver index built — {Variants} variants across {Machines} machines (ADR-0054).",
+            index.VariantCount, allMachines.Count);
     }
 
     public async Task<LinkingResult> LinkAsync(RawDocumentRecord raw, CancellationToken cancellationToken)
@@ -590,52 +515,6 @@ public sealed class DocumentLinker : IDocumentLinker
             FailureReason: null);
     }
 
-    // Disambiguates a set of slug-colliding machine candidates using the
-    // document's manufacturer provenance (InferManufacturerKey from SourceType).
-    // Preference-with-fallback, never a hard filter:
-    //   - exactly one candidate → return it (no collision);
-    //   - hint resolves to exactly one candidate of that manufacturer → return it;
-    //   - otherwise → null (caller keeps its existing ambiguous/fall-through path),
-    //     so a document that legitimately matches only a different manufacturer
-    //     still links and we never regress a previously-working resolution.
-    private static Machine? PreferByManufacturer(List<Machine> candidates, string? mfrKey)
-    {
-        if (candidates.Count == 1) return candidates[0];
-        if (candidates.Count == 0 || mfrKey is null) return null;
-
-        var preferred = candidates
-            .Where(m => string.Equals(m.PartitionKey, mfrKey, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        return preferred.Count == 1 ? preferred[0] : null;
-    }
-
-    // Narrows title/slug-colliding candidates from the FUZZY tiers (filename
-    // Tier 2, page Tiers 3–4) to those matching the document's source
-    // manufacturer. This is a HARD filter when the source manufacturer is known:
-    // a manufacturer-specific scraper only ever discovers that manufacturer's own
-    // documents (see LinkingUtilities.InferManufacturerKey), so a fuzzy match onto
-    // a DIFFERENT manufacturer's machine is always wrong — a sternpinball.com PDF
-    // on a Williams machine is a provenance violation, worse than an honest
-    // NotInCatalog. When no same-manufacturer candidate matches, the result is
-    // EMPTY and the caller treats the document as unmatched (→ NotInCatalog).
-    //
-    // Applies ONLY to the fuzzy tiers. Tier 1 (xref slug) uses PreferByManufacturer
-    // and keeps preference-with-fallback: an explicit, document-authored
-    // cross-reference URL is a stronger signal than a filename / page-text title
-    // collision, so it is trusted even to a lone other-manufacturer machine (see
-    // LinkAsync_Tier1Xref_NoSternCandidate_DoesNotRegress).
-    //
-    // When the source manufacturer is unknown (SourceType not mapped → null key),
-    // no constraint is applied and the original set is returned.
-    private static List<Machine> NarrowToSourceManufacturer(List<Machine> candidates, string? mfrKey)
-    {
-        if (mfrKey is null) return candidates;
-
-        return candidates
-            .Where(m => string.Equals(m.PartitionKey, mfrKey, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-    }
-
     // An edition family: multiple base machines sharing one non-null OPDB group
     // segment (e.g. Godzilla Pro + Premium/LE, both "GweeP"; AC/DC's 2012 bases
     // and its 2017 Vault Edition reissues, all "G43W4"). GroupId-only, no year
@@ -666,74 +545,19 @@ public sealed class DocumentLinker : IDocumentLinker
         // classification of which game's page produced this document.
         if (raw.Game?.Slug is { Length: > 0 } gameSlug && seenSlugs.Add(gameSlug))
         {
-            // ADR-0054 Tier 1 migration: ProvenanceSlug evidence makes manufacturer
-            // scoping a SOFT preference inside the resolver — preserving the deliberate
-            // PreferByManufacturer-vs-NarrowToSourceManufacturer split (a scraper's own
-            // game-page classification is trusted even to a lone other-manufacturer
-            // machine). The legacy lookup below stays as fallback until Task 8.
-            if (_resolver is not null)
-            {
-                var outcome = _resolver.Resolve(
-                    new ResolutionQuery(gameSlug, EvidenceKind.ProvenanceSlug, mfrHint));
-
-                switch (outcome)
-                {
-                    case ResolutionResult.Resolved r:
-                        resolved = new LinkingResult(
-                            raw.DocumentId, LinkStatus.Linked, "game_slug_resolver",
-                            [r.MachineId], FailureReason: null);
-                        break;
-
-                    case ResolutionResult.ResolvedFamily f:
-                        var family = f.MachineIds.Where(_machinesById.ContainsKey)
-                            .Select(id => _machinesById[id]).ToList();
-                        if (family.Count == 0)
-                        {
-                            // Index/machine-map drift must be visible, not a silent
-                            // fall-through to the legacy tier (invariant #17). Same
-                            // guard as Tiers 2-4.
-                            _logger.LogWarning(
-                                "Tier1 resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
-                                f.GroupId, f.MachineIds.Count, raw.DocumentId);
-                            break;
-                        }
-                        // ResolveEditionFamily may return null (unresolved edition) —
-                        // the legacy fallback below still runs in that case.
-                        resolved = ResolveEditionFamily(raw, family, filename, page1Text: null,
-                            "game_slug_resolver_edition", "game_slug_resolver_edition_group");
-                        break;
-
-                    case ResolutionResult.Ambiguous a:
-                        ambiguity.Last = a;
-                        break;   // fall through to the legacy lookup below
-
-                    case ResolutionResult.NoMatch:
-                        break;   // fall through to the legacy lookup below
-
-                    // Invariant #17 — never silently degrade an unknown outcome.
-                    default:
-                        throw new InvalidOperationException(
-                            $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in Tier 1.");
-                }
-            }
-
-            if (resolved is null && _machinesBySlug.TryGetValue(gameSlug, out var gameCandidates))
-            {
-                resolved = ResolveSlugToResult(
-                    raw, gameCandidates, filename, mfrHint,
-                    "game_slug", "game_slug_edition", "game_slug_edition_group");
-            }
+            resolved = ResolveSlugViaResolver(
+                raw, gameSlug, mfrHint, filename, ambiguity,
+                "game_slug_resolver", "game_slug_resolver_edition", "game_slug_resolver_edition_group");
         }
 
         foreach (var xref in raw.CrossReferences)
         {
             var slug = LinkingUtilities.ExtractGameSlugFromUrl(xref.AlsoFoundAt);
             if (slug is null || !seenSlugs.Add(slug)) continue;
-            if (!_machinesBySlug.TryGetValue(slug, out var candidates)) continue;
 
-            var result = ResolveSlugToResult(
-                raw, candidates, filename, mfrHint,
-                "xref_slug", "xref_slug_edition", "xref_slug_edition_group");
+            var result = ResolveSlugViaResolver(
+                raw, slug, mfrHint, filename, ambiguity,
+                "xref_slug_resolver", "xref_slug_resolver_edition", "xref_slug_resolver_edition_group");
             if (result is null) continue;
 
             if (resolved is not null)
@@ -750,39 +574,49 @@ public sealed class DocumentLinker : IDocumentLinker
         return resolved;
     }
 
-    // Resolves one slug's candidate set to a link result: narrow to the source
-    // manufacturer, then resolve within a same-franchise edition family by the doc's
-    // edition signal (filename / link text) or pick the single / manufacturer-preferred
-    // machine. Returns null when nothing resolves (caller tries the next slug / tier).
-    // strategy/editionStrategy/groupStrategy let callers tag the result by which slug
-    // source resolved it (raw.Game vs. a cross-reference URL) for observability.
-    private LinkingResult? ResolveSlugToResult(
-        RawDocumentRecord raw, List<Machine> candidates, string filename, string? mfrHint,
-        string strategy, string editionStrategy, string groupStrategy)
+    // ADR-0054 Tier 1: one slug (game-page provenance or cross-reference URL) through
+    // the resolver. ProvenanceSlug evidence makes manufacturer scoping a SOFT
+    // preference — a scraper's own classification is trusted even to a lone
+    // other-manufacturer machine. Strategy names tag which slug source resolved it.
+    private LinkingResult? ResolveSlugViaResolver(
+        RawDocumentRecord raw, string slug, string? mfrHint, string filename,
+        AmbiguityCapture ambiguity, string strategy, string editionStrategy, string groupStrategy)
     {
-        // Narrow to the source manufacturer as a PREFERENCE, not a hard filter: if no
-        // candidate matches (e.g. a Stern-sourced doc whose slug resolves only to a
-        // non-Stern machine), keep the original set so the legitimate single link still
-        // resolves — matching the pre-edition Tier 1 (PreferByManufacturer short-circuit).
-        var narrowed = NarrowToSourceManufacturer(candidates, mfrHint);
-        if (narrowed.Count == 0) narrowed = candidates;
+        var outcome = Resolver.Resolve(new ResolutionQuery(slug, EvidenceKind.ProvenanceSlug, mfrHint));
 
-        // Same-franchise edition family (multiple bases sharing one group segment,
-        // e.g. Batman '66 Premium GRoz4-MjBV6 + LE GRoz4-MrRPw) — resolve by the
-        // doc's edition signal instead of bailing on multiplicity, which is what left
-        // every Batman '66 / Guardians of the Galaxy edition-specific doc NotInCatalog.
-        if (narrowed.Count > 1 && IsEditionFamily(narrowed))
+        switch (outcome)
         {
-            return ResolveEditionFamily(
-                raw, narrowed, filename, page1Text: null, editionStrategy, groupStrategy);
+            case ResolutionResult.Resolved r:
+                return new LinkingResult(
+                    raw.DocumentId, LinkStatus.Linked, strategy, [r.MachineId], FailureReason: null);
+
+            case ResolutionResult.ResolvedFamily f:
+                var family = f.MachineIds.Where(_machinesById.ContainsKey)
+                    .Select(id => _machinesById[id]).ToList();
+                if (family.Count == 0)
+                {
+                    // Index/machine-map drift must be visible, not a silent miss
+                    // (invariant #17). Same guard as the filename/page tiers.
+                    _logger.LogWarning(
+                        "Tier1 resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
+                        f.GroupId, f.MachineIds.Count, raw.DocumentId);
+                    return null;
+                }
+                return ResolveEditionFamily(raw, family, filename, page1Text: null,
+                    editionStrategy, groupStrategy);
+
+            case ResolutionResult.Ambiguous a:
+                ambiguity.Last = a;   // converted to needs_review by the no-tier-matched path
+                return null;
+
+            case ResolutionResult.NoMatch:
+                return null;
+
+            // Invariant #17 — never silently degrade an unknown outcome.
+            default:
+                throw new InvalidOperationException(
+                    $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in Tier 1.");
         }
-
-        var machine = narrowed.Count == 1 ? narrowed[0] : PreferByManufacturer(narrowed, mfrHint);
-        if (machine is null) return null;
-
-        _logger.LogDebug("Tier1 {Strategy}: {DocumentId} → {MachineId}.", strategy, raw.DocumentId, machine.Id);
-        return new LinkingResult(
-            raw.DocumentId, LinkStatus.Linked, strategy, [machine.Id], FailureReason: null);
     }
 
     // Shared edition-family dispatch used by Tier 1 (xref_slug) and Tier 2 (filename):
@@ -826,118 +660,17 @@ public sealed class DocumentLinker : IDocumentLinker
         var normFilename = LinkingUtilities.NormalizeForMatch(filename);
         if (string.IsNullOrEmpty(normFilename)) return null;
 
-        // ADR-0054 Tier 2 migration: consult the resolver first; the legacy index
-        // below remains the fallback until Task 8 retires it.
-        if (_resolver is not null)
-        {
-            var viaResolver = TryTier2ViaResolver(raw, filename, ambiguity);
-            if (viaResolver is not null) return viaResolver;
-        }
-
-        // Collect the longest-slug match set, keeping ALL machines tied at the
-        // winning length so a manufacturer hint can break the tie.
-        int bestSlugLength = 0;
-        var bestMatches = new List<Machine>();
-
-        foreach (var (machine, normSlug) in _machineSlugIndex)
-        {
-            if (!LinkingUtilities.IsWordBoundaryMatch(normFilename, normSlug)) continue;
-
-            var len = normSlug.Length;
-            if (len > bestSlugLength)
-            {
-                bestSlugLength = len;
-                bestMatches.Clear();
-                bestMatches.Add(machine);
-            }
-            else if (len == bestSlugLength && !bestMatches.Any(m => m.Id == machine.Id))
-            {
-                bestMatches.Add(machine);
-            }
-        }
-
-        // Collapse cross-manufacturer title collisions to the document's source
-        // manufacturer BEFORE edition resolution. A Stern manual whose filename
-        // matches both the Stern remake's edition family AND a slug-less classic
-        // same-title machine (indexed by title since Phase 2) would otherwise
-        // span two groups → not an edition family → PreferByManufacturer sees
-        // multiple Stern editions → null → wrongly NotInCatalog. Narrowing to the
-        // source manufacturer first lets the edition family resolve within it.
-        // Preference, not a hard filter (keeps the original set when no candidate
-        // matches, so a doc matching only another manufacturer still links).
-        var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
-        var candidates = NarrowToSourceManufacturer(bestMatches, mfrKey);
-
-        // Same-franchise edition family (multiple bases sharing one group
-        // segment, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
-        // GweeP-Ml9pZ) → resolve by the filename token via the shared dispatch.
-        // Page text isn't available at Tier 2; the page tiers add page-1 authority
-        // later. Unresolved → null (falls through to the page tiers, which can
-        // read page-1 text).
-        //
-        // If we only have one candidate but it belongs to a group (segment),
-        // we still run it through ResolveEditionFamily to ensure the correct
-        // EditionScope is set (SingleEdition vs FranchiseWide).
-        if (candidates.Count > 0 && IsEditionFamily(candidates))
-        {
-            return ResolveEditionFamily(
-                raw, candidates, filename, page1Text: null, "filename_edition", "filename_edition_group");
-        }
-
-        // Single longest match → use it. Multiple distinct machines tied at the
-        // longest length → disambiguate by source manufacturer (e.g. a Stern
-        // Godzilla_Pro_web.pdf resolves to Stern, not Sega) before falling back
-        // to NotInCatalog ambiguity.
-        Machine? best = candidates.Count == 1
-            ? candidates[0]
-            : PreferByManufacturer(candidates, mfrKey);
-        bool ambiguous = best is null && candidates.Count > 1;
-
-        if (ambiguous)
-        {
-            _logger.LogDebug(
-                "Tier2 filename_slug: {DocumentId} → ambiguous (multiple equal-length slug matches for '{Filename}').",
-                raw.DocumentId, normFilename);
-
-            // When the resolver ALSO saw this FILENAME ambiguity, defer to the
-            // no-tier-matched path, which converts it to needs_review with the
-            // candidate list (ADR-0054 §5). The evidence-kind check is load-bearing:
-            // a Tier-1 (ProvenanceSlug) ambiguity captured earlier concerns DIFFERENT
-            // machines, and deferring on it would write Tier 1's candidates into a
-            // review record for a filename decision — a false candidate list. The
-            // legacy NotInCatalog bail below is kept verbatim both for that cross-tier
-            // case and for the resolver-less construction path.
-            if (ambiguity.Last?.Evidence.EvidenceKind == EvidenceKind.Filename) return null;
-
-            return new LinkingResult(
-                raw.DocumentId,
-                LinkStatus.NotInCatalog,
-                ResolutionStrategy: null,
-                LinkedMachineIds: [],
-                FailureReason: $"Ambiguous filename match: multiple machines share the longest slug in '{normFilename}'");
-        }
-
-        if (best is null) return null;
-
-        _logger.LogDebug("Tier2 filename_slug: {DocumentId} → {MachineId} via filename '{Filename}' matching slug '{Slug}'.",
-            raw.DocumentId, best.Id, normFilename, bestSlugLength);
-
-        return new LinkingResult(
-            raw.DocumentId,
-            LinkStatus.Linked,
-            "filename_slug",
-            [best.Id],
-            FailureReason: null);
+        return TryTier2ViaResolver(raw, filename, ambiguity);
     }
 
     // ADR-0054 Tier 2. Filename is FUZZY evidence, so MachineResolver applies a HARD
-    // manufacturer filter — matching the pre-migration NarrowToSourceManufacturer contract.
-    // Ambiguity returns null here and is converted to needs_review by the caller in Task 7;
-    // never guessed.
+    // manufacturer filter (the retired legacy index's NarrowToSourceManufacturer
+    // contract). Ambiguity returns null here and is converted to needs_review by the
+    // no-tier-matched path; never guessed.
     private LinkingResult? TryTier2ViaResolver(RawDocumentRecord raw, string filename, AmbiguityCapture ambiguity)
     {
         var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
-        var outcome = _resolver!.Resolve(new ResolutionQuery(filename, EvidenceKind.Filename, mfrKey));
+        var outcome = Resolver.Resolve(new ResolutionQuery(filename, EvidenceKind.Filename, mfrKey));
 
         switch (outcome)
         {
@@ -1036,146 +769,69 @@ public sealed class DocumentLinker : IDocumentLinker
         var pageText = LinkingUtilities.NormalizeForMatch(extracted.Pages[pageIndex].Text);
         if (string.IsNullOrEmpty(pageText)) return null;
 
-        // ADR-0054 page-tier migration: consult the resolver first; the legacy index
-        // below remains the fallback until Task 8 retires it. PageText is FUZZY
-        // evidence, so the resolver applies the HARD manufacturer filter — the same
-        // contract as the legacy NarrowToSourceManufacturer drop below.
-        if (_resolver is not null)
+        // ADR-0054 page tiers. PageText is FUZZY evidence, so the resolver applies the
+        // HARD manufacturer filter (a Stern Batman manual page saying "8 ball" must NOT
+        // link to Williams "8 Ball" — page prose incidentally mentions many titles).
+        var mfrKeyForQuery = LinkingUtilities.InferManufacturerKey(raw.Source);
+        var outcome = Resolver.Resolve(
+            new ResolutionQuery(extracted.Pages[pageIndex].Text, EvidenceKind.PageText, mfrKeyForQuery));
+
+        switch (outcome)
         {
-            var mfrKeyForQuery = LinkingUtilities.InferManufacturerKey(raw.Source);
-            var outcome = _resolver.Resolve(
-                new ResolutionQuery(extracted.Pages[pageIndex].Text, EvidenceKind.PageText, mfrKeyForQuery));
+            case ResolutionResult.Resolved r:
+                _logger.LogDebug("{Tier} resolver: {DocumentId} → {MachineId} via {Variant}.",
+                    strategyName, raw.DocumentId, r.MachineId, r.Evidence.MatchedVariant);
+                // FranchiseWide mirrors the pre-migration page tier: single matches are
+                // never edition-resolved at the page tiers (only families are), so the
+                // scope default is preserved.
+                return new LinkingResult(raw.DocumentId, LinkStatus.Linked,
+                    $"{strategyName}_resolver", [r.MachineId], FailureReason: null)
+                    { EditionScope = EditionScope.FranchiseWide };
 
-            switch (outcome)
-            {
-                case ResolutionResult.Resolved r:
-                    _logger.LogDebug("{Tier} resolver: {DocumentId} → {MachineId} via {Variant}.",
-                        strategyName, raw.DocumentId, r.MachineId, r.Evidence.MatchedVariant);
-                    // FranchiseWide mirrors the legacy page tier: single matches are
-                    // never edition-resolved here (only the >1 family branch below is),
-                    // so the scope default is preserved for behavioural equivalence.
-                    return new LinkingResult(raw.DocumentId, LinkStatus.Linked,
-                        $"{strategyName}_resolver", [r.MachineId], FailureReason: null)
-                        { EditionScope = EditionScope.FranchiseWide };
-
-                case ResolutionResult.ResolvedFamily f:
-                    var family = f.MachineIds.Where(_machinesById.ContainsKey)
-                        .Select(id => _machinesById[id]).ToList();
-                    if (family.Count == 0)
-                    {
-                        // A resolver hit whose machines are all absent from _machinesById
-                        // means the index and machine map have drifted — surface it, or a
-                        // stale index degrades into silent NotInCatalog (invariant #17).
-                        _logger.LogWarning(
-                            "{Tier} resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
-                            strategyName, f.GroupId, f.MachineIds.Count, raw.DocumentId);
-                        break;
-                    }
-                    var viaEdition = ResolveEditionFamily(
-                        raw, family, ExtractFilename(raw.Source.FileUrl ?? string.Empty),
-                        extracted.Pages[pageIndex].Text,
-                        $"{strategyName}_resolver_edition", $"{strategyName}_resolver_edition_group");
-                    if (viaEdition is not null) return viaEdition;
-                    break;
-
-                case ResolutionResult.Ambiguous a:
-                    ambiguity.Last = a;
-                    break;   // fall through to the legacy index below
-
-                case ResolutionResult.NoMatch:
-                    break;   // fall through to the legacy index below
-
-                // Invariant #17 — never silently degrade an unknown outcome.
-                default:
-                    throw new InvalidOperationException(
-                        $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in {strategyName}.");
-            }
-        }
-
-        var matchedMachines = _machineSlugIndex
-            .Where(t => LinkingUtilities.IsWordBoundaryMatch(pageText, t.NormalizedSlug))
-            .Select(t => t.Machine)
-            .DistinctBy(m => m.Id)
-            .ToList();
-
-        if (matchedMachines.Count == 0)
-        {
-            _logger.LogDebug("DocumentLinker: {Tier} — no slug match in page text for {DocId}.", strategyName, raw.DocumentId);
-            return null;
-        }
-
-        // Default scope for non-edition page matches: a doc linked to a single
-        // (or non-family multi-) machine applies to that whole machine.
-        var editionScope = EditionScope.FranchiseWide;
-
-        // HARD manufacturer filter (fuzzy page tier): a page-text title match onto
-        // a machine of a DIFFERENT manufacturer than the document's source is
-        // always wrong (page prose incidentally mentions many titles — e.g. a
-        // Stern Batman manual page saying "8 ball" must NOT link to Williams
-        // "8 Ball"). Drop non-source-manufacturer matches for ANY match count; an
-        // empty result means no valid same-manufacturer machine → no page match.
-        var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
-        matchedMachines = NarrowToSourceManufacturer(matchedMachines, mfrKey);
-        if (matchedMachines.Count == 0)
-        {
-            _logger.LogDebug(
-                "DocumentLinker: {Tier} — page matches dropped: none match source manufacturer for {DocId}.",
-                strategyName, raw.DocumentId);
-            return null;
-        }
-
-        if (matchedMachines.Count > 1)
-        {
-            // Same-franchise edition family → resolve by edition, with the page-1
-            // text as the authoritative signal (overrides a misleading filename).
-            // Group-level docs (rulesheet, feature matrix) fan out to all bases.
-            if (IsEditionFamily(matchedMachines))
-            {
-                var filename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
-                var resolution = EditionResolver.Resolve(
-                    filename, extracted.Pages[pageIndex].Text, matchedMachines, raw.Source.LinkText);
-                if (resolution.IsGroupFanOut)
+            case ResolutionResult.ResolvedFamily f:
+                var family = f.MachineIds.Where(_machinesById.ContainsKey)
+                    .Select(id => _machinesById[id]).ToList();
+                if (family.Count == 0)
                 {
-                    _logger.LogDebug(
-                        "DocumentLinker: {Tier} group-level doc → {Count} edition bases for {DocId}.",
-                        strategyName, resolution.Machines.Count, raw.DocumentId);
-                    matchedMachines = resolution.Machines.ToList();
-                    editionScope = resolution.Scope;
+                    // A resolver hit whose machines are all absent from _machinesById
+                    // means the index and machine map have drifted — surface it, or a
+                    // stale index degrades into silent NotInCatalog (invariant #17).
+                    _logger.LogWarning(
+                        "{Tier} resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
+                        strategyName, f.GroupId, f.MachineIds.Count, raw.DocumentId);
+                    return null;
                 }
-                else if (!resolution.IsUnresolved)
-                {
-                    _logger.LogDebug(
-                        "DocumentLinker: {Tier} resolved edition → {MachineId} for {DocId}.",
-                        strategyName, resolution.Machines[0].Id, raw.DocumentId);
-                    matchedMachines = [resolution.Machines[0]];
-                    editionScope = resolution.Scope;
-                }
-                // Unresolved within the family → keep the multi-machine fan-out
-                // (legacy behavior) rather than guess.
-            }
-            else
-            {
-                var preferred = PreferByManufacturer(matchedMachines, LinkingUtilities.InferManufacturerKey(raw.Source));
-                if (preferred is not null)
-                {
-                    _logger.LogDebug(
-                        "DocumentLinker: {Tier} disambiguated {Count} matches to {MachineId} by source manufacturer for {DocId}.",
-                        strategyName, matchedMachines.Count, preferred.Id, raw.DocumentId);
-                    matchedMachines = [preferred];
-                }
-            }
+                // Page text is the authoritative edition signal; group-level docs
+                // (rulesheet, feature matrix) fan out to all bases.
+                var viaEdition = ResolveEditionFamily(
+                    raw, family, ExtractFilename(raw.Source.FileUrl ?? string.Empty),
+                    extracted.Pages[pageIndex].Text,
+                    $"{strategyName}_resolver_edition", $"{strategyName}_resolver_edition_group");
+                if (viaEdition is not null) return viaEdition;
+
+                // Edition unresolved within the family: keep the multi-machine fan-out
+                // rather than guess — the pre-migration page tier's deliberate policy.
+                // An edition family is one game, so fanning out is attribution-safe
+                // (unlike cross-game ambiguity, which becomes needs_review).
+                _logger.LogDebug(
+                    "{Tier} resolver: edition unresolved within family {GroupId} → fan out {Count} bases for {DocumentId}.",
+                    strategyName, f.GroupId, family.Count, raw.DocumentId);
+                return new LinkingResult(raw.DocumentId, LinkStatus.Linked,
+                    $"{strategyName}_resolver", family.Select(m => m.Id).ToList(), FailureReason: null)
+                    { EditionScope = EditionScope.FranchiseWide };
+
+            case ResolutionResult.Ambiguous a:
+                ambiguity.Last = a;   // converted to needs_review by the no-tier-matched path
+                return null;
+
+            case ResolutionResult.NoMatch:
+                return null;
+
+            // Invariant #17 — never silently degrade an unknown outcome.
+            default:
+                throw new InvalidOperationException(
+                    $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in {strategyName}.");
         }
-
-        _logger.LogDebug(
-            "DocumentLinker: {Tier} matched {Count} machine(s) for {DocId}.",
-            strategyName, matchedMachines.Count, raw.DocumentId);
-
-        return new LinkingResult(
-            raw.DocumentId,
-            LinkStatus.Linked,
-            strategyName,
-            matchedMachines.Select(m => m.Id).ToList())
-            { EditionScope = editionScope };
     }
 
     // --- Fan-out helpers ---
@@ -1194,12 +850,12 @@ public sealed class DocumentLinker : IDocumentLinker
                 // Look up machine metadata for the scraped_documents record.
                 // ManufacturerSlugs partition key convention: the machine's
                 // PartitionKey IS the manufacturer string (see Machine.cs).
-                // We need to find the machine — try the slug index first.
+                // We need to find the machine — O(1) lookup in the machine map.
                 var machine = FindMachineById(machineId);
                 if (machine is null)
                 {
                     _logger.LogWarning(
-                        "FanOut: machine {MachineId} not found in slug index for doc {DocumentId} — skipping scraped_documents write.",
+                        "FanOut: machine {MachineId} not found in machine map for doc {DocumentId} — skipping scraped_documents write.",
                         machineId, raw.DocumentId);
                     missingMachineIds.Add(machineId);
                     continue;
@@ -1274,7 +930,7 @@ public sealed class DocumentLinker : IDocumentLinker
             finalStatus = LinkStatus.Failed;
             failureReason = $"machine_not_found: {string.Join(',', missingMachineIds)}";
             _logger.LogWarning(
-                "FanOut: stamping {DocumentId} as Failed — {Count} machine(s) not found in slug index: {MissingIds}",
+                "FanOut: stamping {DocumentId} as Failed — {Count} machine(s) not found in machine map: {MissingIds}",
                 raw.DocumentId, missingMachineIds.Count, failureReason);
         }
         else
@@ -1292,14 +948,8 @@ public sealed class DocumentLinker : IDocumentLinker
             cancellationToken).ConfigureAwait(false);
     }
 
-    private Machine? FindMachineById(string machineId)
-    {
-        foreach (var (machine, _) in _machineSlugIndex)
-        {
-            if (machine.Id == machineId) return machine;
-        }
-        return null;
-    }
+    private Machine? FindMachineById(string machineId) =>
+        _machinesById.TryGetValue(machineId, out var machine) ? machine : null;
 
     // Deletes every existing scraped_documents fan-out row for the document whose
     // machine_id is NOT in keepMachineIds. Passing an empty set prunes all rows

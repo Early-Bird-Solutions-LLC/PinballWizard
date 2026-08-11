@@ -5,6 +5,7 @@ using PinballWizard.Application.Documents;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
+using PinballWizard.Application.Resolution;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using Xunit;
@@ -90,8 +91,14 @@ public class DocumentLinkerTests
         machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(machineList.ToAsyncEnumerable());
 
+        // The resolver is mandatory since ADR-0054 Wave 2 Task 8 — an empty alias
+        // list gives the pure identity-derived index (titles + slugs, no curation).
+        var aliasLoader = Substitute.For<IMachineAliasLoader>();
+        aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<MachineAliasEntry>());
+
         return new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor, NullLogger<DocumentLinker>.Instance, blobStore: blobStore);
+            textExtractor, NullLogger<DocumentLinker>.Instance, aliasLoader, blobStore: blobStore);
     }
 
     // -------------------------------------------------------------------------
@@ -204,7 +211,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("xref_slug", result.ResolutionStrategy);
+        Assert.Equal("xref_slug_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }
@@ -302,7 +309,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("game_slug", result.ResolutionStrategy);
+        Assert.Equal("game_slug_resolver", result.ResolutionStrategy);
         Assert.Equal([machine.Id], result.LinkedMachineIds);
     }
 
@@ -330,7 +337,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("game_slug", result.ResolutionStrategy);
+        Assert.Equal("game_slug_resolver", result.ResolutionStrategy);
         Assert.Equal(["GweeP-Ml9pZ"], result.LinkedMachineIds); // Stern, not Sega
     }
 
@@ -360,7 +367,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("game_slug_edition", result.ResolutionStrategy);
+        Assert.Equal("game_slug_resolver_edition", result.ResolutionStrategy);
         Assert.Equal(["GRoz4-MjBV6"], result.LinkedMachineIds);
     }
 
@@ -445,7 +452,7 @@ public class DocumentLinkerTests
         // and NOT the 2017 Pro Vault Edition (the naive-fix regression: the doc
         // never signals "vault", so the plain Pro base is the correct match).
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("game_slug_edition", result.ResolutionStrategy);
+        Assert.Equal("game_slug_resolver_edition", result.ResolutionStrategy);
         Assert.Equal(["G43W4-MKNW0"], result.LinkedMachineIds);
     }
 
@@ -488,7 +495,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("game_slug_edition_group", result.ResolutionStrategy);
+        Assert.Equal("game_slug_resolver_edition_group", result.ResolutionStrategy);
         Assert.Equal(5, result.LinkedMachineIds.Count);
         Assert.Contains("G43W4-MKNW0", result.LinkedMachineIds);
         Assert.Contains("G43W4-MXrPx", result.LinkedMachineIds);
@@ -612,7 +619,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Equal("filename_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }
@@ -640,7 +647,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Equal("filename_resolver", result.ResolutionStrategy);
     }
 
     [Fact]
@@ -665,12 +672,12 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Equal("filename_resolver", result.ResolutionStrategy);
         Assert.Equal(["GK17D-MdEqz"], result.LinkedMachineIds);
     }
 
     [Fact]
-    public async Task LinkAsync_Tier2FilenameSlug_AmbiguousMatch_NotInCatalog()
+    public async Task LinkAsync_Tier2FilenameSlug_AmbiguousMatch_NeedsReview()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
@@ -691,7 +698,10 @@ public class DocumentLinkerTests
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        // ADR-0054 §5 (Wave 2 Task 7/8): cross-game filename ambiguity is parked for
+        // the admin review queue with its candidates — never guessed, never silently
+        // dropped as an honest-looking NotInCatalog.
+        Assert.Equal(LinkStatus.NeedsReview, result.FinalStatus);
         Assert.Null(result.ResolutionStrategy);
         Assert.Contains("Ambiguous", result.FailureReason, StringComparison.OrdinalIgnoreCase);
     }
@@ -767,7 +777,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("xref_slug_edition", result.ResolutionStrategy);
+        Assert.Equal("xref_slug_resolver_edition", result.ResolutionStrategy);
         Assert.Equal(["GRoz4-MjBV6"], result.LinkedMachineIds);
     }
 
@@ -800,7 +810,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("xref_slug_edition", result.ResolutionStrategy);
+        Assert.Equal("xref_slug_resolver_edition", result.ResolutionStrategy);
         Assert.Equal(["GRWvz-Mp4yl"], result.LinkedMachineIds);
     }
 
@@ -827,7 +837,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("xref_slug_edition_group", result.ResolutionStrategy);
+        Assert.Equal("xref_slug_resolver_edition_group", result.ResolutionStrategy);
         Assert.Equal(2, result.LinkedMachineIds.Count);
         Assert.Contains("GRoz4-MjBV6", result.LinkedMachineIds);
         Assert.Contains("GRoz4-MrRPw", result.LinkedMachineIds);
@@ -1079,7 +1089,7 @@ public class DocumentLinkerTests
         // Stern Pro base — NOT go NotInCatalog because multiple Stern editions +
         // the classic can't be disambiguated. (Phase 2 regressed this: indexing
         // the classic title made bestMatches span two groups → not an edition
-        // family → PreferByManufacturer sees >1 Stern edition → null → ambiguous.)
+        // family → manufacturer scoping still sees >1 Stern edition → ambiguous.)
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
@@ -1473,7 +1483,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Equal("page_1_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }
@@ -1521,7 +1531,7 @@ public class DocumentLinkerTests
     }
 
     [Fact]
-    public async Task LinkAsync_Tier3Page1_MultipleSlugMatches_FanOutToAll()
+    public async Task LinkAsync_Tier3Page1_MultipleCrossGameMatches_NeedsReview()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
@@ -1552,11 +1562,13 @@ public class DocumentLinkerTests
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("page_1", result.ResolutionStrategy);
-        Assert.Equal(2, result.LinkedMachineIds.Count);
-        Assert.Contains(machineA.Id, result.LinkedMachineIds);
-        Assert.Contains(machineB.Id, result.LinkedMachineIds);
+        // ADR-0054 §5 (Wave 2 Task 8): the retired legacy tier fanned a doc out to
+        // MULTIPLE DIFFERENT GAMES when its page text mentioned both — a provenance
+        // hazard (one doc attributed to two unrelated machines). Cross-game
+        // multiplicity is now parked for the admin queue instead. (Edition families
+        // — one game — still fan out; see the family tests.)
+        Assert.Equal(LinkStatus.NeedsReview, result.FinalStatus);
+        Assert.Empty(result.LinkedMachineIds);
     }
 
     [Fact]
@@ -1675,7 +1687,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("page_2", result.ResolutionStrategy);
+        Assert.Equal("page_2_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }
@@ -1765,7 +1777,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("xref_slug", result.ResolutionStrategy);
+        Assert.Equal("xref_slug_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
     }
@@ -1790,7 +1802,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Equal("filename_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega / not NotInCatalog
     }
@@ -1959,12 +1971,13 @@ public class DocumentLinkerTests
     }
 
     [Fact]
-    public async Task LinkAsync_ResolvesToNotInCatalog_AmbiguousFilename_PrunesExistingRows()
+    public async Task LinkAsync_AmbiguousFilename_NeedsReview_PrunesExistingRows()
     {
-        // Regression guard for the Tier-2 ambiguous-filename NotInCatalog path:
-        // two machines with the same slug length both match the filename and the
-        // manufacturer hint can't break the tie → NotInCatalog. Any prior fan-out
-        // rows must also be pruned on this path (same data-hygiene requirement).
+        // Regression guard for the ambiguous-filename needs_review path (ADR-0054
+        // Wave 2 Task 7/8): two machines with the same slug both match the filename
+        // and the manufacturer hint can't break the tie → NeedsReview. Any prior
+        // fan-out rows must also be pruned on this path (same data-hygiene
+        // requirement as NotInCatalog).
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
@@ -1987,7 +2000,7 @@ public class DocumentLinkerTests
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Equal(LinkStatus.NeedsReview, result.FinalStatus);
         // Stale row from the previous Linked state must be pruned.
         await docWriter.Received(1).DeleteFanOutRowAsync(raw.DocumentId, machineA.Id, Arg.Any<CancellationToken>());
     }
@@ -2066,7 +2079,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Equal("page_1_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds); // narrowed, not fanned to both
         Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
     }
@@ -2113,7 +2126,7 @@ public class DocumentLinkerTests
         // Assert: extractor was called (blob bytes were passed through) and link resolved.
         await extractor.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Equal("page_1_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }

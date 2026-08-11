@@ -47,7 +47,7 @@ public sealed record LinkingResult
 
 public interface IDocumentLinker
 {
-    // Loads override table and builds machine slug index.
+    // Loads override table and builds the ADR-0054 resolver index.
     // Must be called once before LinkAsync / RunBatchAsync.
     Task InitializeAsync(CancellationToken cancellationToken);
 
