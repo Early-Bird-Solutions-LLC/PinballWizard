@@ -110,15 +110,66 @@ jobs:
             --arg service_account_id "$SERVICE_ACCOUNT_ID" \
             --arg workspace_id "$WORKSPACE_ID" \
             '$ARGS.named')
-          ACCESS_TOKEN=$(curl -sS https://api.anthropic.com/v1/oauth/token \
+          # Diagnostic: field lengths only (no secret values; the assertion is
+          # masked regardless). An empty assertion — length 0 — is the classic
+          # cause of an opaque request-validation failure with nothing logged
+          # server-side, so this line pinpoints it at a glance.
+          echo "field lengths: assertion=${#GHA_OIDC_TOKEN} federation_rule_id=${#FEDERATION_RULE_ID} organization_id=${#ORGANIZATION_ID} service_account_id=${#SERVICE_ACCOUNT_ID} workspace_id=${#WORKSPACE_ID}"
+          # Capture body + HTTP status separately. A bare `curl | jq .access_token`
+          # swallows the error response, leaving a failed exchange undiagnosable
+          # (violates the degrade-visibly invariant). The error body carries
+          # error.type + request_id and contains no secret; the access token is
+          # masked before use and never echoed. Same pattern as
+          # pr-feedback-triage.yml (#804).
+          RESPONSE=$(curl -sS -w '\n%{http_code}' https://api.anthropic.com/v1/oauth/token \
             -H "content-type: application/json" \
-            -d "$PAYLOAD" | jq -r .access_token)
-          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
-            echo "::error::Anthropic WIF token exchange failed"
+            -d "$PAYLOAD")
+          HTTP_CODE=$(printf '%s' "$RESPONSE" | tail -n1)
+          BODY=$(printf '%s' "$RESPONSE" | sed '$d')
+          ACCESS_TOKEN=$(printf '%s' "$BODY" | jq -r '.access_token // empty')
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Anthropic WIF token exchange failed (HTTP $HTTP_CODE)"
+            # A 400 invalid_grant is intentionally opaque — the specific cause is
+            # logged server-side only, visible on the Claude Console WIF
+            # authentication-history page. Surface what the response does carry.
+            printf '%s' "$BODY" \
+              | jq -r '"  type=\(.error.type // .type // "?") message=\(.error.message // "?") request_id=\(.request_id // "?")"' \
+              2>/dev/null || printf '  raw: %s\n' "$BODY"
+            # Full error body — a failed exchange carries no token, so no secret.
+            echo "  full error body:"
+            printf '%s\n' "$BODY" | jq . 2>/dev/null || printf '  %s\n' "$BODY"
             exit 1
           fi
           echo "::add-mask::$ACCESS_TOKEN"
           echo "ANTHROPIC_ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
+
+      # #804 diagnosis: every docs-agent run dies inside claude-code-action with
+      # {"is_error":true, num_turns:1, total_cost_usd:0} — the API rejects the
+      # WIF token before any inference, and the action swallows the response
+      # body, so the actual error (type/message/request_id) has never been seen.
+      # This probe makes ONE 1-token Messages call with the same token and prints
+      # the full error envelope. ::warning:: not exit 1 — the point is to see the
+      # error alongside the action's failure, not to mask which step is broken.
+      # Probes claude-sonnet-4-6 (the model pr-feedback-triage pins); a 403 here
+      # is model/permission entitlement for the service account, a 401 is token
+      # scope/format, a 200 means the token is fine and the fault is inside the
+      # action's own invocation.
+      - name: Probe Anthropic API reachability
+        run: |
+          PROBE=$(curl -s -w '\n%{http_code}' https://api.anthropic.com/v1/messages \
+            -H "Authorization: Bearer $ANTHROPIC_ACCESS_TOKEN" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{"model":"claude-sonnet-4-6","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}')
+          HTTP=$(printf '%s' "$PROBE" | tail -n1)
+          BODY=$(printf '%s' "$PROBE" | sed '$d')
+          echo "API probe HTTP: $HTTP"
+          # Error envelope only — never the (potential) success body.
+          if [ "$HTTP" != "200" ]; then
+            printf '%s\n' "$BODY" | jq '{type, error_type: .error.type, error_message: .error.message, request_id}' 2>/dev/null \
+              || printf '  raw: %s\n' "$BODY"
+            echo "::warning::Anthropic API probe returned HTTP $HTTP — the Claude run below will fail; the error above is the real cause (#804)"
+          fi
 
       - name: Compute diff range
         id: range

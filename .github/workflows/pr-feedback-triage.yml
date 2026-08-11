@@ -105,6 +105,15 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ env.ANTHROPIC_ACCESS_TOKEN }}
+          # #804: without an explicit token the action attempts its own
+          # OIDC → Anthropic-GitHub-App installation-token exchange, which fails
+          # 401 ("User does not have write access on this repository") on every
+          # run — the App is not installed with write access here, and this
+          # action version does not fall back to GITHUB_TOKEN. Passing the
+          # workflow token (scoped above: contents read, PRs/issues write) makes
+          # the action use it directly (OVERRIDE_GITHUB_TOKEN in action.yml) and
+          # skips the doomed exchange.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR: ${{ github.event.pull_request.number || github.event.issue.number }}
