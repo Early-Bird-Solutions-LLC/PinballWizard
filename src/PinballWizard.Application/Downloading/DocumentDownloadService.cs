@@ -1,7 +1,10 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Documents;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Application.Downloading;
@@ -21,21 +24,25 @@ public sealed class DocumentDownloadService
     private readonly IRawDocumentRepository _repo;
     private readonly IFileDownloader _downloader;
     private readonly IDocumentBlobStore _blobStore;
+    private readonly long _maxFileSizeBytes;
     private readonly ILogger<DocumentDownloadService> _logger;
 
     public DocumentDownloadService(
         IRawDocumentRepository repo,
         IFileDownloader downloader,
         IDocumentBlobStore blobStore,
+        IOptions<ScraperSettings> settings,
         ILogger<DocumentDownloadService> logger)
     {
         ArgumentNullException.ThrowIfNull(repo);
         ArgumentNullException.ThrowIfNull(downloader);
         ArgumentNullException.ThrowIfNull(blobStore);
+        ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(logger);
         _repo = repo;
         _downloader = downloader;
         _blobStore = blobStore;
+        _maxFileSizeBytes = settings.Value.MaxFileSizeBytes;
         _logger = logger;
     }
 
@@ -51,7 +58,7 @@ public sealed class DocumentDownloadService
     /// </param>
     public async Task<DownloadSummary> RunAsync(bool force, CancellationToken cancellationToken)
     {
-        int downloaded = 0, skipped = 0, failed = 0, backfilled = 0;
+        int downloaded = 0, skipped = 0, failed = 0, backfilled = 0, skippedTooLarge = 0;
 
         // Origins the politeness gate has told us to stop asking (robots disallow or
         // 429 streak). Once an origin is poisoned we skip its remaining documents but
@@ -180,6 +187,30 @@ public sealed class DocumentDownloadService
                     skipped++;
                     continue;
                 }
+
+                // Terminal TooLarge skip: a prior run marked this document as exceeding
+                // the size cap. Skip without re-attempting — unless the cap has since been
+                // raised enough to cover the file (re-attempt then; the skip record stays
+                // in Cosmos but becomes irrelevant once a successful download sets LocalPath
+                // + Sha256 + ContentHash, which satisfies the fast-path check above).
+                if (raw.DownloadSkip?.Reason == DownloadSkipInfo.Reasons.TooLarge)
+                {
+                    var prior = raw.DownloadSkip;
+                    // Re-attempt when (a) observed size is known and now fits, or
+                    // (b) observed size unknown but the cap itself has been raised.
+                    var shouldRetry = prior.ObservedSizeBytes.HasValue
+                        ? prior.ObservedSizeBytes.Value <= _maxFileSizeBytes
+                        : _maxFileSizeBytes > prior.CapBytesAtSkip;
+                    if (!shouldRetry)
+                    {
+                        PinballWizardTelemetry.DownloadTooLargeSkipsTotal.Add(1,
+                            new KeyValuePair<string, object?>(
+                                "source_type", raw.Source.SourceType.ToString().ToLowerInvariant()));
+                        skippedTooLarge++;
+                        continue;
+                    }
+                    // Cap was raised — fall through to re-attempt the download.
+                }
             }
 
             var host = TryGetHost(fileUrl);
@@ -242,6 +273,27 @@ public sealed class DocumentDownloadService
                     host ?? "<unknown>", raw.DocumentId, result.ErrorMessage);
                 skipped++;
             }
+            else if (result.Status is DownloadStatus.TooLarge)
+            {
+                // Permanent skip: file exceeds the configured size cap and this
+                // will not change unless the cap is raised. Stamp a terminal skip
+                // marker so future runs bypass the download attempt without
+                // re-hitting the downloader or contributing to the failure count.
+                await _repo.MarkDownloadSkipAsync(raw.DocumentId, new DownloadSkipInfo
+                {
+                    Reason = DownloadSkipInfo.Reasons.TooLarge,
+                    ObservedSizeBytes = result.SizeBytes,
+                    CapBytesAtSkip = _maxFileSizeBytes,
+                    SkippedAt = DateTime.UtcNow,
+                }, cancellationToken).ConfigureAwait(false);
+                _logger.LogWarning(
+                    "DocumentDownload: {DocId} too large — {Err}. Stamped as terminal skip; re-attempted only if MaxFileSizeBytes is raised.",
+                    raw.DocumentId, result.ErrorMessage);
+                PinballWizardTelemetry.DownloadTooLargeSkipsTotal.Add(1,
+                    new KeyValuePair<string, object?>(
+                        "source_type", raw.Source.SourceType.ToString().ToLowerInvariant()));
+                skippedTooLarge++;
+            }
             else
             {
                 _logger.LogWarning("DocumentDownload: {DocId} failed ({Status}): {Err}",
@@ -251,9 +303,9 @@ public sealed class DocumentDownloadService
         }
 
         _logger.LogInformation(
-            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} backfilled={Backfilled} poisonedOrigins={Poisoned}",
-            downloaded, skipped, failed, backfilled, poisonedHosts.Count);
-        return new DownloadSummary(downloaded, skipped, failed, backfilled);
+            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} skippedTooLarge={SkippedTooLarge} backfilled={Backfilled} poisonedOrigins={Poisoned}",
+            downloaded, skipped, failed, skippedTooLarge, backfilled, poisonedHosts.Count);
+        return new DownloadSummary(downloaded, skipped, failed, backfilled, skippedTooLarge);
     }
 
     private static string? TryGetHost(string url) =>
@@ -276,5 +328,14 @@ public sealed class DocumentDownloadService
 /// <paramref name="Backfilled"/> counts records whose Cosmos <c>File</c> field
 /// was stamped from an already-existing blob (self-heal) rather than a fresh
 /// download — a subset of <paramref name="Skipped"/>, not a separate total.
+/// <paramref name="SkippedTooLarge"/> counts documents whose file size permanently
+/// exceeds the configured cap — expected at steady state for multi-GB manufacturer
+/// images; these are terminal skips, not failures, and do NOT contribute to
+/// <paramref name="Failed"/> or trigger a non-zero exit code.
 /// </summary>
-public sealed record DownloadSummary(int Downloaded, int Skipped, int Failed, int Backfilled = 0);
+public sealed record DownloadSummary(
+    int Downloaded,
+    int Skipped,
+    int Failed,
+    int Backfilled = 0,
+    int SkippedTooLarge = 0);

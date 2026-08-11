@@ -298,6 +298,38 @@ internal sealed class CosmosRawDocumentRepository
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
 
+    // IRawDocumentRepository.MarkDownloadSkipAsync
+    // Stamps a permanent download-skip marker (download_skip field) on an existing
+    // record. Only that field is written; File, Source, Timeline, linker metadata,
+    // and all other fields are left exactly as they were.
+    public async Task MarkDownloadSkipAsync(
+        string documentId,
+        DownloadSkipInfo skip,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentNullException.ThrowIfNull(skip);
+
+        var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            throw new InvalidOperationException(
+                $"MarkDownloadSkipAsync: document {documentId} not found in scraped_documents_raw.");
+        }
+
+        existing.DownloadSkip = new RawDownloadSkipInfo
+        {
+            Reason = skip.Reason,
+            ObservedSizeBytes = skip.ObservedSizeBytes,
+            CapBytesAtSkip = skip.CapBytesAtSkip,
+            SkippedAt = skip.SkippedAt,
+        };
+
+        await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
+
     // IRawDocumentRepository.DenormalizeContentHashAsync
     public async Task DenormalizeContentHashAsync(
         string documentId,
@@ -832,6 +864,15 @@ internal sealed class CosmosRawDocumentRepository
                             MatchedVariant = c.MatchedVariant,
                         })
                         .ToList(),
+                }
+                : null,
+            DownloadSkip = cosmos.DownloadSkip is { } ds
+                ? new DownloadSkipInfo
+                {
+                    Reason = ds.Reason,
+                    ObservedSizeBytes = ds.ObservedSizeBytes,
+                    CapBytesAtSkip = ds.CapBytesAtSkip,
+                    SkippedAt = ds.SkippedAt,
                 }
                 : null,
         };

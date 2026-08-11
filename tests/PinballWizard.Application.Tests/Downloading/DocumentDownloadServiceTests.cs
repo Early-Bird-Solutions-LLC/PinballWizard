@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
 
@@ -438,10 +440,170 @@ public sealed class DocumentDownloadServiceTests
         await _repo.Received(1).UpdateFileAsync("doc_h", Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
     }
 
+    // ── TooLarge terminal skip semantics ─────────────────────────────────
+
+    [Fact]
+    public async Task TooLarge_FirstEncounter_StampsSkipRecord_CountsAsSkippedTooLarge_NotFailed()
+    {
+        // A file whose size exceeds the cap on first attempt must be recorded as
+        // a terminal skip (not a failure), so future runs don't re-attempt it and
+        // it doesn't contribute to the nightly failure count / exit-code-1 alert.
+        const long observedBytes = 600L * 1024 * 1024;  // 600 MB > default 500 MB cap
+        var raw = MakeRaw("doc_tl1", "https://spookypinball.com/x/S3-v4.0.0.bin", file: null);
+        StubStream(raw);
+        _blobStore.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.TooLarge,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "spookypinball/S3-v4.0.0.bin",
+                SizeBytes = observedBytes,
+                ErrorMessage = $"{observedBytes:N0} bytes exceeds MaxFileSizeBytes=524288000",
+            });
+
+        var svc = MakeSvc();
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
+
+        // Counted as skippedTooLarge — NOT as failed and NOT as downloaded/skipped.
+        Assert.Equal(1, summary.SkippedTooLarge);
+        Assert.Equal(0, summary.Failed);
+        Assert.Equal(0, summary.Downloaded);
+
+        // Skip record must be stamped in Cosmos with the correct metadata so
+        // a future run can decide whether to re-attempt after a cap raise.
+        await _repo.Received(1).MarkDownloadSkipAsync(
+            "doc_tl1",
+            Arg.Is<DownloadSkipInfo>(s =>
+                s.Reason == DownloadSkipInfo.Reasons.TooLarge &&
+                s.ObservedSizeBytes == observedBytes),
+            Arg.Any<CancellationToken>());
+
+        // File record is NOT stamped — the document was never actually downloaded.
+        await _repo.DidNotReceive().UpdateFileAsync(
+            Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TooLarge_AlreadyStamped_SkipsWithoutCallingDownloader_WhenCapNotRaised()
+    {
+        // A doc already stamped as TooLarge with an observed size that still
+        // exceeds the current cap must be silently skipped — the downloader must
+        // never be invoked, and skippedTooLarge (not failed) is incremented.
+        const long observedBytes = 600L * 1024 * 1024;   // 600 MB
+        const long capAtSkip = 500L * 1024 * 1024;        // 500 MB (default cap, unchanged)
+        var raw = MakeRaw("doc_tl2", "https://spookypinball.com/x/S3-v4.0.0.bin", file: null,
+            downloadSkip: new DownloadSkipInfo
+            {
+                Reason = DownloadSkipInfo.Reasons.TooLarge,
+                ObservedSizeBytes = observedBytes,
+                CapBytesAtSkip = capAtSkip,
+                SkippedAt = DateTime.UtcNow.AddDays(-1),
+            });
+        StubStream(raw);
+
+        // Default cap = 500 MB; observed = 600 MB → 600 ≤ 500 = false → no retry.
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.SkippedTooLarge);
+        Assert.Equal(0, summary.Failed);
+        Assert.Equal(0, summary.Downloaded);
+
+        // Downloader must NOT be called — the point is to avoid a futile attempt.
+        await _downloader.DidNotReceive().DownloadAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+        // No new skip record stamp needed (already stamped).
+        await _repo.DidNotReceive().MarkDownloadSkipAsync(
+            Arg.Any<string>(), Arg.Any<DownloadSkipInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TooLarge_AlreadyStamped_ReAttempts_WhenCapIsRaisedAboveObservedSize()
+    {
+        // When the cap has since been raised above the previously-observed file size
+        // (ObservedSizeBytes ≤ current MaxFileSizeBytes), the terminal skip must be
+        // treated as stale and the download must be re-attempted.
+        const long observedBytes = 400L * 1024 * 1024;   // 400 MB (file was measured)
+        const long oldCap = 300L * 1024 * 1024;           // 300 MB (cap when skipped)
+        // Default ScraperSettings.MaxFileSizeBytes = 500 MB > 400 MB → should retry.
+        var raw = MakeRaw("doc_tl3", "https://spookypinball.com/x/S3-v3.0.0.bin", file: null,
+            downloadSkip: new DownloadSkipInfo
+            {
+                Reason = DownloadSkipInfo.Reasons.TooLarge,
+                ObservedSizeBytes = observedBytes,
+                CapBytesAtSkip = oldCap,
+                SkippedAt = DateTime.UtcNow.AddDays(-7),
+            });
+        StubStream(raw);
+        _blobStore.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Downloaded,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "spookypinball/S3-v3.0.0.bin",
+                Filename = "S3-v3.0.0.bin",
+                SizeBytes = observedBytes,
+                Sha256 = "abc123",
+                Content = new MemoryStream(),
+            });
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        // The cap raise allowed the download to proceed.
+        Assert.Equal(1, summary.Downloaded);
+        Assert.Equal(0, summary.SkippedTooLarge);
+        Assert.Equal(0, summary.Failed);
+
+        // Downloader WAS invoked — the stale skip was ignored.
+        await _downloader.Received(1).DownloadAsync(
+            raw.Source.FileUrl!, Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Force_BypassesTooLargeTerminalSkip_AndReAttempts()
+    {
+        // --force-redownload must bypass ALL skip checks including the TooLarge
+        // terminal skip so the operator can force a re-attempt (e.g. after raising
+        // the cap) without waiting for the stale skip to be re-evaluated.
+        var raw = MakeRaw("doc_tl4", "https://spookypinball.com/x/S3-v4.1.0.bin", file: null,
+            downloadSkip: new DownloadSkipInfo
+            {
+                Reason = DownloadSkipInfo.Reasons.TooLarge,
+                ObservedSizeBytes = 600L * 1024 * 1024,
+                CapBytesAtSkip = 500L * 1024 * 1024,
+                SkippedAt = DateTime.UtcNow.AddDays(-1),
+            });
+        StubStream(raw);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Downloaded,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "spookypinball/S3-v4.1.0.bin",
+                Filename = "S3-v4.1.0.bin",
+                Content = new MemoryStream(),
+            });
+
+        var summary = await MakeSvc().RunAsync(force: true, CancellationToken.None);
+
+        Assert.Equal(1, summary.Downloaded);
+        Assert.Equal(0, summary.SkippedTooLarge);
+
+        // Force must invoke the downloader even though DownloadSkip is stamped.
+        await _downloader.Received(1).DownloadAsync(
+            raw.Source.FileUrl!, Arg.Any<string>(), null, Arg.Any<CancellationToken>());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private DocumentDownloadService MakeSvc() =>
-        new(_repo, _downloader, _blobStore, NullLogger<DocumentDownloadService>.Instance);
+        MakeSvc(new ScraperSettings().MaxFileSizeBytes);
+
+    private DocumentDownloadService MakeSvc(long maxFileSizeBytes) =>
+        new(_repo, _downloader, _blobStore,
+            Options.Create(new ScraperSettings { MaxFileSizeBytes = maxFileSizeBytes }),
+            NullLogger<DocumentDownloadService>.Instance);
 
     private void StubStream(params RawDocumentRecord[] docs) =>
         _repo.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(ToAsync(docs));
@@ -453,7 +615,7 @@ public sealed class DocumentDownloadServiceTests
 
     private static RawDocumentRecord MakeRaw(
         string documentId, string fileUrl, DownloadedFileInfo? file, HttpMetadata? http = null,
-        string? contentHash = null) => new()
+        string? contentHash = null, DownloadSkipInfo? downloadSkip = null) => new()
     {
         DocumentId = documentId,
         DocumentUrl = fileUrl,
@@ -470,5 +632,6 @@ public sealed class DocumentDownloadServiceTests
         File = file,
         Http = http,
         ContentHash = contentHash,
+        DownloadSkip = downloadSkip,
     };
 }

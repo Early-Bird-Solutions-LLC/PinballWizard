@@ -90,6 +90,12 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     [JsonPropertyName("link_review")]
     public RawLinkReviewInfo? LinkReview { get; set; }
 
+    // Written by DocumentDownloadService when a TooLarge (or other permanent) skip
+    // is recorded. Null for documents that have never been skipped, or that have
+    // since been successfully downloaded (the fast-path LocalPath check fires first).
+    [JsonPropertyName("download_skip")]
+    public RawDownloadSkipInfo? DownloadSkip { get; set; }
+
     // Cosmos system property — populated from the JSON response when reading
     // an existing document. Used for ETag-conditional writes (ADR-0025 § 7)
     // to prevent lost updates when the scraper and linker write concurrently.
@@ -239,4 +245,21 @@ internal sealed class RawCrossRef
 
     [JsonPropertyName("discovered_at")]
     public DateTime DiscoveredAt { get; init; }
+}
+
+// Cosmos wire-format for the download_skip field.
+// Matches DownloadSkipInfo in PinballWizard.Core.Models.
+internal sealed class RawDownloadSkipInfo
+{
+    [JsonPropertyName("reason")]
+    public required string Reason { get; init; }
+
+    [JsonPropertyName("observed_size_bytes")]
+    public long? ObservedSizeBytes { get; init; }
+
+    [JsonPropertyName("cap_bytes_at_skip")]
+    public required long CapBytesAtSkip { get; init; }
+
+    [JsonPropertyName("skipped_at")]
+    public required DateTime SkippedAt { get; init; }
 }

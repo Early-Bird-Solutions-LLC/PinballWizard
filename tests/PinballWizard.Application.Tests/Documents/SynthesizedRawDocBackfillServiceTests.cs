@@ -294,6 +294,7 @@ public sealed class SynthesizedRawDocBackfillServiceTests
         public IAsyncEnumerable<RawDocumentRecord> StreamByStatusAsync(IReadOnlyCollection<LinkStatus> statuses, CancellationToken cancellationToken) => throw new NotSupportedException();
         public IAsyncEnumerable<RawDocumentRecord> StreamAllAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task UpdateFileAsync(string documentId, DownloadedFileInfo file, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task MarkDownloadSkipAsync(string documentId, DownloadSkipInfo skip, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task DenormalizeContentHashAsync(string documentId, string sha256, CancellationToken cancellationToken) => throw new NotSupportedException();
         public IAsyncEnumerable<RawDocumentRecord> StreamBySourcePatternAsync(string sourcePattern, CancellationToken cancellationToken) => throw new NotSupportedException();
         public IAsyncEnumerable<RawDocumentRecord> StreamByRunIdAsync(string runId, CancellationToken cancellationToken) => throw new NotSupportedException();

@@ -278,8 +278,9 @@ public static class ServiceCollectionExtensions
             var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
             var downloader = sp.GetRequiredService<IFileDownloader>();
             var blobStore = sp.GetRequiredService<IDocumentBlobStore>();
+            var settings = sp.GetRequiredService<IOptions<ScraperSettings>>();
             var logger = sp.GetRequiredService<ILogger<DocumentDownloadService>>();
-            return new DocumentDownloadService(rawRepo, downloader, blobStore, logger);
+            return new DocumentDownloadService(rawRepo, downloader, blobStore, settings, logger);
         });
 
         // Download-path migration (--migrate-download-paths) — one-shot byte-safe

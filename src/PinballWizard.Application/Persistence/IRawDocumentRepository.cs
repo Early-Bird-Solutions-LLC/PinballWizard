@@ -38,6 +38,14 @@ public interface IRawDocumentRepository
     // are untouched. Throws if the document does not exist.
     Task UpdateFileAsync(string documentId, DownloadedFileInfo file, CancellationToken cancellationToken);
 
+    // Stamps a permanent download-skip marker on an existing record.
+    // Only the download_skip field is touched; File, Source, Timeline, linker
+    // metadata, and all other fields are left exactly as they were. Used by
+    // DocumentDownloadService to record a TooLarge (or other permanent) skip so
+    // future runs can skip the document without re-attempting the download.
+    // Throws if the document does not exist.
+    Task MarkDownloadSkipAsync(string documentId, DownloadSkipInfo skip, CancellationToken cancellationToken);
+
     // Copies an already-known File.Sha256 into the top-level ContentHash field
     // ONLY — no File, Timeline, or other field is touched. For the case where
     // Sha256 was already computed (a prior download, or UpdateFileAsync's own
