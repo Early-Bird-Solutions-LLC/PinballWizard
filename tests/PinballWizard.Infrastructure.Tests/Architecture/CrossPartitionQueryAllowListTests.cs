@@ -118,20 +118,21 @@ public sealed class CrossPartitionQueryAllowListTests
             "page; bounded ~30-50 docs (one per OPDB manufacturer); dynamic discovery needed " +
             "for defunct manufacturers (Williams, Bally, Gottlieb, etc.) that have no scraper.",
 
-        // StreamCrossPartitionAsync — PurgeStalePartitionCopiesAsync (phase g) queries
-        // by exact machine id equality (SELECT * WHERE c.id = @id) to find stale copies
-        // left behind when OPDB re-attributes a machine to a different manufacturer
-        // partition (e.g. "sega" → "segaenterprises"). Executes at most once per INSERTED
-        // machine per sync run — updated machines are in-partition so they never appear
-        // here. A given machine id resolves to at most one stale copy (ids are unique in
-        // OPDB); the cross-partition fan-out is the minimum required to locate it.
-        // OPDB sync-only path (apply mode); not user-facing. Bounded by insert count
-        // (~30 stale copies was the maximum observed in the incident that prompted #814).
+        // StreamCrossPartitionAsync — PurgeStalePartitionCopiesAsync (phase g) issues a
+        // single full-catalog SELECT * FROM c scan per apply run to find stale partition
+        // copies left behind when OPDB re-attributes a machine to a different manufacturer.
+        // Each row's id is looked up in the in-memory currentAttributionById map (id →
+        // current partition for every machine fetched this run); rows whose id is in the
+        // map but whose partition differs are deleted. Self-healing: covers re-attributions,
+        // previously failed deletes, and any other corruption source — including stale copies
+        // created before this fix. Unknown ids (not in the map) are left untouched.
+        // ONE scan per sync run (~2.2 k docs, ~3 Cosmos pages live); apply mode only;
+        // OPDB sync job path, not user-facing (#814).
         ["OpdbSyncService.cs"] =
             "StreamCrossPartitionAsync in PurgeStalePartitionCopiesAsync (phase g, apply mode only); " +
-            "SELECT * WHERE c.id = @id equality match; at most one stale copy per machine id; " +
-            "only inserted machines are checked (never updated); bounded by OPDB re-attribution " +
-            "count (observed max ~30 per sync); OPDB sync job path, not user-facing (#814).",
+            "single full-catalog SELECT * FROM c scan per sync run (~2.2k docs, ~3 Cosmos pages); " +
+            "compares each row id+partition against in-memory current-attribution map; deletes only " +
+            "rows whose id is known to this run but partition differs; OPDB sync job path, not user-facing (#814).",
     };
 
     [Fact]

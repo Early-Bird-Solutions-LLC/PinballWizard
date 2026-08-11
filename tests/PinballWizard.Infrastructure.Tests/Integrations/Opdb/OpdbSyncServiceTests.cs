@@ -60,7 +60,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);
 
-        // Phase (g) of SyncAsync queries cross-partition for every newly inserted machine.
+        // Phase (g) of SyncAsync issues a single full-catalog cross-partition scan in apply mode.
         // Default to an empty stream so pre-existing tests (which don't set up stale copies)
         // do not throw NullReferenceException when phase (g) runs.
         _repository.StreamCrossPartitionAsync(
@@ -1437,22 +1437,17 @@ public sealed class OpdbSyncServiceTests : IDisposable
     // ── Phase (g) stale old-partition cleanup (GitHub #814) ─────────────────
 
     [Fact]
-    public async Task SyncAsync_ManufacturerReattribution_DeletesStaleOldPartitionCopy()
+    public async Task SyncAsync_ManufacturerReattribution_InsertPath_DeletesStaleOldPartitionCopy()
     {
-        // Root-cause reproduction for GitHub #814.
-        // OPDB re-attributes "Sega Classics" from partition "sega" to "segaenterprises".
-        // The previous sync stored the machine under "sega". This sync:
-        //   - sees the machine arrive under manufacturer "Sega Enterprises" → partition "segaenterprises"
-        //   - GetByOpdbIdAsync("SEGA-001", "segaenterprises") returns null → INSERT path
-        //   - Phase (g) cross-partition query finds the stale "sega" copy
-        //   - DeleteAsync removes it so DocumentLinker never sees duplicate machine ids.
+        // Root-cause reproduction for GitHub #814 — INSERT path.
+        // OPDB re-attributes "Sega Classics" from "sega" to "segaenterprises".
+        // GetByOpdbIdAsync returns null (new partition → INSERT path).
+        // Phase (g) full-catalog scan finds the stale "sega" copy and deletes it.
         _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
 
-        // Machine arrives under the new partition; it looks like a new insert.
         _repository.GetByOpdbIdAsync("SEGA-001", "segaenterprises", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        // The stale copy still lives under the old "sega" partition.
         var staleCopy = new Machine
         {
             Id = "SEGA-001",
@@ -1463,11 +1458,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
             LastSeenAt = NowFixed,
         };
 
-        // Cross-partition query for this id returns the stale copy (override the default empty stub).
+        // Full-catalog scan returns the stale copy (overrides the default empty stub).
         _repository.StreamCrossPartitionAsync(
-            Arg.Is<string>(q => q.Contains("@id")),
-            Arg.Is<IReadOnlyDictionary<string, object>?>(d =>
-                d != null && d.ContainsKey("id") && (string)d["id"] == "SEGA-001"),
+            Arg.Is<string>(q => q == "SELECT * FROM c"),
+            Arg.Any<IReadOnlyDictionary<string, object>?>(),
             Arg.Any<CancellationToken>())
             .Returns(_ => SingleMachineStream(staleCopy));
 
@@ -1477,8 +1471,58 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         Assert.Equal(1, result.Inserted);
         Assert.Equal(0, result.Updated);
+        Assert.Equal(1, result.StalePartitionsCleaned);
+        await _repository.Received(1).DeleteAsync("SEGA-001", "sega", Arg.Any<CancellationToken>());
+    }
 
-        // Phase (g) cleaned up the stale old-partition copy.
+    [Fact]
+    public async Task SyncAsync_ManufacturerReattribution_UpdatePath_DeletesStaleOldPartitionCopy()
+    {
+        // Self-healing coverage for GitHub #814: stale copy persists from a prior sync
+        // run where the DELETE failed transiently. On this run the machine is already
+        // under "segaenterprises" (GetByOpdbIdAsync returns it → UPDATE path), so the
+        // old insert-only trigger would have skipped cleanup entirely.
+        // Phase (g) tracks ALL fetched machines (insert + update), so the full-catalog
+        // scan still finds the stale "sega" copy and deletes it.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
+
+        // Machine is already under the correct partition — this run is an UPDATE.
+        var existing = new Machine
+        {
+            Id = "SEGA-001",
+            PartitionKey = "segaenterprises",
+            ManufacturerDisplayName = "Sega Enterprises",
+            Title = "Sega Classics",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("SEGA-001", "segaenterprises", Arg.Any<CancellationToken>()).Returns(existing);
+
+        // The stale copy from a previous re-attribution still lives under the old partition.
+        var staleCopy = new Machine
+        {
+            Id = "SEGA-001",
+            PartitionKey = "sega",
+            ManufacturerDisplayName = "Sega",
+            Title = "Sega Classics",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+
+        // Full-catalog scan returns the stale copy (overrides the default empty stub).
+        _repository.StreamCrossPartitionAsync(
+            Arg.Is<string>(q => q == "SELECT * FROM c"),
+            Arg.Any<IReadOnlyDictionary<string, object>?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(_ => SingleMachineStream(staleCopy));
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups,
+            NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(0, result.Inserted);
+        Assert.Equal(1, result.Updated);
         Assert.Equal(1, result.StalePartitionsCleaned);
         await _repository.Received(1).DeleteAsync("SEGA-001", "sega", Arg.Any<CancellationToken>());
     }
@@ -1487,7 +1531,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     public async Task SyncAsync_DryRun_DoesNotRunStalePartitionCleanup()
     {
         // Phase (g) is guarded by !isDryRun — a dry-run projection run must not
-        // delete any Cosmos documents.
+        // delete any Cosmos documents or issue any cross-partition scan.
         _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
 
