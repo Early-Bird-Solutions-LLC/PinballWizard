@@ -72,14 +72,28 @@ internal sealed class InMemoryIndexState : IIndexState
         int failureCount,
         CancellationToken cancellationToken)
     {
-        _rows[(documentId, machineId)] = new StateRow(contentHash, chunkCount, failureCount);
+        _rows[(documentId, machineId)] = new StateRow(contentHash, chunkCount, failureCount, SkipReason: null);
+        return Task.CompletedTask;
+    }
+
+    public Task RecordSkippedAsync(
+        string documentId,
+        string machineId,
+        IngestionOutcome skipOutcome,
+        CancellationToken cancellationToken)
+    {
+        _rows[(documentId, machineId)] = new StateRow(
+            Hash: string.Empty,
+            ChunkCount: 0,
+            FailureCount: 0,
+            SkipReason: skipOutcome.ToString());
         return Task.CompletedTask;
     }
 
     public void SeedExistingHash(string documentId, string machineId, string hash) =>
-        _rows[(documentId, machineId)] = new StateRow(hash, ChunkCount: 0, FailureCount: 0);
+        _rows[(documentId, machineId)] = new StateRow(hash, ChunkCount: 0, FailureCount: 0, SkipReason: null);
 
-    internal sealed record StateRow(string Hash, int ChunkCount, int FailureCount);
+    internal sealed record StateRow(string Hash, int ChunkCount, int FailureCount, string? SkipReason);
 }
 
 internal sealed class InMemoryDeadLetterSink : IDeadLetterSink

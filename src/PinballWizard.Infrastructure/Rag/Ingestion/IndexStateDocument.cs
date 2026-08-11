@@ -55,4 +55,10 @@ public sealed class IndexStateDocument
 
     [JsonPropertyName("recorded_utc")]
     public DateTimeOffset RecordedUtc { get; init; }
+
+    // Set only for terminal-skip rows (e.g., "Skipped_DocumentTypeFiltered").
+    // Absent on indexed rows. Allows operators to distinguish "filtered by
+    // design" from "never reached the RAG worker" (no row in this container).
+    [JsonPropertyName("skip_reason")]
+    public string? SkipReason { get; init; }
 }

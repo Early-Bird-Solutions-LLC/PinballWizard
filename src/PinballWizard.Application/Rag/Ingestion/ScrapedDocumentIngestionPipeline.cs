@@ -85,6 +85,14 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
                 change.DocumentId, change.DocumentType);
             PinballWizardTelemetry.RagIngestionTypeFiltered.Add(
                 1, new KeyValuePair<string, object?>("document_type", change.DocumentType.ToString()));
+            // Stamp a terminal skip status so operators can distinguish
+            // "filtered by design" from "never reached the RAG worker"
+            // (no row in rag_index_state) when querying for a document.
+            await _indexState.RecordSkippedAsync(
+                change.DocumentId,
+                change.MachineId,
+                IngestionOutcome.Skipped_DocumentTypeFiltered,
+                cancellationToken).ConfigureAwait(false);
             return IngestionOutcome.Skipped_DocumentTypeFiltered;
         }
 
