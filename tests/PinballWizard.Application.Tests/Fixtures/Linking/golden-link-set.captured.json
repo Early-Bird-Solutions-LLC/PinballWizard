@@ -1,8 +1,8 @@
 {
-  "CapturedAt": "2026-08-10T01:39:45.7227341+00:00",
+  "CapturedAt": "2026-08-11T02:40:49.3685205+00:00",
   "Source": "live Cosmos scraped_documents_raw (link_status in Linked, ManuallyLinked) joined to scraped_documents fan-out rows",
-  "DocumentCount": 543,
-  "EntryCount": 734,
+  "DocumentCount": 631,
+  "EntryCount": 746,
   "Entries": [
     {
       "DocumentId": "doc_ca26b0db4b7456bf",
@@ -47,34 +47,16 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNW0"
-    },
-    {
-      "DocumentId": "doc_5cfe4c8426d679c6",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Luci_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MrRpw"
-    },
-    {
-      "DocumentId": "doc_5cfe4c8426d679c6",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Luci_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MdEjy"
     },
     {
-      "DocumentId": "doc_5cfe4c8426d679c6",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Luci_web.pdf",
+      "DocumentId": "doc_94f98388f1b8fa80",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Avengers-Pro-Manual.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNX0"
+      "ExpectedMachineId": "Gj66P-M3dxn"
     },
     {
       "DocumentId": "doc_d1df4616938b4bcb",
@@ -131,6 +113,24 @@
       "ExpectedMachineId": "GD7Ld-ME0BP"
     },
     {
+      "DocumentId": "doc_ad48e551c18d9d46",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/01/Batman_SLE_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4yVw-M85j8"
+    },
+    {
+      "DocumentId": "doc_ad48e551c18d9d46",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/01/Batman_SLE_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4yVw-MQY90"
+    },
+    {
       "DocumentId": "doc_0185818c2aa480b4",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Avatar-Manual.pdf",
       "SourceType": "ManualsPage",
@@ -140,40 +140,13 @@
       "ExpectedMachineId": "GrZBr-MDbx7"
     },
     {
-      "DocumentId": "doc_4edc3eda2e5ad1ce",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
+      "DocumentId": "doc_235b109609fd5626",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Avengers-LE-Manual-compressed.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MXrPx"
-    },
-    {
-      "DocumentId": "doc_4edc3eda2e5ad1ce",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNW0"
-    },
-    {
-      "DocumentId": "doc_4edc3eda2e5ad1ce",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MrRpw"
-    },
-    {
-      "DocumentId": "doc_4edc3eda2e5ad1ce",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MdEjy"
+      "ExpectedMachineId": "Gj66P-MXr0E"
     },
     {
       "DocumentId": "doc_4edc3eda2e5ad1ce",
@@ -183,6 +156,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MKNX0"
+    },
+    {
+      "DocumentId": "doc_4edc3eda2e5ad1ce",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G43W4-MKNW0"
     },
     {
       "DocumentId": "doc_40978c058b8b3c06",
@@ -201,6 +183,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G41d5-MKNwX"
+    },
+    {
+      "DocumentId": "doc_f5871479c41e30d5",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/CSIManual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRokz-ML8oW"
     },
     {
       "DocumentId": "doc_9924f135868a8b3c",
@@ -311,15 +302,6 @@
       "ExpectedMachineId": "GR9Nr-Mz2dY"
     },
     {
-      "DocumentId": "doc_9922bbae6d242d5a",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/03/IronMaiden_LE_Pre_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
       "DocumentId": "doc_3afcf377caad0a57",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Ghostbusters_LE_web.pdf",
       "SourceType": "ManualsPage",
@@ -365,6 +347,15 @@
       "ExpectedMachineId": "GRWvz-MP37P"
     },
     {
+      "DocumentId": "doc_1a13f133f955e2d4",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/Grand_Prix_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4O1L-MDW47"
+    },
+    {
       "DocumentId": "doc_91c13e29d25b5568",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/Guardians_Pro_web.pdf",
       "SourceType": "ManualsPage",
@@ -389,7 +380,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MDXpW"
+      "ExpectedMachineId": "G56lO-MZeRq"
     },
     {
       "DocumentId": "doc_73855343a0e6124c",
@@ -407,7 +398,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MZeRq"
+      "ExpectedMachineId": "G56lO-MDXpW"
     },
     {
       "DocumentId": "doc_bcbdfcf8ea3eb944",
@@ -417,15 +408,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G4e1d-MJ5Bj"
-    },
-    {
-      "DocumentId": "doc_805e4035273483db",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2019/03/IronMaiden_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
     },
     {
       "DocumentId": "doc_b73c45cd2d18e296",
@@ -462,6 +444,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GQKyP-Mx0O4"
+    },
+    {
+      "DocumentId": "doc_549c707bef130713",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2022/04/JurassicPark_Pin_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5pQ8-Mq14e"
     },
     {
       "DocumentId": "doc_6b58c02895fb58ec",
@@ -524,7 +515,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GQKyP-Mx0O4"
+      "ExpectedMachineId": "GQKyP-MP3OK"
     },
     {
       "DocumentId": "doc_d03a0d3280b04742",
@@ -533,7 +524,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GQKyP-MP3OK"
+      "ExpectedMachineId": "GQKyP-Mx0O4"
     },
     {
       "DocumentId": "doc_ed5194683bb81fc2",
@@ -570,6 +561,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GEL0V-MyN8E"
+    },
+    {
+      "DocumentId": "doc_f06288e8f38e0626",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2021/09/Primus_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_98aac976c3c70c25",
@@ -615,6 +615,33 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G4qX5-Ml9jb"
+    },
+    {
+      "DocumentId": "doc_7eab19ad0688b8e0",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/Nascar_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MDxXX"
+    },
+    {
+      "DocumentId": "doc_7eab19ad0688b8e0",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/Nascar_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQ4VW"
+    },
+    {
+      "DocumentId": "doc_7eab19ad0688b8e0",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/Nascar_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQj9k"
     },
     {
       "DocumentId": "doc_98df1b7642ee9883",
@@ -767,24 +794,6 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MLnXq"
-    },
-    {
-      "DocumentId": "doc_6494042362e18490",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/SpiderMan_VE_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MyNBN"
-    },
-    {
-      "DocumentId": "doc_6494042362e18490",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/SpiderMan_VE_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5D94-M3d5w"
     },
     {
@@ -797,24 +806,6 @@
       "ExpectedMachineId": "G5vLR-MZebq"
     },
     {
-      "DocumentId": "doc_a30bc48ea1e99272",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2020/01/StarWarsComic_LE_Pre_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
-    },
-    {
-      "DocumentId": "doc_d83418dbc0dc6152",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2020/01/StarWarsComic_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
-    },
-    {
       "DocumentId": "doc_dd1843cfbbddab39",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2025/11/Star-Wars-Home-Edition-Plus-Manual_web.pdf",
       "SourceType": "ManualsPage",
@@ -822,6 +813,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GpePX-MnKq5"
+    },
+    {
+      "DocumentId": "doc_8bb63119c64446bc",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2021/09/Spider-Man_ThePin_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5pQ8-Mq14e"
     },
     {
       "DocumentId": "doc_729340edf3001681",
@@ -995,15 +995,6 @@
       "ExpectedMachineId": "Gj6DE-MePEz"
     },
     {
-      "DocumentId": "doc_2eb3c8ad69648084",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Transformers-Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
-    },
-    {
       "DocumentId": "doc_38f95ce41ccac76c",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2024/10/UncannyXMen_Pro_web.pdf",
       "SourceType": "ManualsPage",
@@ -1031,13 +1022,13 @@
       "ExpectedMachineId": "G3EBl-Mq1zy"
     },
     {
-      "DocumentId": "doc_cbc7eb1862cda5fb",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Transformers-Manual-LE.pdf",
+      "DocumentId": "doc_c46f671625498277",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Whoa-Nelly-Manual.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-Mx0XO"
+      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_7c66200f1ad67a27",
@@ -1047,6 +1038,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5poe-MQrb5"
+    },
+    {
+      "DocumentId": "doc_f4eb66a4786a1c6a",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/WWE-LE-Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_f08fd3feb52bd685",
@@ -1481,6 +1481,15 @@
       "ExpectedMachineId": "GLWll-M1r8O"
     },
     {
+      "DocumentId": "doc_6267c2d149318e11",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2025/07/JAWS-50th-FLYER-compressed.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "jaws",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GLWll-M1r8O"
+    },
+    {
       "DocumentId": "doc_b1a6fb88343d8db2",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2024/01/VERTIGO-LE-Flyer_122823-compressed.pdf",
       "SourceType": "GamePage",
@@ -1577,7 +1586,7 @@
       "GameSlug": "james-bond-007",
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GQKyP-Mx0O4"
+      "ExpectedMachineId": "GQKyP-MP3OK"
     },
     {
       "DocumentId": "doc_3dc935702d8d832f",
@@ -1586,7 +1595,7 @@
       "GameSlug": "james-bond-007",
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GQKyP-MP3OK"
+      "ExpectedMachineId": "GQKyP-Mx0O4"
     },
     {
       "DocumentId": "doc_854a37724b268aa9",
@@ -1731,6 +1740,33 @@
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "Gzy89-MNEeO"
+    },
+    {
+      "DocumentId": "doc_28028c7e700185e1",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/JP-PRO-New-Address-compressed.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "jurassic-park",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GK17D-MdEqz"
+    },
+    {
+      "DocumentId": "doc_9b6cbc068f9b0036",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/JP-PREM-New-Address-compressed.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "jurassic-park",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GK17D-MKNKd"
+    },
+    {
+      "DocumentId": "doc_e9c9a06923ed4090",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/JP-LE-New-Address-compressed.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "jurassic-park",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GK17D-MKNKd"
     },
     {
       "DocumentId": "doc_7f72d54d7d1494ff",
@@ -1910,7 +1946,7 @@
       "GameSlug": "black-knight",
       "DocumentType": "Other",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GD7Ld-ME0BP"
+      "ExpectedMachineId": "GD7Ld-MBRP4"
     },
     {
       "DocumentId": "doc_f557b9305f618559",
@@ -1919,7 +1955,7 @@
       "GameSlug": "black-knight",
       "DocumentType": "Other",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GD7Ld-MBRP4"
+      "ExpectedMachineId": "GD7Ld-ME0BP"
     },
     {
       "DocumentId": "doc_603229c5be3e71a0",
@@ -2156,33 +2192,6 @@
       "ExpectedMachineId": "GR9Nr-M5RxE"
     },
     {
-      "DocumentId": "doc_aa25f1df6b0a80b0",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Ghostbusters-Features-Matrix.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "ghostbusters",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_aa25f1df6b0a80b0",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Ghostbusters-Features-Matrix.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "ghostbusters",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_aa25f1df6b0a80b0",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Ghostbusters-Features-Matrix.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "ghostbusters",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
       "DocumentId": "doc_04aa781c61d65014",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/GB-Pro-flyer.pdf",
       "SourceType": "GamePage",
@@ -2207,7 +2216,7 @@
       "GameSlug": "ghostbusters",
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
+      "ExpectedMachineId": "GR9Nr-M5RxE"
     },
     {
       "DocumentId": "doc_ae0d12a18a041619",
@@ -2225,7 +2234,7 @@
       "GameSlug": "ghostbusters",
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
+      "ExpectedMachineId": "GR9Nr-Mz2dY"
     },
     {
       "DocumentId": "doc_4e7c84d94df17bec",
@@ -2235,6 +2244,15 @@
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MrRpw"
+    },
+    {
+      "DocumentId": "doc_edacbd21a9256101",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/SPIDERMAN-VE.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "spider-man-vault-edition",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5D94-M3d5w"
     },
     {
       "DocumentId": "doc_1cc6ab876f894d13",
@@ -2396,25 +2414,7 @@
       "GameSlug": "mustang",
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrPOR-MLq5x"
-    },
-    {
-      "DocumentId": "doc_8effc3a9c2420acf",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Mustang-Pinball-Matrix.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "mustang",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GrPOR-MJK2k"
-    },
-    {
-      "DocumentId": "doc_8effc3a9c2420acf",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Mustang-Pinball-Matrix.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "mustang",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrPOR-M61Pw"
     },
     {
       "DocumentId": "doc_f892bd41d034d6bf",
@@ -2444,6 +2444,24 @@
       "ExpectedMachineId": "GrPOR-MJK2k"
     },
     {
+      "DocumentId": "doc_ea20c39b08e35288",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/AvengersLE-Flyer-1212-01a.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "avengers",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gj66P-MXr0E"
+    },
+    {
+      "DocumentId": "doc_2391067de8f7d810",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/AvengersPro-Flyer-1212-01a.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "avengers",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gj66P-M3dxn"
+    },
+    {
       "DocumentId": "doc_2ec84e546b568c41",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/NBAFinalBrochure.jpg",
       "SourceType": "GamePage",
@@ -2460,6 +2478,24 @@
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_f695f2eb3abe90e1",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/CSIBrochure.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "csi",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRokz-ML8oW"
+    },
+    {
+      "DocumentId": "doc_ccc96cbe6376d2b8",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2020/08/Spider-Man_Manual.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "spider-man",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5D94-M3d5w"
     },
     {
       "DocumentId": "doc_ccc96cbe6376d2b8",
@@ -2480,13 +2516,31 @@
       "ExpectedMachineId": "G5D94-MyNBN"
     },
     {
-      "DocumentId": "doc_ccc96cbe6376d2b8",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2020/08/Spider-Man_Manual.pdf",
+      "DocumentId": "doc_eaaf49a139766222",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/SHOT-MAP-755-5192-00-SM-USA-POTC_1.gif",
       "SourceType": "GamePage",
-      "GameSlug": "spider-man",
-      "DocumentType": "Manual",
+      "GameSlug": "disneys-pirates-of-the-caribbean",
+      "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-M3d5w"
+      "ExpectedMachineId": "GR7ZX-MQ23b"
+    },
+    {
+      "DocumentId": "doc_ff8d886ae07e4e89",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/POTC_brochure.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "disneys-pirates-of-the-caribbean",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GR7ZX-MQ23b"
+    },
+    {
+      "DocumentId": "doc_e9c3981ff87062d9",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/POTCBackglass_SM.jpg",
+      "SourceType": "GamePage",
+      "GameSlug": "disneys-pirates-of-the-caribbean",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GR7ZX-MQ23b"
     },
     {
       "DocumentId": "doc_ecced04b99e6db06",
@@ -2496,6 +2550,33 @@
       "DocumentType": "Flyer",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5poe-MQrb5"
+    },
+    {
+      "DocumentId": "doc_a3f8aeb94b16ef40",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/GrandPrixBackglass.jpg",
+      "SourceType": "GamePage",
+      "GameSlug": "grand-prix",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4O1L-MDW47"
+    },
+    {
+      "DocumentId": "doc_cda8dc6c4103c0c9",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/SHOT-MAP-755-5191-00-SM-USA-GRAND-PRIX_1.gif",
+      "SourceType": "GamePage",
+      "GameSlug": "grand-prix",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4O1L-MDW47"
+    },
+    {
+      "DocumentId": "doc_259bba6c5a6c752e",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/GrandPrixBrochure.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "grand-prix",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4O1L-MDW47"
     },
     {
       "DocumentId": "doc_c272c1092b1ef701",
@@ -2784,6 +2865,24 @@
       "DocumentType": "Other",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G4JZ4-ML0pL"
+    },
+    {
+      "DocumentId": "doc_8f412ab7d796f883",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/striker.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "striker-xtreme",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YEE-MDEVO"
+    },
+    {
+      "DocumentId": "doc_cca5432648b80732",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Inst_Card_Striker.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "striker-xtreme",
+      "DocumentType": "Other",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YEE-MDEVO"
     },
     {
       "DocumentId": "doc_d28f6079093bac63",
@@ -3119,87 +3218,6 @@
       "ExpectedMachineId": "G6lnq-M6153"
     },
     {
-      "DocumentId": "doc_4e86ac8b2d065297",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Iron-Maiden-Pinball-Feature-Matrix.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "iron-maiden",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
-      "DocumentId": "doc_89b984840e1ca33c",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/12/IM-Backstage-Pass-Rules.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "iron-maiden",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
-      "DocumentId": "doc_c3fd164f8c7ae341",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/IM-PRO-New-Address-compressed.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "iron-maiden",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
-      "DocumentId": "doc_3ee196974c88fd35",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/IM-LE-New-Address-compressed.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "iron-maiden",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
-      "DocumentId": "doc_55c37646f7e04cdd",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2023/11/IM-PREM-New-Address-compressed.pdf",
-      "SourceType": "GamePage",
-      "GameSlug": "iron-maiden",
-      "DocumentType": "Flyer",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G417d-MJkXV"
-    },
-    {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MLnXq"
-    },
-    {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
-    },
-    {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5poe-MQrb5"
-    },
-    {
       "DocumentId": "doc_f5f17444713c217f",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3209,42 +3227,6 @@
       "ExpectedMachineId": "GR7ZX-MQ23b"
     },
     {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MyNBN"
-    },
-    {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-Mx0XO"
-    },
-    {
-      "DocumentId": "doc_f5f17444713c217f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-M3d5w"
-    },
-    {
-      "DocumentId": "doc_0a5384e5e6633570",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2022/06/Stern-RushScoopAdvisory.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G2Lkd-MNEdK"
-    },
-    {
       "DocumentId": "doc_0a5384e5e6633570",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2022/06/Stern-RushScoopAdvisory.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3254,8 +3236,8 @@
       "ExpectedMachineId": "G2Lkd-M0ope"
     },
     {
-      "DocumentId": "doc_dea1bed83e03aa45",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2022/06/Stern-RushSwitchAdvisory.pdf",
+      "DocumentId": "doc_0a5384e5e6633570",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2022/06/Stern-RushScoopAdvisory.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
@@ -3272,13 +3254,13 @@
       "ExpectedMachineId": "G2Lkd-M0ope"
     },
     {
-      "DocumentId": "doc_73098b634e4c227a",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb179.pdf",
+      "DocumentId": "doc_dea1bed83e03aa45",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2022/06/Stern-RushSwitchAdvisory.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
+      "ExpectedMachineId": "G2Lkd-MNEdK"
     },
     {
       "DocumentId": "doc_73098b634e4c227a",
@@ -3288,87 +3270,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GRnPz-Mx0XO"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-ME049"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-MnKEX"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-Mq1k3"
-    },
-    {
-      "DocumentId": "doc_58e2e345b01ec955",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-M5Rbv"
     },
     {
       "DocumentId": "doc_d0969150fc810f4f",
@@ -3380,105 +3281,6 @@
       "ExpectedMachineId": "GRWvz-Mp4yl"
     },
     {
-      "DocumentId": "doc_d0969150fc810f4f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/08/Stern-SB191.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRWvz-Mx0eb"
-    },
-    {
-      "DocumentId": "doc_d0969150fc810f4f",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/08/Stern-SB191.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRWvz-MP37P"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-ME049"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-MnKEX"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-Mq1k3"
-    },
-    {
-      "DocumentId": "doc_96f9b0d0b2071b94",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-M5Rbv"
-    },
-    {
       "DocumentId": "doc_d18e52ee70d9d6b9",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3486,24 +3288,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MXrPx"
-    },
-    {
-      "DocumentId": "doc_d18e52ee70d9d6b9",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNW0"
-    },
-    {
-      "DocumentId": "doc_d18e52ee70d9d6b9",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MrRpw"
     },
     {
       "DocumentId": "doc_d18e52ee70d9d6b9",
@@ -3524,35 +3308,17 @@
       "ExpectedMachineId": "G43W4-MKNX0"
     },
     {
-      "DocumentId": "doc_0b8321a152ea2760",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB188.pdf",
+      "DocumentId": "doc_d18e52ee70d9d6b9",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
+      "ExpectedMachineId": "G43W4-MKNW0"
     },
     {
       "DocumentId": "doc_0b8321a152ea2760",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB188.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_0b8321a152ea2760",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB188.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_fa7251259522ce99",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB187-1.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
@@ -3567,15 +3333,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_fa7251259522ce99",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/Stern-SB187-1.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
     },
     {
       "DocumentId": "doc_54ca1e2f3be646da",
@@ -3584,25 +3341,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MJ9rE"
-    },
-    {
-      "DocumentId": "doc_b75487ef8b21aa77",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb186.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Grj6X-MJwj5"
-    },
-    {
-      "DocumentId": "doc_b75487ef8b21aa77",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb186.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MJ9rE"
+      "ExpectedMachineId": "GRBE4-MOE4l"
     },
     {
       "DocumentId": "doc_b75487ef8b21aa77",
@@ -3620,34 +3359,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MQK1Z"
-    },
-    {
-      "DocumentId": "doc_b75487ef8b21aa77",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb186.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MOE4l"
-    },
-    {
-      "DocumentId": "doc_dc21c7b46f395b24",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb185.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-MJN17"
-    },
-    {
-      "DocumentId": "doc_dc21c7b46f395b24",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb185.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-Mz2Pp"
+      "ExpectedMachineId": "Grj6X-MJwj5"
     },
     {
       "DocumentId": "doc_dc21c7b46f395b24",
@@ -3657,6 +3369,15 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G4qX5-Ml9jb"
+    },
+    {
+      "DocumentId": "doc_dc21c7b46f395b24",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb185.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4qX5-Mz2Pp"
     },
     {
       "DocumentId": "doc_d0f4d3744f6aac9e",
@@ -3674,7 +3395,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gj66P-M3dxn"
+      "ExpectedMachineId": "Gj66P-MXr0E"
     },
     {
       "DocumentId": "doc_da426af00ba824c7",
@@ -3683,43 +3404,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gj66P-MXr0E"
-    },
-    {
-      "DocumentId": "doc_484c6bc9bdc91e05",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GredR-MDE2K"
-    },
-    {
-      "DocumentId": "doc_484c6bc9bdc91e05",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRVq4-MLyxq"
-    },
-    {
-      "DocumentId": "doc_484c6bc9bdc91e05",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrZBr-MDbx7"
-    },
-    {
-      "DocumentId": "doc_484c6bc9bdc91e05",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRVq4-MDRKr"
+      "ExpectedMachineId": "Gj66P-M3dxn"
     },
     {
       "DocumentId": "doc_484c6bc9bdc91e05",
@@ -3737,7 +3422,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRVq4-M4oNp"
+      "ExpectedMachineId": "GredR-MDE2K"
     },
     {
       "DocumentId": "doc_822db998ad22bd43",
@@ -3755,25 +3440,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MLnXq"
-    },
-    {
-      "DocumentId": "doc_15425b0c6e40f927",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb174.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5D94-MyNBN"
-    },
-    {
-      "DocumentId": "doc_15425b0c6e40f927",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb174.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-M3d5w"
     },
     {
       "DocumentId": "doc_e214bb5393f51e23",
@@ -3785,6 +3452,15 @@
       "ExpectedMachineId": "GR7ZX-MQ23b"
     },
     {
+      "DocumentId": "doc_cbbce94c19b0acbd",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb172.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G417d-MJkXV"
+    },
+    {
       "DocumentId": "doc_384d35099af86e4c",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb173.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3792,6 +3468,240 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G417d-MJkXV"
+    },
+    {
+      "DocumentId": "doc_af2b75379b5e7bbb",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb159.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MDxXX"
+    },
+    {
+      "DocumentId": "doc_af2b75379b5e7bbb",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb159.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQ4VW"
+    },
+    {
+      "DocumentId": "doc_af2b75379b5e7bbb",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb159.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQj9k"
+    },
+    {
+      "DocumentId": "doc_89f192658d19254c",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb165.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5poe-MQrb5"
+    },
+    {
+      "DocumentId": "doc_f2493d4f2b470440",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb160.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MDxXX"
+    },
+    {
+      "DocumentId": "doc_f2493d4f2b470440",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb160.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQ4VW"
+    },
+    {
+      "DocumentId": "doc_f2493d4f2b470440",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb160.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQj9k"
+    },
+    {
+      "DocumentId": "doc_790b059ef9c1b6ad",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb167.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_fcea56d6fb1f4051",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb176.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrkL5-MLvrX"
+    },
+    {
+      "DocumentId": "doc_fcea56d6fb1f4051",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb176.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrkL5-MJoNN"
+    },
+    {
+      "DocumentId": "doc_e1fba46626e9297a",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb175.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrkL5-MLvrX"
+    },
+    {
+      "DocumentId": "doc_e1fba46626e9297a",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb175.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrkL5-MJoNN"
+    },
+    {
+      "DocumentId": "doc_177eb6b4b33cc5d5",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb145.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GR91N-MLOyE"
+    },
+    {
+      "DocumentId": "doc_b5e344e527ec9c77",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb155.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5WoB-MDyNZ"
+    },
+    {
+      "DocumentId": "doc_33ccfa1bdbbac662",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb144.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_33ccfa1bdbbac662",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb144.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_9662043e997fe0a7",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb153.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRWyB-MLz6Z"
+    },
+    {
+      "DocumentId": "doc_df6d7390fc9beb9b",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb157.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRWyB-MLz6Z"
+    },
+    {
+      "DocumentId": "doc_cf3eb438067461f7",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb139.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_78f22237e6a51f47",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb140.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_030d8379692178e9",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb151.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_030d8379692178e9",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb151.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_e63ac61f91efceff",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb146.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_e63ac61f91efceff",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb146.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_b62b4a908b4017a4",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb154.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_b62b4a908b4017a4",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb154.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
     },
     {
       "DocumentId": "doc_c0890d380335fe58",
@@ -3812,6 +3722,15 @@
       "ExpectedMachineId": "G43BW-M3dKV"
     },
     {
+      "DocumentId": "doc_62413c6e0f059f0f",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb135.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G48w3-Mq1Zk"
+    },
+    {
       "DocumentId": "doc_0d2e99b7678f8686",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb132.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3828,6 +3747,15 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43BW-M3dKV"
+    },
+    {
+      "DocumentId": "doc_c56940b51d93ee2b",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb126.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G48w3-Mq1Zk"
     },
     {
       "DocumentId": "doc_a9d79ed587ea5148",
@@ -3848,15 +3776,6 @@
       "ExpectedMachineId": "G4JZ4-ML0pL"
     },
     {
-      "DocumentId": "doc_82f6de04fa187d02",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb124.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRwv0-MJ99E"
-    },
-    {
       "DocumentId": "doc_66b6eedadf2600af",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb130.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3866,13 +3785,103 @@
       "ExpectedMachineId": "G48w3-Mq1Zk"
     },
     {
+      "DocumentId": "doc_2f03cd36d72fc903",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb121.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MZeRq"
+    },
+    {
+      "DocumentId": "doc_2f03cd36d72fc903",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb121.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-Mq153"
+    },
+    {
+      "DocumentId": "doc_2f03cd36d72fc903",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb121.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MDXpW"
+    },
+    {
+      "DocumentId": "doc_0a6cd949954551af",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb118.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRwv0-MJ99E"
+    },
+    {
+      "DocumentId": "doc_20f9d7022aafc121",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/sb122.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4JZ4-ML0pL"
+    },
+    {
+      "DocumentId": "doc_4725bb00376f13b7",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb120.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRwv0-MJ99E"
+    },
+    {
+      "DocumentId": "doc_76e7ef97d5b6264b",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb129.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G48w3-Mq1Zk"
+    },
+    {
+      "DocumentId": "doc_b1479f8dd5d574fe",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb113.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MZeRq"
+    },
+    {
+      "DocumentId": "doc_b1479f8dd5d574fe",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb113.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-Mq153"
+    },
+    {
+      "DocumentId": "doc_b1479f8dd5d574fe",
+      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb113.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MDXpW"
+    },
+    {
       "DocumentId": "doc_b2b67d8e07680db8",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb114.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MDXpW"
+      "ExpectedMachineId": "G56lO-MZeRq"
     },
     {
       "DocumentId": "doc_b2b67d8e07680db8",
@@ -3890,7 +3899,16 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MZeRq"
+      "ExpectedMachineId": "G56lO-MDXpW"
+    },
+    {
+      "DocumentId": "doc_ab59de5493709902",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/hp/HP_Manual_27_Jun_2025.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "harry-potter-arcade-edition",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "GWyBj-MdEbK"
     },
     {
       "DocumentId": "doc_e25584d105ba7667",
@@ -3899,34 +3917,34 @@
       "GameSlug": "avatar",
       "DocumentType": "Manual",
       "ManufacturerKey": "Jersey Jack",
-      "ExpectedMachineId": "GrZBr-MDbx7"
+      "ExpectedMachineId": "GbPxB-MkPol"
     },
     {
-      "DocumentId": "doc_498c0244357b5148",
-      "FileUrl": "https://marketing.jerseyjackpinball.com/gf/Godfather_Manual_1_1_July_2023.pdf",
+      "DocumentId": "doc_ca1982759f290833",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/distributors/Elton%20John/2025.01.22-Elton-John-Rules-Map_22x17_FINAL.pdf",
       "SourceType": "JjpSupportPage",
-      "GameSlug": "the-godfather",
-      "DocumentType": "Manual",
+      "GameSlug": "elton-john-platinum-edition",
+      "DocumentType": "Rulesheet",
       "ManufacturerKey": "Jersey Jack",
-      "ExpectedMachineId": "GqZZ1-M1r5Y"
+      "ExpectedMachineId": "G2LWd-M4o3Y"
     },
     {
-      "DocumentId": "doc_498c0244357b5148",
-      "FileUrl": "https://marketing.jerseyjackpinball.com/gf/Godfather_Manual_1_1_July_2023.pdf",
+      "DocumentId": "doc_dec5626fb9cef63e",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/ej/Elton_John_Manual_October_2024.pdf",
       "SourceType": "JjpSupportPage",
-      "GameSlug": "the-godfather",
+      "GameSlug": "elton-john-platinum-edition",
       "DocumentType": "Manual",
       "ManufacturerKey": "Jersey Jack",
-      "ExpectedMachineId": "GqZZ1-M85y9"
+      "ExpectedMachineId": "G2LWd-M4o3Y"
     },
     {
-      "DocumentId": "doc_498c0244357b5148",
-      "FileUrl": "https://marketing.jerseyjackpinball.com/gf/Godfather_Manual_1_1_July_2023.pdf",
+      "DocumentId": "doc_c8a75a45662d9869",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/distributors/Elton%20John/2025.01.22-Elton-John-Rules-Map_11x17_FINAL.pdf",
       "SourceType": "JjpSupportPage",
-      "GameSlug": "the-godfather",
-      "DocumentType": "Manual",
+      "GameSlug": "elton-john-platinum-edition",
+      "DocumentType": "Rulesheet",
       "ManufacturerKey": "Jersey Jack",
-      "ExpectedMachineId": "GqZZ1-MZeoE"
+      "ExpectedMachineId": "G2LWd-M4o3Y"
     },
     {
       "DocumentId": "doc_498c0244357b5148",
@@ -3980,7 +3998,7 @@
       "GameSlug": "willy-wonka-the-chocolate-factory",
       "DocumentType": "Manual",
       "ManufacturerKey": "Jersey Jack",
-      "ExpectedMachineId": "GYWBZ-MkPrr"
+      "ExpectedMachineId": "GYWBZ-MW9B0"
     },
     {
       "DocumentId": "doc_547b5fb78c8e34be",
@@ -3989,7 +4007,52 @@
       "GameSlug": "willy-wonka-the-chocolate-factory",
       "DocumentType": "Manual",
       "ManufacturerKey": "Jersey Jack",
-      "ExpectedMachineId": "GYWBZ-MW9B0"
+      "ExpectedMachineId": "GYWBZ-MkPrr"
+    },
+    {
+      "DocumentId": "doc_6d4ac0bb178712dd",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/distributors/Dialed%20In/DI-Rules-Flow-v5.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "dialed-in",
+      "DocumentType": "Rulesheet",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "G4X2l-MYepl"
+    },
+    {
+      "DocumentId": "doc_d0c96abe1ad89239",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/di/DI_Manual%203_3%20November%202018.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "dialed-in",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "G4X2l-MYepl"
+    },
+    {
+      "DocumentId": "doc_f44d6c3c945d372c",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/th/Hobbit_Manual%203_4%20November%202018.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "the-hobbit",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "G5bYr-MLezO"
+    },
+    {
+      "DocumentId": "doc_c70fa330f0004735",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/woz/Wizard_of_Oz_Manual_3_5_Dec_2016.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "the-wizard-of-oz",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "G4xyR-MJ2v0"
+    },
+    {
+      "DocumentId": "doc_b3eb3f47fa203248",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/distributors/Wizard%20of%20Oz/WOZ%20Game%20Sheets/Woz-Rules-Flowchart_v06.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "the-wizard-of-oz",
+      "DocumentType": "Rulesheet",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "G4xyR-MJ2v0"
     },
     {
       "DocumentId": "doc_608aae85bf9a27e9",
@@ -3999,6 +4062,42 @@
       "DocumentType": "Other",
       "ManufacturerKey": "American Pinball",
       "ExpectedMachineId": "GvBQX-M0ody"
+    },
+    {
+      "DocumentId": "doc_cd59da24e40e3d4a",
+      "FileUrl": "https://www.american-pinball.com/games/oktoberfest-promotional-flyer-mar-2019.pdf",
+      "SourceType": "AmericanPinballGamePage",
+      "GameSlug": "oktoberfest",
+      "DocumentType": "Other",
+      "ManufacturerKey": "American Pinball",
+      "ExpectedMachineId": "GLWBV-Mz2El"
+    },
+    {
+      "DocumentId": "doc_f3fb65b3d1270383",
+      "FileUrl": "https://www.american-pinball.com/games/oktoberfest-promotional-flyer-oct-2018.pdf",
+      "SourceType": "AmericanPinballGamePage",
+      "GameSlug": "oktoberfest",
+      "DocumentType": "Other",
+      "ManufacturerKey": "American Pinball",
+      "ExpectedMachineId": "GLWBV-Mz2El"
+    },
+    {
+      "DocumentId": "doc_f2aa7aa77a787783",
+      "FileUrl": "http://s4.american-pinball.com/img/support/2019-7/Bar-Door-Check.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "Other",
+      "ManufacturerKey": "American Pinball",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_2b2ea0c7c646e142",
+      "FileUrl": "http://s4.american-pinball.com/img/support/2024-12/Tank-Treads-Installation.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "Other",
+      "ManufacturerKey": "American Pinball",
+      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_42582dcb88f3a1b3",
@@ -4478,13 +4577,31 @@
       "ExpectedMachineId": "GoEkx-MdEzN"
     },
     {
-      "DocumentId": "doc_886cbf3ca3f2aaa6",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2026/07/Transformers_MTMTE_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
+      "DocumentId": "doc_309486ab498117d9",
+      "FileUrl": "https://www.chicago-gaming.com/warranties/CGC_Pinball_Warranty.pdf",
+      "SourceType": "ChicagoGamingGamePage",
+      "GameSlug": "monster-bash",
+      "DocumentType": "Other",
+      "ManufacturerKey": "Chicago Gaming",
+      "ExpectedMachineId": "G4do5-MjBp2"
+    },
+    {
+      "DocumentId": "doc_309486ab498117d9",
+      "FileUrl": "https://www.chicago-gaming.com/warranties/CGC_Pinball_Warranty.pdf",
+      "SourceType": "ChicagoGamingGamePage",
+      "GameSlug": "monster-bash",
+      "DocumentType": "Other",
+      "ManufacturerKey": "Chicago Gaming",
+      "ExpectedMachineId": "G4do5-MkPnV"
+    },
+    {
+      "DocumentId": "doc_309486ab498117d9",
+      "FileUrl": "https://www.chicago-gaming.com/warranties/CGC_Pinball_Warranty.pdf",
+      "SourceType": "ChicagoGamingGamePage",
+      "GameSlug": "monster-bash",
+      "DocumentType": "Other",
+      "ManufacturerKey": "Chicago Gaming",
+      "ExpectedMachineId": "G4do5-MW9z8"
     },
     {
       "DocumentId": "doc_f305bb542e590461",
@@ -4748,6 +4865,15 @@
       "ExpectedMachineId": "GYWvw-MKNP4"
     },
     {
+      "DocumentId": "doc_1e7897ce64b21145",
+      "FileUrl": "https://www.spookypinball.com/wp-content/uploads/2024/09/ACNC-Manual.pdf",
+      "SourceType": "SpookyPinballSupportPage",
+      "GameSlug": "acnc",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Spooky",
+      "ExpectedMachineId": "GrlXK-M9RV0"
+    },
+    {
       "DocumentId": "doc_ed82b8f9950fab36",
       "FileUrl": "https://www.spookypinball.com/wp-content/uploads/2026/05/Beetlejuice-Warden-Coil-Boards_05162026.pdf",
       "SourceType": "SpookyPinballSupportPage",
@@ -4838,6 +4964,15 @@
       "ExpectedMachineId": "Gr16e-M5Rbv"
     },
     {
+      "DocumentId": "doc_e606bba69ec84761",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/24Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
       "DocumentId": "doc_ef45f8669c73a18b",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/05/BlackKnight_Pro_web.pdf",
       "SourceType": "ManualsPage",
@@ -4862,34 +4997,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNW0"
-    },
-    {
-      "DocumentId": "doc_70409476373bdd3e",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Luci_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MrRpw"
-    },
-    {
-      "DocumentId": "doc_70409476373bdd3e",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Luci_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MdEjy"
-    },
-    {
-      "DocumentId": "doc_70409476373bdd3e",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Luci_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNX0"
     },
     {
       "DocumentId": "doc_65a239b2b0806ef8",
@@ -4910,6 +5018,42 @@
       "ExpectedMachineId": "G43BW-M3dKV"
     },
     {
+      "DocumentId": "doc_444be477acf8c73b",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Avengers-Pro-Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gj66P-M3dxn"
+    },
+    {
+      "DocumentId": "doc_7eaaa3cca88cfd41",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Avengers-LE-Manual-compressed.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gj66P-MXr0E"
+    },
+    {
+      "DocumentId": "doc_f44b86c5ac46ec39",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2023/01/Batman_SLE_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4yVw-M85j8"
+    },
+    {
+      "DocumentId": "doc_f44b86c5ac46ec39",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2023/01/Batman_SLE_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4yVw-MQY90"
+    },
+    {
       "DocumentId": "doc_c854f540d76e06ab",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2023/02/AvengersInfinity_LE_Pre_web.pdf",
       "SourceType": "ManualsPage",
@@ -4928,40 +5072,22 @@
       "ExpectedMachineId": "Gj66P-M3dxn"
     },
     {
-      "DocumentId": "doc_6c463c14cedff405",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
+      "DocumentId": "doc_4a8d9a98cb4d7f94",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2023/01/Batman_LE_Pre_web.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MXrPx"
+      "ExpectedMachineId": "G4yVw-M85j8"
     },
     {
-      "DocumentId": "doc_6c463c14cedff405",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
+      "DocumentId": "doc_4a8d9a98cb4d7f94",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2023/01/Batman_LE_Pre_web.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNW0"
-    },
-    {
-      "DocumentId": "doc_6c463c14cedff405",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MrRpw"
-    },
-    {
-      "DocumentId": "doc_6c463c14cedff405",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MdEjy"
+      "ExpectedMachineId": "G4yVw-MQY90"
     },
     {
       "DocumentId": "doc_6c463c14cedff405",
@@ -4971,6 +5097,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MKNX0"
+    },
+    {
+      "DocumentId": "doc_6c463c14cedff405",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/06/ACDC_Pro_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G43W4-MKNW0"
     },
     {
       "DocumentId": "doc_e7e715e859e2955e",
@@ -4998,6 +5133,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G6lnq-M6153"
+    },
+    {
+      "DocumentId": "doc_ed9086a3b75e65c0",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/CSIManual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRokz-ML8oW"
     },
     {
       "DocumentId": "doc_fe3b5663fa1444d5",
@@ -5060,33 +5204,6 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-MJN17"
-    },
-    {
-      "DocumentId": "doc_a08fe73d84313fd7",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2024/07/Elvira_BRK_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-Mz2Pp"
-    },
-    {
-      "DocumentId": "doc_a08fe73d84313fd7",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2024/07/Elvira_BRK_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-Ml9jb"
-    },
-    {
-      "DocumentId": "doc_a08fe73d84313fd7",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2024/07/Elvira_BRK_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GZVOd-MwNxZ"
     },
     {
@@ -5126,15 +5243,6 @@
       "ExpectedMachineId": "GR9Nr-Mz2dY"
     },
     {
-      "DocumentId": "doc_b210e18211a462c3",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/03/IronMaiden_LE_Pre_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
-    },
-    {
       "DocumentId": "doc_a5f39b5ce0405e81",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Ghostbusters_LE_web.pdf",
       "SourceType": "ManualsPage",
@@ -5169,15 +5277,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GweeP-Ml9pZ"
-    },
-    {
-      "DocumentId": "doc_7e035312cff99ec9",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2019/03/IronMaiden_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4yZN-MDEP7"
     },
     {
       "DocumentId": "doc_9b85bfb7fcdf4566",
@@ -5222,7 +5321,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MDXpW"
+      "ExpectedMachineId": "G56lO-MZeRq"
     },
     {
       "DocumentId": "doc_e2850f6c46a43d17",
@@ -5240,7 +5339,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MZeRq"
+      "ExpectedMachineId": "G56lO-MDXpW"
     },
     {
       "DocumentId": "doc_07b32a12fa57e99d",
@@ -5259,6 +5358,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GEL0V-MBRyb"
+    },
+    {
+      "DocumentId": "doc_16871007a713b78d",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/04/JurassicPark_Pin_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5pQ8-Mq14e"
     },
     {
       "DocumentId": "doc_71d3c6d44d21b78c",
@@ -5339,7 +5447,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GQKyP-Mx0O4"
+      "ExpectedMachineId": "GQKyP-MP3OK"
     },
     {
       "DocumentId": "doc_7bbf2c3e73124e8a",
@@ -5348,7 +5456,7 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GQKyP-MP3OK"
+      "ExpectedMachineId": "GQKyP-Mx0O4"
     },
     {
       "DocumentId": "doc_64efc1497b6610ce",
@@ -5477,6 +5585,15 @@
       "ExpectedMachineId": "G48w3-Mq1Zk"
     },
     {
+      "DocumentId": "doc_599605fcd7fa8e32",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2021/09/Primus_web.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
       "DocumentId": "doc_dff785b8eb6677e6",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Mustang-Manual.pdf",
       "SourceType": "ManualsPage",
@@ -5484,6 +5601,33 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GrPOR-MJK2k"
+    },
+    {
+      "DocumentId": "doc_b912d1a8b2853397",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/12/Nascar_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MDxXX"
+    },
+    {
+      "DocumentId": "doc_b912d1a8b2853397",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/12/Nascar_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQ4VW"
+    },
+    {
+      "DocumentId": "doc_b912d1a8b2853397",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/12/Nascar_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQj9k"
     },
     {
       "DocumentId": "doc_cc46fa5775673116",
@@ -5495,13 +5639,13 @@
       "ExpectedMachineId": "GrPOR-MLq5x"
     },
     {
-      "DocumentId": "doc_b9fed138e39f5d08",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2020/01/StarWarsComic_LE_Pre_web.pdf",
+      "DocumentId": "doc_b6d861720fd00a46",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/NBA-Manual.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
+      "ExpectedMachineId": "G5K19-MBRlz"
     },
     {
       "DocumentId": "doc_269c26f6df246786",
@@ -5511,24 +5655,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GpePX-MnKq5"
-    },
-    {
-      "DocumentId": "doc_bb572682c52cddda",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2020/01/StarWarsComic_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
-    },
-    {
-      "DocumentId": "doc_f8897ebe84aa7eec",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2025/10/StarWarsFOTE_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
     },
     {
       "DocumentId": "doc_04d16697263d635d",
@@ -5549,22 +5675,31 @@
       "ExpectedMachineId": "G5vLR-MwNwy"
     },
     {
-      "DocumentId": "doc_c96991099593a0fd",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/SpiderMan_VE_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
+      "DocumentId": "doc_cc71d46ee1b0eabd",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/12/Star-Trek-LE-Manual.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "star-trek",
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MLnXq"
+      "ExpectedMachineId": "Gryw4-MNEKn"
     },
     {
-      "DocumentId": "doc_c96991099593a0fd",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/SpiderMan_VE_web.pdf",
+      "DocumentId": "doc_7ad9fc4b5f597992",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/12/Star-Trek-Pro-Manual.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "star-trek",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gryw4-MwNky"
+    },
+    {
+      "DocumentId": "doc_a25226b6ff0ea42c",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2021/09/Spider-Man_ThePin_web.pdf",
       "SourceType": "ManualsPage",
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MyNBN"
+      "ExpectedMachineId": "G5pQ8-Mq14e"
     },
     {
       "DocumentId": "doc_c96991099593a0fd",
@@ -5601,6 +5736,15 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "Grybw-M5R0n"
+    },
+    {
+      "DocumentId": "doc_efe01cc0827d4910",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Ripleys_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_7575b637cae03b7b",
@@ -5657,6 +5801,15 @@
       "ExpectedMachineId": "G0l8P-M85d9"
     },
     {
+      "DocumentId": "doc_a8e206f4c81255fc",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Terminator3_Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GR91N-MLOyE"
+    },
+    {
       "DocumentId": "doc_f702eeec5f8fb38c",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2024/07/StrangerThings2023_Pre_web.pdf",
       "SourceType": "ManualsPage",
@@ -5693,24 +5846,6 @@
       "ExpectedMachineId": "Gzy89-MNEeO"
     },
     {
-      "DocumentId": "doc_efd793d52a77f20f",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2025/10/StarWarsFOTE_LE_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
-    },
-    {
-      "DocumentId": "doc_b9d22d39c05944c5",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2025/10/StarWarsFOTE_Prem_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-ME049"
-    },
-    {
       "DocumentId": "doc_21bcc1d4a408da22",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2020/02/Munsters_LE_Pre_web.pdf",
       "SourceType": "ManualsPage",
@@ -5735,33 +5870,6 @@
       "GameSlug": null,
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5nz5-M3d38"
-    },
-    {
-      "DocumentId": "doc_35edd810aa3ac113",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2025/12/WalkingDead_Remastered_LE_Pre_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5nz5-MP3r1"
-    },
-    {
-      "DocumentId": "doc_35edd810aa3ac113",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2025/12/WalkingDead_Remastered_LE_Pre_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5nz5-M7Z94"
-    },
-    {
-      "DocumentId": "doc_35edd810aa3ac113",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2025/12/WalkingDead_Remastered_LE_Pre_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "Gj6DE-MePEz"
     },
     {
@@ -5774,15 +5882,6 @@
       "ExpectedMachineId": "G3EBl-Mq1zy"
     },
     {
-      "DocumentId": "doc_c1e8695e30201205",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Transformers-Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
-    },
-    {
       "DocumentId": "doc_6afaf490db184780",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2024/10/UncannyXMen_LE_Pre_web.pdf",
       "SourceType": "ManualsPage",
@@ -5790,24 +5889,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "Grj6X-MJNV1"
-    },
-    {
-      "DocumentId": "doc_2a587ce5b33b83ac",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Transformers-Manual-LE.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-Mx0XO"
-    },
-    {
-      "DocumentId": "doc_135b3f7af1881199",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2026/07/Transformers_MTMTE_Pro_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
     },
     {
       "DocumentId": "doc_8b0a5fd7f80bbc88",
@@ -5828,6 +5909,15 @@
       "ExpectedMachineId": "G5WoB-MDyNZ"
     },
     {
+      "DocumentId": "doc_8272fa0c909a29e1",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Whoa-Nelly-Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
       "DocumentId": "doc_49580b27e69781db",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Wheel_of_Fortune_Manual.pdf",
       "SourceType": "ManualsPage",
@@ -5846,6 +5936,15 @@
       "ExpectedMachineId": "G5poe-MQrb5"
     },
     {
+      "DocumentId": "doc_c845083404a814ab",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/WWE-LE-Manual.pdf",
+      "SourceType": "ManualsPage",
+      "GameSlug": null,
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
       "DocumentId": "doc_87fad30ca66c4d26",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/XMenManual_042214.pdf",
       "SourceType": "ManualsPage",
@@ -5853,6 +5952,24 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "Grj6X-MJwj5"
+    },
+    {
+      "DocumentId": "doc_676b3c95f6ab4494",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/sonic/Sonic_Manual_10_July_2026.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "sonic-arcade-edition",
+      "DocumentType": "Manual",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "GrNyB-MDBkE"
+    },
+    {
+      "DocumentId": "doc_9ee86162b626194a",
+      "FileUrl": "https://marketing.jerseyjackpinball.com/sonic/Sonic_Rules_Flowchart_vA.pdf",
+      "SourceType": "JjpSupportPage",
+      "GameSlug": "sonic-arcade-edition",
+      "DocumentType": "Rulesheet",
+      "ManufacturerKey": "Jersey Jack",
+      "ExpectedMachineId": "GrNyB-MDBkE"
     },
     {
       "DocumentId": "doc_4751689b44fe09f2",
@@ -5891,24 +6008,6 @@
       "ExpectedMachineId": "GRWvz-Mp4yl"
     },
     {
-      "DocumentId": "doc_c61e9d7c4b771b68",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/08/Stern-SB191.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRWvz-Mx0eb"
-    },
-    {
-      "DocumentId": "doc_c61e9d7c4b771b68",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/08/Stern-SB191.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRWvz-MP37P"
-    },
-    {
       "DocumentId": "doc_cee3e4a2b7a2fdf8",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB188.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -5916,204 +6015,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_cee3e4a2b7a2fdf8",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB188.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_cee3e4a2b7a2fdf8",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB188.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-ME049"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-MnKEX"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-Mq1k3"
-    },
-    {
-      "DocumentId": "doc_ab12e89944473925",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB189.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-M5Rbv"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MZebq"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-ME049"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5vLR-MwNwy"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-MnKEX"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-Mq1k3"
-    },
-    {
-      "DocumentId": "doc_72d9e4248491aa95",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB190revB.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gr16e-M5Rbv"
-    },
-    {
-      "DocumentId": "doc_ee0ef4b6cd16af70",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb186.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Grj6X-MJwj5"
-    },
-    {
-      "DocumentId": "doc_ee0ef4b6cd16af70",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb186.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MJ9rE"
     },
     {
       "DocumentId": "doc_ee0ef4b6cd16af70",
@@ -6131,25 +6032,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MQK1Z"
-    },
-    {
-      "DocumentId": "doc_ee0ef4b6cd16af70",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb186.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MOE4l"
-    },
-    {
-      "DocumentId": "doc_d5952bc3dedfae8f",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb179.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
+      "ExpectedMachineId": "Grj6X-MJwj5"
     },
     {
       "DocumentId": "doc_d5952bc3dedfae8f",
@@ -6167,43 +6050,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-Mz2dY"
-    },
-    {
-      "DocumentId": "doc_98eaf85fc13e933a",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB187-1.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GR9Nr-MVKol"
-    },
-    {
-      "DocumentId": "doc_98eaf85fc13e933a",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Stern-SB187-1.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GR9Nr-M5RxE"
-    },
-    {
-      "DocumentId": "doc_d69e006cafc3d967",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb185.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-MJN17"
-    },
-    {
-      "DocumentId": "doc_d69e006cafc3d967",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb185.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G4qX5-Mz2Pp"
     },
     {
       "DocumentId": "doc_d69e006cafc3d967",
@@ -6213,6 +6060,15 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G4qX5-Ml9jb"
+    },
+    {
+      "DocumentId": "doc_d69e006cafc3d967",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb185.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4qX5-Mz2Pp"
     },
     {
       "DocumentId": "doc_95428e6146fc9695",
@@ -6230,7 +6086,7 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRBE4-MJ9rE"
+      "ExpectedMachineId": "GRBE4-MOE4l"
     },
     {
       "DocumentId": "doc_930ef376984231dd",
@@ -6240,24 +6096,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43W4-MXrPx"
-    },
-    {
-      "DocumentId": "doc_930ef376984231dd",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MKNW0"
-    },
-    {
-      "DocumentId": "doc_930ef376984231dd",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G43W4-MrRpw"
     },
     {
       "DocumentId": "doc_930ef376984231dd",
@@ -6278,6 +6116,24 @@
       "ExpectedMachineId": "G43W4-MKNX0"
     },
     {
+      "DocumentId": "doc_930ef376984231dd",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Service-Bulletin-181.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G43W4-MKNW0"
+    },
+    {
+      "DocumentId": "doc_29b294741c4f6c5d",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/06/Stern-RushSwitchAdvisory.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G2Lkd-M0ope"
+    },
+    {
       "DocumentId": "doc_29b294741c4f6c5d",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/06/Stern-RushSwitchAdvisory.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6287,8 +6143,8 @@
       "ExpectedMachineId": "G2Lkd-MNEdK"
     },
     {
-      "DocumentId": "doc_29b294741c4f6c5d",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/06/Stern-RushSwitchAdvisory.pdf",
+      "DocumentId": "doc_2e77e7d4a9fced0e",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/06/Stern-RushScoopAdvisory.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
@@ -6303,24 +6159,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G2Lkd-MNEdK"
-    },
-    {
-      "DocumentId": "doc_2e77e7d4a9fced0e",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/06/Stern-RushScoopAdvisory.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G2Lkd-M0ope"
-    },
-    {
-      "DocumentId": "doc_570863b193ec2aa3",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/05/Stern-SpinningDiscAdjustment.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "Gj66P-M3dxn"
     },
     {
       "DocumentId": "doc_570863b193ec2aa3",
@@ -6332,40 +6170,13 @@
       "ExpectedMachineId": "Gj66P-MXr0E"
     },
     {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
+      "DocumentId": "doc_570863b193ec2aa3",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2022/05/Stern-SpinningDiscAdjustment.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G417d-MJkXV"
-    },
-    {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MLnXq"
-    },
-    {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-MLBzV"
-    },
-    {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5poe-MQrb5"
+      "ExpectedMachineId": "Gj66P-M3dxn"
     },
     {
       "DocumentId": "doc_5ede2a5ea67c5795",
@@ -6377,31 +6188,58 @@
       "ExpectedMachineId": "GR7ZX-MQ23b"
     },
     {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
+      "DocumentId": "doc_b6c5d0d2e740cfaa",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb159.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MyNBN"
+      "ExpectedMachineId": "G5YWX-MDxXX"
     },
     {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
+      "DocumentId": "doc_b6c5d0d2e740cfaa",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb159.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRnPz-Mx0XO"
+      "ExpectedMachineId": "G5YWX-MQ4VW"
     },
     {
-      "DocumentId": "doc_5ede2a5ea67c5795",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb178.pdf",
+      "DocumentId": "doc_b6c5d0d2e740cfaa",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb159.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-M3d5w"
+      "ExpectedMachineId": "G5YWX-MQj9k"
+    },
+    {
+      "DocumentId": "doc_6528ef7eceaaa033",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb160.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MDxXX"
+    },
+    {
+      "DocumentId": "doc_6528ef7eceaaa033",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb160.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQ4VW"
+    },
+    {
+      "DocumentId": "doc_6528ef7eceaaa033",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb160.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5YWX-MQj9k"
     },
     {
       "DocumentId": "doc_f97be6f1dd2757cb",
@@ -6422,6 +6260,33 @@
       "ExpectedMachineId": "GR7ZX-MQ23b"
     },
     {
+      "DocumentId": "doc_706eb4df664e6f89",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb165.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5poe-MQrb5"
+    },
+    {
+      "DocumentId": "doc_5cf0f8404b6dbd8d",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb167.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_490291a1402ce6ae",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb172.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G417d-MJkXV"
+    },
+    {
       "DocumentId": "doc_80e765bc2dc90ca3",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb173.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6437,61 +6302,43 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-MLnXq"
-    },
-    {
-      "DocumentId": "doc_321c05ade887c436",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb174.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5D94-MyNBN"
     },
     {
-      "DocumentId": "doc_321c05ade887c436",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb174.pdf",
+      "DocumentId": "doc_9935f35fc28d6dee",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb175.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G5D94-M3d5w"
+      "ExpectedMachineId": "GrkL5-MLvrX"
     },
     {
-      "DocumentId": "doc_35f7e9f2eb097776",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
+      "DocumentId": "doc_9935f35fc28d6dee",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb175.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GredR-MDE2K"
+      "ExpectedMachineId": "GrkL5-MJoNN"
     },
     {
-      "DocumentId": "doc_35f7e9f2eb097776",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
+      "DocumentId": "doc_5202f5b62b6822d4",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb176.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRVq4-MLyxq"
+      "ExpectedMachineId": "GrkL5-MLvrX"
     },
     {
-      "DocumentId": "doc_35f7e9f2eb097776",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
+      "DocumentId": "doc_5202f5b62b6822d4",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb176.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrZBr-MDbx7"
-    },
-    {
-      "DocumentId": "doc_35f7e9f2eb097776",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb177.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRVq4-MDRKr"
+      "ExpectedMachineId": "GrkL5-MJoNN"
     },
     {
       "DocumentId": "doc_35f7e9f2eb097776",
@@ -6509,7 +6356,133 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRVq4-M4oNp"
+      "ExpectedMachineId": "GredR-MDE2K"
+    },
+    {
+      "DocumentId": "doc_d1e27da9e635178b",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb157.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRWyB-MLz6Z"
+    },
+    {
+      "DocumentId": "doc_9a7595f7e0974b2e",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb151.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_9a7595f7e0974b2e",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb151.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_2cb095e14e8754f3",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb140.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
+    },
+    {
+      "DocumentId": "doc_6d0c7fb28618166e",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb155.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G5WoB-MDyNZ"
+    },
+    {
+      "DocumentId": "doc_16de7d19e091186e",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb153.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRWyB-MLz6Z"
+    },
+    {
+      "DocumentId": "doc_686db02ba6998911",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb154.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_686db02ba6998911",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb154.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_1702bdd9b34e837d",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb145.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GR91N-MLOyE"
+    },
+    {
+      "DocumentId": "doc_03ff3e6f8706c5a6",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb146.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_03ff3e6f8706c5a6",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb146.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_2ae2c5429cade137",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb144.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MD15w"
+    },
+    {
+      "DocumentId": "doc_2ae2c5429cade137",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb144.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrqZX-MDEPd"
+    },
+    {
+      "DocumentId": "doc_0737ced1ad095acc",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb139.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_7e7f5423d073121d",
@@ -6521,6 +6494,33 @@
       "ExpectedMachineId": "G43BW-M3dKV"
     },
     {
+      "DocumentId": "doc_38b2fb7d9b66c7eb",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb121.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MZeRq"
+    },
+    {
+      "DocumentId": "doc_38b2fb7d9b66c7eb",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb121.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-Mq153"
+    },
+    {
+      "DocumentId": "doc_38b2fb7d9b66c7eb",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb121.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MDXpW"
+    },
+    {
       "DocumentId": "doc_4d55a15fa20133a8",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb130.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6530,6 +6530,33 @@
       "ExpectedMachineId": "G48w3-Mq1Zk"
     },
     {
+      "DocumentId": "doc_236453f0973cbd16",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb126.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G48w3-Mq1Zk"
+    },
+    {
+      "DocumentId": "doc_fa74bcef4658ff15",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb120.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRwv0-MJ99E"
+    },
+    {
+      "DocumentId": "doc_23ebdb870d2bbd71",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb122.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G4JZ4-ML0pL"
+    },
+    {
       "DocumentId": "doc_949ef8c9b35ec709",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb137.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6537,6 +6564,15 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43BW-M3dKV"
+    },
+    {
+      "DocumentId": "doc_01c65db858ebc382",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb135.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G48w3-Mq1Zk"
     },
     {
       "DocumentId": "doc_a3d40ae887def653",
@@ -6557,15 +6593,6 @@
       "ExpectedMachineId": "G4JZ4-ML0pL"
     },
     {
-      "DocumentId": "doc_a05e7df52ebec385",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb124.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GRwv0-MJ99E"
-    },
-    {
       "DocumentId": "doc_4ff8a4d8f73d29f6",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb133.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6573,6 +6600,15 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G43BW-M3dKV"
+    },
+    {
+      "DocumentId": "doc_2a2a62244bdab928",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb118.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "GRwv0-MJ99E"
     },
     {
       "DocumentId": "doc_d708cd0621ed33f8",
@@ -6584,13 +6620,49 @@
       "ExpectedMachineId": "GrPKO-MLO5X"
     },
     {
+      "DocumentId": "doc_294fa2c9474073da",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb129.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G48w3-Mq1Zk"
+    },
+    {
+      "DocumentId": "doc_ac77d6a5510ef910",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb113.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MZeRq"
+    },
+    {
+      "DocumentId": "doc_ac77d6a5510ef910",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb113.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-Mq153"
+    },
+    {
+      "DocumentId": "doc_ac77d6a5510ef910",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb113.pdf",
+      "SourceType": "ServiceBulletinPage",
+      "GameSlug": null,
+      "DocumentType": "ServiceBulletin",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "G56lO-MDXpW"
+    },
+    {
       "DocumentId": "doc_c9a3900168c5c65b",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb114.pdf",
       "SourceType": "ServiceBulletinPage",
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MDXpW"
+      "ExpectedMachineId": "G56lO-MZeRq"
     },
     {
       "DocumentId": "doc_c9a3900168c5c65b",
@@ -6608,7 +6680,43 @@
       "GameSlug": null,
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "G56lO-MZeRq"
+      "ExpectedMachineId": "G56lO-MDXpW"
+    },
+    {
+      "DocumentId": "doc_96483b1488a09ac7",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Star-Trek-PRO-flyer-100.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "star-trek",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gryw4-MwNky"
+    },
+    {
+      "DocumentId": "doc_1cdaa481d1fa3917",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Star-Trek-Pro-ShotMap50_121013.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "star-trek",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gryw4-MwNky"
+    },
+    {
+      "DocumentId": "doc_591499fc425ff1a2",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Star-Trek-LE-flyer-100.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "star-trek",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gryw4-MNEKn"
+    },
+    {
+      "DocumentId": "doc_bd26f018fb8ebce3",
+      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/Star-Trek-PREMIUM-flyer-100.pdf",
+      "SourceType": "GamePage",
+      "GameSlug": "star-trek",
+      "DocumentType": "Flyer",
+      "ManufacturerKey": "Stern",
+      "ExpectedMachineId": "Gryw4-MRj4O"
     }
   ]
 }

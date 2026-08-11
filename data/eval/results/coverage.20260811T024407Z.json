@@ -1,0 +1,254 @@
+{
+  "Cells": [
+    {
+      "Source": "opdb",
+      "DocumentType": "MetadataCard",
+      "ChunkCount": 262,
+      "Retrievable": true,
+      "SampleDocumentId": "meta_GRVq4-MLyxq",
+      "Query": "Iron Man Metadata",
+      "Error": null
+    },
+    {
+      "Source": "opdb",
+      "DocumentType": "GameOverview",
+      "ChunkCount": 67,
+      "Retrievable": true,
+      "SampleDocumentId": "overview_G417d-MJkXV",
+      "Query": "Wheel of Fortune Overview",
+      "Error": null
+    },
+    {
+      "Source": "stern",
+      "DocumentType": "Manual",
+      "ChunkCount": 51608,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_d1df4616938b4bcb",
+      "Query": "Aerosmith",
+      "Error": null
+    },
+    {
+      "Source": "stern",
+      "DocumentType": "ServiceBulletin",
+      "ChunkCount": 351,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_c0890d380335fe58",
+      "Query": "Austin Powers",
+      "Error": null
+    },
+    {
+      "Source": "stern",
+      "DocumentType": "FeatureMatrix",
+      "ChunkCount": 131,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_6cb901db142ea0fd",
+      "Query": "Pok\u00E9mon",
+      "Error": null
+    },
+    {
+      "Source": "jjp",
+      "DocumentType": "Manual",
+      "ChunkCount": 4941,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_dec5626fb9cef63e",
+      "Query": "Elton John",
+      "Error": null
+    },
+    {
+      "Source": "jjp",
+      "DocumentType": "Rulesheet",
+      "ChunkCount": 10,
+      "Retrievable": false,
+      "SampleDocumentId": "doc_ca1982759f290833",
+      "Query": "Elton John",
+      "Error": null
+    },
+    {
+      "Source": "spooky",
+      "DocumentType": "Manual",
+      "ChunkCount": 150,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_a2847fa3a9394d1b",
+      "Query": "Evil Dead",
+      "Error": null
+    },
+    {
+      "Source": "spooky",
+      "DocumentType": "Rulesheet",
+      "ChunkCount": 27,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_75a1c696a1c51104",
+      "Query": "Looney Tunes",
+      "Error": null
+    },
+    {
+      "Source": "pinballbrothers",
+      "DocumentType": "Manual",
+      "ChunkCount": 48,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_06f0ee7b94232521",
+      "Query": "Queen",
+      "Error": null
+    },
+    {
+      "Source": "pinballbrothers",
+      "DocumentType": "Rulesheet",
+      "ChunkCount": 32,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_1988ca4053c2d96e",
+      "Query": "Predator",
+      "Error": null
+    },
+    {
+      "Source": "cgc",
+      "DocumentType": "Manual",
+      "ChunkCount": 17,
+      "Retrievable": true,
+      "SampleDocumentId": "doc_703dc3d2ddb46932",
+      "Query": "Pulp Fiction The 1-2-3-4 Rollover Lanes \u0026 Royale w/Cheese Hurry Up",
+      "Error": null
+    },
+    {
+      "Source": "kineticist_tutorials",
+      "DocumentType": "Rulesheet",
+      "ChunkCount": 1720,
+      "Retrievable": true,
+      "SampleDocumentId": "kineticist_bally-kiss-pinball-tutorial_G4qX5-MJN17",
+      "Query": "kiss",
+      "Error": null
+    },
+    {
+      "Source": "tiltforums_rulesheets",
+      "DocumentType": "Rulesheet",
+      "ChunkCount": 1706,
+      "Retrievable": true,
+      "SampleDocumentId": "tiltforums_8008_GllPz-MBRrV",
+      "Query": "Scooby-Doo",
+      "Error": null
+    },
+    {
+      "Source": "twip",
+      "DocumentType": "NewsDigest",
+      "ChunkCount": 2006,
+      "Retrievable": true,
+      "SampleDocumentId": "twip_this-week-in-pinball-january-21st-2019",
+      "Query": "Pinball News",
+      "Error": null
+    }
+  ],
+  "Sources": [
+    {
+      "Source": "opdb",
+      "ChunkCount": 262,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "opdb",
+      "ChunkCount": 67,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "stern",
+      "ChunkCount": 52090,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "jjp",
+      "ChunkCount": 4951,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "ap",
+      "ChunkCount": 0,
+      "ExpectedNonEmpty": true,
+      "IsGap": true
+    },
+    {
+      "Source": "spooky",
+      "ChunkCount": 177,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "pinballbrothers",
+      "ChunkCount": 80,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "barrelsoffun",
+      "ChunkCount": 0,
+      "ExpectedNonEmpty": false,
+      "IsGap": false
+    },
+    {
+      "Source": "multimorphic",
+      "ChunkCount": 0,
+      "ExpectedNonEmpty": false,
+      "IsGap": false
+    },
+    {
+      "Source": "cgc",
+      "ChunkCount": 17,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "kineticist_tutorials",
+      "ChunkCount": 1720,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "tiltforums_rulesheets",
+      "ChunkCount": 1706,
+      "ExpectedNonEmpty": true,
+      "IsGap": false
+    },
+    {
+      "Source": "twip",
+      "ChunkCount": 2006,
+      "ExpectedNonEmpty": false,
+      "IsGap": false
+    },
+    {
+      "Source": "pb_freshdesk",
+      "ChunkCount": 0,
+      "ExpectedNonEmpty": false,
+      "IsGap": false
+    },
+    {
+      "Source": "multimorphic_p3_sdk",
+      "ChunkCount": 0,
+      "ExpectedNonEmpty": false,
+      "IsGap": false
+    }
+  ],
+  "CellsTotal": 15,
+  "CellsCovered": 14,
+  "GapsTotal": 1,
+  "RetrievabilityWarnings": 1,
+  "SourceGaps": [
+    {
+      "Source": "ap",
+      "ChunkCount": 0,
+      "ExpectedNonEmpty": true,
+      "IsGap": true
+    }
+  ],
+  "Warnings": [
+    {
+      "Source": "jjp",
+      "DocumentType": "Rulesheet",
+      "ChunkCount": 10,
+      "Retrievable": false,
+      "SampleDocumentId": "doc_ca1982759f290833",
+      "Query": "Elton John",
+      "Error": null
+    }
+  ]
+}
