@@ -10,8 +10,8 @@ the captured slugs and asserts the reconciler algorithm still matches them corre
 | Field | Value |
 |---|---|
 | Source | live Cosmos `machines` container |
-| Captured at | 2026-08-10T02:02:05.0222396+00:00 |
-| Total machines | 2213 |
+| Captured at | 2026-08-11T02:40:54.7024126+00:00 |
+| Total machines | 2183 |
 | Machines with slugs | 150 |
 
 ## Manufacturer breakdown
@@ -38,7 +38,6 @@ the captured slugs and asserts the reconciler algorithm still matches them corre
 | bellcoinmatic | 3 | 0 |
 | bellgames | 20 | 0 |
 | bem | 1 | 0 |
-| bigliardinielettronicimilano | 1 | 0 |
 | briarwood | 1 | 0 |
 | brunswick | 4 | 0 |
 | capcom | 6 | 0 |
@@ -69,7 +68,6 @@ the captured slugs and asserts the reconciler algorithm still matches them corre
 | gottlieb | 481 | 0 |
 | grandproducts | 1 | 0 |
 | haggis | 2 | 0 |
-| hanilamatic | 1 | 0 |
 | hankin | 5 | 0 |
 | heighwaypinball | 3 | 0 |
 | hexapinball | 2 | 0 |
@@ -86,7 +84,7 @@ the captured slugs and asserts the reconciler algorithm still matches them corre
 | jeutel | 6 | 0 |
 | jjp | 16 | 5 |
 | jocmatic | 1 | 0 |
-| joctronic | 3 | 0 |
+| joctronic | 2 | 0 |
 | juegospopulares | 8 | 0 |
 | kctabart | 3 | 0 |
 | keeney | 8 | 0 |
@@ -136,9 +134,9 @@ the captured slugs and asserts the reconciler algorithm still matches them corre
 | rmg | 1 | 0 |
 | rowamet | 2 | 0 |
 | sankyoseiki | 1 | 0 |
-| sega | 37 | 0 |
+| sega | 18 | 0 |
 | segaenterprises | 27 | 0 |
-| segasa | 22 | 0 |
+| segasa | 14 | 0 |
 | skitbpinball | 1 | 0 |
 | sleic | 4 | 0 |
 | sonic | 17 | 0 |

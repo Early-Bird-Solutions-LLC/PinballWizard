@@ -1,7 +1,7 @@
 {
-  "CapturedAt": "2026-08-10T02:02:05.0222396+00:00",
+  "CapturedAt": "2026-08-11T02:40:54.7024126+00:00",
   "Source": "live Cosmos machines container",
-  "TotalMachines": 2213,
+  "TotalMachines": 2183,
   "TotalSlugged": 150,
   "ManufacturerStats": {
     "aaamusements": {
@@ -81,10 +81,6 @@
       "SluggedCount": 0
     },
     "bem": {
-      "MachineCount": 1,
-      "SluggedCount": 0
-    },
-    "bigliardinielettronicimilano": {
       "MachineCount": 1,
       "SluggedCount": 0
     },
@@ -208,10 +204,6 @@
       "MachineCount": 2,
       "SluggedCount": 0
     },
-    "hanilamatic": {
-      "MachineCount": 1,
-      "SluggedCount": 0
-    },
     "hankin": {
       "MachineCount": 5,
       "SluggedCount": 0
@@ -277,7 +269,7 @@
       "SluggedCount": 0
     },
     "joctronic": {
-      "MachineCount": 3,
+      "MachineCount": 2,
       "SluggedCount": 0
     },
     "juegospopulares": {
@@ -477,7 +469,7 @@
       "SluggedCount": 0
     },
     "sega": {
-      "MachineCount": 37,
+      "MachineCount": 18,
       "SluggedCount": 0
     },
     "segaenterprises": {
@@ -485,7 +477,7 @@
       "SluggedCount": 0
     },
     "segasa": {
-      "MachineCount": 22,
+      "MachineCount": 14,
       "SluggedCount": 0
     },
     "skitbpinball": {
