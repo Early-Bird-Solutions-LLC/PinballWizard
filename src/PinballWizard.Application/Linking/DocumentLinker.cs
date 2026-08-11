@@ -50,6 +50,14 @@ public sealed class DocumentLinker : IDocumentLinker
             unit: "ms",
             description: "Wall-clock duration of a full linker batch run.");
 
+    private static readonly Counter<long> DuplicateMachineIdsEncountered =
+        LinkerMeter.CreateCounter<long>(
+            "pinwiz.linker.duplicate_machine_ids_total",
+            unit: "{machine}",
+            description: "Number of duplicate machine ids encountered during InitializeAsync deduplication. " +
+                         "A non-zero value means a prior sync left stale old-partition copies (#814). " +
+                         "The linker keeps the copy with the latest LastSeenAt and discards the rest.");
+
     // Populated by InitializeAsync — safe to read after that call.
     private IReadOnlyDictionary<string, LinkOverrideRecord> _overrides
         = new Dictionary<string, LinkOverrideRecord>(StringComparer.Ordinal);
@@ -149,11 +157,38 @@ public sealed class DocumentLinker : IDocumentLinker
             }
         }
 
+        // Guard: a prior sync may have left stale old-partition copies of re-attributed
+        // machines. Deduplicate by id before building the resolver index so
+        // InMemoryMachineIndex.Build and _machinesById never see duplicate ids (#814).
+        // Keep the copy with the latest LastSeenAt (the current OPDB attribution). This
+        // deduplication is defense-in-depth — phase (g) of OpdbSyncService deletes stale
+        // copies during the sync run, so under normal operation no duplicates reach here.
+        var machinesById = new Dictionary<string, Machine>(allMachines.Count, StringComparer.Ordinal);
+        foreach (var machine in allMachines)
+        {
+            if (!machinesById.TryAdd(machine.Id, machine))
+            {
+                var prior = machinesById[machine.Id];
+                var winner = machine.LastSeenAt >= prior.LastSeenAt ? machine : prior;
+                machinesById[machine.Id] = winner;
+                DuplicateMachineIdsEncountered.Add(1);
+                _logger.LogWarning(
+                    "DocumentLinker: duplicate machine id '{MachineId}' found under partitions " +
+                    "'{PartitionA}' and '{PartitionB}' — keeping '{WinnerPartition}' copy " +
+                    "(LastSeenAt={WinnerLastSeen:u}). Run --sync-opdb to remove the stale document (#814).",
+                    machine.Id, prior.PartitionKey, machine.PartitionKey,
+                    winner.PartitionKey, winner.LastSeenAt);
+            }
+        }
+        var uniqueMachines = machinesById.Count == allMachines.Count
+            ? allMachines
+            : machinesById.Values.ToList();
+
         // ADR-0054: the identity-derived resolver index is the ONLY matching index
         // (the legacy ManufacturerSlugs index was retired in Wave 2 Task 8).
         var aliases = await _aliasLoader.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var index = InMemoryMachineIndex.Build(allMachines, aliases);
-        _machinesById = allMachines.ToDictionary(m => m.Id, StringComparer.Ordinal);
+        var index = InMemoryMachineIndex.Build(uniqueMachines, aliases);
+        _machinesById = machinesById;
         _resolver = new MachineResolver(index, _machinesById);
         ResolverVariantCountForTest = index.VariantCount;
 

@@ -117,6 +117,22 @@ public sealed class CrossPartitionQueryAllowListTests
             "StreamCrossPartitionAsync in StreamAllManufacturersAsync; admin-only /manufacturers " +
             "page; bounded ~30-50 docs (one per OPDB manufacturer); dynamic discovery needed " +
             "for defunct manufacturers (Williams, Bally, Gottlieb, etc.) that have no scraper.",
+
+        // StreamCrossPartitionAsync — PurgeStalePartitionCopiesAsync (phase g) issues a
+        // single full-catalog SELECT * FROM c scan per apply run to find stale partition
+        // copies left behind when OPDB re-attributes a machine to a different manufacturer.
+        // Each row's id is looked up in the in-memory currentAttributionById map (id →
+        // current partition for every machine fetched this run); rows whose id is in the
+        // map but whose partition differs are deleted. Self-healing: covers re-attributions,
+        // previously failed deletes, and any other corruption source — including stale copies
+        // created before this fix. Unknown ids (not in the map) are left untouched.
+        // ONE scan per sync run (~2.2 k docs, ~3 Cosmos pages live); apply mode only;
+        // OPDB sync job path, not user-facing (#814).
+        ["OpdbSyncService.cs"] =
+            "StreamCrossPartitionAsync in PurgeStalePartitionCopiesAsync (phase g, apply mode only); " +
+            "single full-catalog SELECT * FROM c scan per sync run (~2.2k docs, ~3 Cosmos pages); " +
+            "compares each row id+partition against in-memory current-attribution map; deletes only " +
+            "rows whose id is known to this run but partition differs; OPDB sync job path, not user-facing (#814).",
     };
 
     [Fact]

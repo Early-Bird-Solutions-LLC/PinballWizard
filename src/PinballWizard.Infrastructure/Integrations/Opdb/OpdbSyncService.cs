@@ -81,6 +81,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         var skipped = 0;
         var aliasesAppended = 0;
         var aliasesOrphaned = 0;
+        var stalePartitionsCleaned = 0;
         var runStartedAt = _timeProvider.GetUtcNow();
         Exception? failure = null;
 
@@ -94,6 +95,14 @@ public sealed class OpdbSyncService : IOpdbSyncService
         // 1 MB. Base machines are not buffered — they're upserted as they
         // stream past, so pass-2 always sees them in Cosmos.
         var aliasBuffer = new List<OpdbMachineDto>();
+
+        // Current id → partition attribution for every successfully mapped machine this run
+        // (insert + update). Phase (g) uses this map to issue a single full-catalog
+        // cross-partition scan and delete any Cosmos document whose id is in this map but
+        // whose partition differs — covering re-attributions, previously failed deletes, and
+        // any other source of duplicate-id corruption (#814). Machines whose id is NOT in
+        // this map (not fetched this run) are left untouched.
+        var currentAttributionById = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
 
         // Per-run cache of OPDB group-segment → clean franchise title
         // (ADR-0029 D1). The is_machine_group record is NOT in the bulk
@@ -192,6 +201,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                         }
                         titleLookupQueue.Add((mapped.Id, mapped.PartitionKey, null, mapped.Title, now));
                         editionTokenBases[$"{mapped.PartitionKey}/{mapped.Id}"] = mapped;
+                        currentAttributionById.TryAdd(mapped.Id, mapped.PartitionKey);
                         Interlocked.Increment(ref inserted);
                     }
                     else
@@ -207,6 +217,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                         }
                         titleLookupQueue.Add((existing.Id, existing.PartitionKey, priorTitle, existing.Title, now));
                         editionTokenBases[$"{existing.PartitionKey}/{existing.Id}"] = existing;
+                        currentAttributionById.TryAdd(existing.Id, existing.PartitionKey);
                         Interlocked.Increment(ref updated);
                     }
                 });
@@ -522,6 +533,36 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     }
                 }
             }
+
+            // ── Phase (g): stale old-partition cleanup ─────────────────────
+            // When OPDB re-attributes a machine to a different manufacturer the
+            // upsert pass inserts a fresh copy under the NEW partition — but the
+            // OLD-partition copy is left untouched (GetByOpdbIdAsync only reads
+            // the CURRENT partition). Phase (g) finds and deletes those orphaned
+            // copies so the DocumentLinker's id→machine dictionary never sees
+            // duplicate ids (which caused a hard crash — GitHub #814).
+            //
+            // Self-healing: issues ONE full-catalog cross-partition scan per run
+            // (~2.2 k docs / ~3 Cosmos pages live) and compares each row's id +
+            // partition against currentAttributionById. Any document whose id is in
+            // the map but partition differs is stale and is deleted. This covers:
+            //   • re-attributions on this run (new partition, fresh insert)
+            //   • a previously failed delete (next run sees UPDATE, still in map)
+            //   • any other source of duplicate-id corruption
+            // Machines whose id is NOT in the map are untouched.
+            //
+            // Error posture matches UpdateTitleLookupAsync: transient Cosmos failures
+            // are logged at Warning and do not fail the overall sync — any remaining
+            // stale copy converges on the next run. OperationCanceledException propagates.
+            if (!isDryRun)
+            {
+                stalePartitionsCleaned = await PurgeStalePartitionCopiesAsync(
+                    currentAttributionById, cancellationToken).ConfigureAwait(false);
+                if (stalePartitionsCleaned > 0)
+                {
+                    PinballWizardTelemetry.OpdbSyncStalePartitionsCleaned.Add(stalePartitionsCleaned, modeAttr);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -634,6 +675,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
             Skipped = skipped,
             AliasesAppended = aliasesAppended,
             AliasesOrphaned = aliasesOrphaned,
+            StalePartitionsCleaned = stalePartitionsCleaned,
             Duration = stopwatch.Elapsed,
         };
 
@@ -646,11 +688,82 @@ public sealed class OpdbSyncService : IOpdbSyncService
         else
         {
             _logger.LogInformation(
-                "OPDB sync complete in {ElapsedMs} ms: {Fetched} fetched, {Inserted} inserted, {Updated} updated, {Skipped} skipped, {AliasesAppended} aliases-as-editions ({AliasesOrphaned} orphaned).",
-                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped, aliasesAppended, aliasesOrphaned);
+                "OPDB sync complete in {ElapsedMs} ms: {Fetched} fetched, {Inserted} inserted, {Updated} updated, {Skipped} skipped, {AliasesAppended} aliases-as-editions ({AliasesOrphaned} orphaned), {StalePartitionsCleaned} stale old-partition copies removed (#814).",
+                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped, aliasesAppended, aliasesOrphaned, stalePartitionsCleaned);
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Phase (g) implementation: issues a single full-catalog cross-partition scan and
+    /// deletes any document whose id is present in <paramref name="currentAttributionById"/>
+    /// (id → current partition, built during the upsert pass for every fetched machine)
+    /// but whose partition differs — self-healing across re-attributions, previously failed
+    /// deletes, and any other source of duplicate-id corruption. See GitHub #814.
+    /// </summary>
+    /// <remarks>
+    /// Error posture matches <see cref="UpdateTitleLookupAsync"/>: transient Cosmos /
+    /// network failures are caught and logged at Warning, not rethrown — any remaining
+    /// stale copy converges on the next sync run. OperationCanceledException propagates
+    /// so a host-stop signal is not swallowed.
+    /// </remarks>
+    private async Task<int> PurgeStalePartitionCopiesAsync(
+        ConcurrentDictionary<string, string> currentAttributionById,
+        CancellationToken cancellationToken)
+    {
+        if (currentAttributionById.IsEmpty)
+            return 0;
+
+        var cleaned = 0;
+        try
+        {
+            await foreach (var candidate in _machines.StreamCrossPartitionAsync(
+                "SELECT * FROM c",
+                null,
+                cancellationToken).ConfigureAwait(false))
+            {
+                if (!currentAttributionById.TryGetValue(candidate.Id, out var currentPartitionKey))
+                    continue; // not in this run's catalog — leave alone
+
+                if (string.Equals(candidate.PartitionKey, currentPartitionKey, StringComparison.Ordinal))
+                    continue; // already under the correct partition
+
+                try
+                {
+                    await _machines.DeleteAsync(candidate.Id, candidate.PartitionKey, cancellationToken).ConfigureAwait(false);
+                    _logger.LogInformation(
+                        "OPDB sync phase (g): deleted stale old-partition copy of machine {MachineId} " +
+                        "(old partition '{OldPartition}' → current partition '{CurrentPartition}').",
+                        candidate.Id, candidate.PartitionKey, currentPartitionKey);
+                    cleaned++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception deleteEx) when (deleteEx is CosmosException or HttpRequestException)
+                {
+                    _logger.LogWarning(
+                        deleteEx,
+                        "OPDB sync phase (g): failed to delete stale partition copy {MachineId} from " +
+                        "partition '{OldPartition}'; will retry on next sync.",
+                        candidate.Id, candidate.PartitionKey);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is CosmosException or HttpRequestException)
+        {
+            _logger.LogWarning(
+                ex,
+                "OPDB sync phase (g): full-catalog scan for stale partition copies failed; " +
+                "any duplicates will be cleaned up on the next sync run.");
+        }
+        return cleaned;
     }
 
     /// <summary>

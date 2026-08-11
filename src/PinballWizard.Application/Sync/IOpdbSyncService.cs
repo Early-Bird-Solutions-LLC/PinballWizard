@@ -78,6 +78,14 @@ public sealed record OpdbSyncResult
     /// </summary>
     public required int AliasesOrphaned { get; init; }
 
+    /// <summary>
+    /// Number of stale old-partition copies of re-attributed machines deleted during this
+    /// sync run. Non-zero when OPDB has moved a machine to a different manufacturer
+    /// partition since the previous sync (e.g. sega → segaenterprises). These deletions
+    /// prevent the DocumentLinker from crashing on duplicate machine ids (#814).
+    /// </summary>
+    public required int StalePartitionsCleaned { get; init; }
+
     /// <summary>Wall-clock duration of the sync.</summary>
     public required TimeSpan Duration { get; init; }
 }
