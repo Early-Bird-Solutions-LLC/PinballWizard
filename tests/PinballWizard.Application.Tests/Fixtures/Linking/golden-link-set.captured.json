@@ -1,8 +1,8 @@
 {
-  "CapturedAt": "2026-08-11T02:40:49.3685205+00:00",
+  "CapturedAt": "2026-08-11T22:58:03.3738883+00:00",
   "Source": "live Cosmos scraped_documents_raw (link_status in Linked, ManuallyLinked) joined to scraped_documents fan-out rows",
-  "DocumentCount": 631,
-  "EntryCount": 746,
+  "DocumentCount": 616,
+  "EntryCount": 731,
   "Entries": [
     {
       "DocumentId": "doc_ca26b0db4b7456bf",
@@ -563,15 +563,6 @@
       "ExpectedMachineId": "GEL0V-MyN8E"
     },
     {
-      "DocumentId": "doc_f06288e8f38e0626",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2021/09/Primus_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_98aac976c3c70c25",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/KISSProweb.pdf",
       "SourceType": "ManualsPage",
@@ -1022,15 +1013,6 @@
       "ExpectedMachineId": "G3EBl-Mq1zy"
     },
     {
-      "DocumentId": "doc_c46f671625498277",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/Whoa-Nelly-Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_7c66200f1ad67a27",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/World_Poker_Tour_Manual.pdf",
       "SourceType": "ManualsPage",
@@ -1038,15 +1020,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5poe-MQrb5"
-    },
-    {
-      "DocumentId": "doc_f4eb66a4786a1c6a",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/11/WWE-LE-Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_f08fd3feb52bd685",
@@ -3533,15 +3506,6 @@
       "ExpectedMachineId": "G5YWX-MQj9k"
     },
     {
-      "DocumentId": "doc_790b059ef9c1b6ad",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb167.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_fcea56d6fb1f4051",
       "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb176.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -3630,24 +3594,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GRWyB-MLz6Z"
-    },
-    {
-      "DocumentId": "doc_cf3eb438067461f7",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb139.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
-      "DocumentId": "doc_78f22237e6a51f47",
-      "FileUrl": "https://sternpinball.com/wp-content/uploads/2018/10/sb140.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_030d8379692178e9",
@@ -4080,24 +4026,6 @@
       "DocumentType": "Other",
       "ManufacturerKey": "American Pinball",
       "ExpectedMachineId": "GLWBV-Mz2El"
-    },
-    {
-      "DocumentId": "doc_f2aa7aa77a787783",
-      "FileUrl": "http://s4.american-pinball.com/img/support/2019-7/Bar-Door-Check.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "Other",
-      "ManufacturerKey": "American Pinball",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
-      "DocumentId": "doc_2b2ea0c7c646e142",
-      "FileUrl": "http://s4.american-pinball.com/img/support/2024-12/Tank-Treads-Installation.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "Other",
-      "ManufacturerKey": "American Pinball",
-      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_42582dcb88f3a1b3",
@@ -5585,15 +5513,6 @@
       "ExpectedMachineId": "G48w3-Mq1Zk"
     },
     {
-      "DocumentId": "doc_599605fcd7fa8e32",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2021/09/Primus_web.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_dff785b8eb6677e6",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Mustang-Manual.pdf",
       "SourceType": "ManualsPage",
@@ -5736,15 +5655,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "Grybw-M5R0n"
-    },
-    {
-      "DocumentId": "doc_efe01cc0827d4910",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Ripleys_Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_7575b637cae03b7b",
@@ -5909,15 +5819,6 @@
       "ExpectedMachineId": "G5WoB-MDyNZ"
     },
     {
-      "DocumentId": "doc_8272fa0c909a29e1",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Whoa-Nelly-Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_49580b27e69781db",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/Wheel_of_Fortune_Manual.pdf",
       "SourceType": "ManualsPage",
@@ -5934,15 +5835,6 @@
       "DocumentType": "Manual",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "G5poe-MQrb5"
-    },
-    {
-      "DocumentId": "doc_c845083404a814ab",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/WWE-LE-Manual.pdf",
-      "SourceType": "ManualsPage",
-      "GameSlug": null,
-      "DocumentType": "Manual",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_87fad30ca66c4d26",
@@ -6269,15 +6161,6 @@
       "ExpectedMachineId": "G5poe-MQrb5"
     },
     {
-      "DocumentId": "doc_5cf0f8404b6dbd8d",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb167.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_490291a1402ce6ae",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb172.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6386,15 +6269,6 @@
       "ExpectedMachineId": "GrqZX-MDEPd"
     },
     {
-      "DocumentId": "doc_2cb095e14e8754f3",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb140.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
-    },
-    {
       "DocumentId": "doc_6d0c7fb28618166e",
       "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/11/sb155.pdf",
       "SourceType": "ServiceBulletinPage",
@@ -6474,15 +6348,6 @@
       "DocumentType": "ServiceBulletin",
       "ManufacturerKey": "Stern",
       "ExpectedMachineId": "GrqZX-MDEPd"
-    },
-    {
-      "DocumentId": "doc_0737ced1ad095acc",
-      "FileUrl": "https://wp.sternpinball.com/wp-content/uploads/2018/10/sb139.pdf",
-      "SourceType": "ServiceBulletinPage",
-      "GameSlug": null,
-      "DocumentType": "ServiceBulletin",
-      "ManufacturerKey": "Stern",
-      "ExpectedMachineId": "GrEkZ-ML13O"
     },
     {
       "DocumentId": "doc_7e7f5423d073121d",
