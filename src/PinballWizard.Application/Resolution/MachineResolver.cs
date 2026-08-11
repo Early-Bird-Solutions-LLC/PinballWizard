@@ -110,15 +110,27 @@ public sealed class MachineResolver : IMachineResolver
 
     // The single-word guard lives here, as a policy rule rather than a hole in the index.
     //
-    // Two variant classes are blocked from Stage 3 containment:
+    // Three variant classes are now blocked (ordered from the most-general to the most-stage-specific):
     //
-    // 1. ManufacturerPrefixed variants ("stern pinball") — they always include the manufacturer
-    //    name as the first token, so any manufacturer-branded document title would spuriously
-    //    match. "Stern Pinball Service Bulletin" would bind to the "Pinball" machine via the
-    //    "stern pinball" ManufacturerPrefixed variant if containment were allowed.
-    //    They remain eligible for Exact and FranchisePrefix point-reads.
+    // 1. Pure-numeric single-token variants for PageText evidence (issue #825) — a machine
+    //    titled "24" has variant "24" (one digit token). Technical documents routinely contain
+    //    numbers as voltages ("24 VDC"), bulletin IDs, part counts, and dates, so a bare digit
+    //    sequence in page prose carries zero identification weight. The AP bulletin mis-link was
+    //    caused by AP's scraper using SourceType.ServiceBulletinPage (→ manufacturer hint "stern"),
+    //    combined with the Stern machine titled "24" absorbing any page text that mentioned the
+    //    number "24". By contrast, Filename and ProvenanceSlug evidence retain their normal priors:
+    //    a file named "24.pdf" is an intentional reference, and a game-page slug "24" is the
+    //    manufacturer's own classification.
+    //    Applied at ALL stages for PageText (even Exact): a page whose ENTIRE text is "24" is
+    //    not realistic, but the principle — numbers are not identification — is invariant of stage.
     //
-    // 2. Single-token trailing-qualifier variants ("pinball", "edition", etc.) — the canonical
+    // 2. ManufacturerPrefixed variants ("stern pinball") in Stage 3 containment — they always
+    //    include the manufacturer name as the first token, so any manufacturer-branded document
+    //    title would spuriously match. "Stern Pinball Service Bulletin" would bind to the
+    //    "Pinball" machine via the "stern pinball" ManufacturerPrefixed variant if containment
+    //    were allowed. They remain eligible for Exact and FranchisePrefix point-reads.
+    //
+    // 3. Single-token trailing-qualifier variants ("pinball", "edition", etc.) — the canonical
     //    instance of the 172-document incident. "pinball" appears in filenames and page text for
     //    almost every document; a machine titled "Pinball" must not absorb them all.
     //    Note: single-token variants whose key is NOT a trailing qualifier (e.g., "godzilla",
@@ -126,6 +138,13 @@ public sealed class MachineResolver : IMachineResolver
     //    they are specific enough to be useful identifiers.
     private static bool IsEligible(MachineVariant v, ResolutionQuery q, ResolutionStage stage)
     {
+        // Rule 1: pure-numeric single-token variants are never useful page-text evidence.
+        // Applied before the Exact early-return so the rule holds at every stage.
+        if (q.EvidenceKind == EvidenceKind.PageText
+            && v.IsSingleToken
+            && v.Tokens[0].All(char.IsDigit))
+            return false;
+
         if (stage == ResolutionStage.Exact) return true;
         if (stage == ResolutionStage.Containment && v.Kind == VariantKind.ManufacturerPrefixed) return false;
         if (v.IsSingleToken && TrailingQualifiers.Contains(v.Tokens[0])) return false;
