@@ -1010,6 +1010,28 @@ git commit -m "feat(linking) emit needs_review with candidates on ambiguous reso
 
 Only after Tasks 4-6 have replayed clean. Removing it earlier destroys the fallback that makes each preceding task independently revertible.
 
+> **Implementation notes (2026-08-10):**
+> - **Plan gap: the xref loop.** `TryTier1ProvenanceSlug`'s cross-reference branch also
+>   consumed `_machinesBySlug`, which this task deletes, but the plan never said what to
+>   do with it. Migrated it through the resolver identically to the game slug
+>   (`ProvenanceSlug` evidence, `xref_slug_resolver*` strategies) via a shared
+>   `ResolveSlugViaResolver` helper; the multi-slug ambiguity guard is unchanged.
+> - **Page-tier unresolved-family fan-out preserved.** The legacy page tier deliberately
+>   fanned an edition family out to all bases when no edition signal existed ("rather
+>   than guess" — one game, attribution-safe). The resolver's `ResolvedFamily` arm now
+>   does the same instead of returning null, which would have regressed those docs.
+> - **Behavioural deltas, all gate-verified:** cross-game page-text multiplicity and
+>   filename ambiguity now become `needs_review` (ADR §5) instead of the legacy
+>   fan-out-to-all / `NotInCatalog` bail; strategy names are uniformly `*_resolver*`.
+>   Golden-set replay after retirement: **zero `linked → different machine`, needs-review
+>   562 → 267** — 295 previously-unresolvable entries now link, each to its expected
+>   machine.
+> - The Task-7 evidence-kind deference in the legacy bail was deleted along with the
+>   bail itself; the cross-tier leak test was repurposed to pin the new contract
+>   (`Tier1Ambiguity_SurfacesAsNeedsReview_WithTier1Candidates`).
+> - The cross-manufacturer slug-collision warning was kept as a standalone transient
+>   scan in `InitializeAsync` (observability only, not a matching index).
+
 **Files:**
 - Modify: `src/PinballWizard.Application/Linking/DocumentLinker.cs` — delete `_machineSlugIndex`, `_machinesBySlug`, the title-fallback block at `:129-150`, `FindMachineById`'s index scan.
 
@@ -1017,16 +1039,16 @@ Only after Tasks 4-6 have replayed clean. Removing it earlier destroys the fallb
 - Consumes: `_resolver`, `_machinesById`.
 - Produces: `FindMachineById` becomes an `_machinesById` dictionary lookup — O(1) instead of the O(n) scan at `:983-990`.
 
-- [ ] **Step 1: Make the resolver non-optional**
+- [x] **Step 1: Make the resolver non-optional**
 
 Change the constructor parameter from `IMachineAliasLoader? aliasLoader = null` to a required `IMachineAliasLoader aliasLoader`, and update every test constructing `DocumentLinker` directly (including `GoldenLinkSetReplayTests.BuildLinkerAsync`) to pass a substitute.
 
-- [ ] **Step 2: Run the full suite to find every call site**
+- [x] **Step 2: Run the full suite to find every call site**
 
 Run: `dotnet build -c Release`
 Expected: FAIL, listing each `new DocumentLinker(...)` needing the argument. Fix each; do not add a default back.
 
-- [ ] **Step 3: Delete the legacy index and its consumers**
+- [x] **Step 3: Delete the legacy index and its consumers**
 
 Remove `_machinesBySlug`, `_machineSlugIndex`, the slug/title index build in `InitializeAsync`, and the legacy fallback branches added in Tasks 4-6. Replace `FindMachineById` with:
 
@@ -1037,12 +1059,12 @@ Remove `_machinesBySlug`, `_machineSlugIndex`, the slug/title index build in `In
 
 Keep `PreferByManufacturer`, `NarrowToSourceManufacturer`, and `IsEditionFamily` **only** if a remaining caller uses them; delete any that are now unreferenced (`TreatWarningsAsErrors` will not flag unused private methods, so check by search, not by build).
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors, all green including the golden-set replay.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Linking/DocumentLinker.cs tests/

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Resolution;
 using PinballWizard.Application.Tests.Fixtures;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
@@ -90,10 +91,17 @@ public sealed class GoldenLinkSetReplayTests
         // an empty async enumerable by default; any NullRef is caught inside the try/catch
         // in PruneStaleFanOutRowsAsync, so the link result is never corrupted.
 
+        // The resolver is mandatory since ADR-0054 Wave 2 Task 8 — the replay runs
+        // the identity-derived index with an empty curated-alias list.
+        var aliasLoader = Substitute.For<IMachineAliasLoader>();
+        aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<MachineAliasEntry>());
+
         var linker = new DocumentLinker(
             rawRepo, overrideRepo, machineRepo, docWriter,
             textExtractor: null,
             NullLogger<DocumentLinker>.Instance,
+            aliasLoader,
             blobStore: null);
 
         await linker.InitializeAsync(ct);
@@ -109,7 +117,8 @@ public sealed class GoldenLinkSetReplayTests
         DocumentType docType = DocumentType.Manual,
         // The captured source_type must be replayed faithfully. LinkingUtilities
         // .InferManufacturerKey derives the manufacturer hint FROM SourceType
-        // (ManualsPage => Stern), and that hint drives PreferByManufacturer. Hardcoding
+        // (ManualsPage => Stern), and that hint drives the resolver's manufacturer
+        // scoping. Hardcoding
         // ManualsPage would stamp every replayed document "stern" regardless of its real
         // manufacturer, so a non-Stern document whose slug collides with a Stern machine
         // would fail the gate as a mis-attribution the linker never made.
@@ -224,8 +233,8 @@ public sealed class GoldenLinkSetReplayTests
     // documents linking to "synth-gamma" always return NotInCatalog (needs_review).
 
     // Two machines from DIFFERENT manufacturers sharing the same slug string.
-    // _machinesBySlug is keyed by slug alone across the whole catalog, so these
-    // collide into one candidate list and NarrowToSourceManufacturer must pick
+    // Slug variants are keyed by slug text alone across the whole catalog, so these
+    // collide into one candidate set and the resolver's manufacturer scoping must pick
     // the right one using the manufacturer hint DERIVED FROM SourceType.
     private static readonly Machine SyntheticSternShared = MakeMachine(
         id: "SYNTH-STERN03",

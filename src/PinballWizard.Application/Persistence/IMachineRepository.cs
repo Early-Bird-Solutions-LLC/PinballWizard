@@ -26,7 +26,7 @@ public interface IMachineRepository : IRepository<Machine>
     IAsyncEnumerable<Machine> StreamByManufacturerAsync(string manufacturer, CancellationToken cancellationToken);
 
     // Cross-partition stream over all machines regardless of manufacturer.
-    // Used by DocumentLinker.InitializeAsync to build the slug index
+    // Used by DocumentLinker.InitializeAsync to build the resolver index
     // without hard-coding the manufacturer list in the Application layer.
     IAsyncEnumerable<Machine> StreamAllAsync(CancellationToken cancellationToken);
 
