@@ -186,4 +186,107 @@ public sealed class LinkDocumentsCommandTests : IDisposable
 
         Assert.Equal(0, Environment.ExitCode);
     }
+
+    // ── --relink-all fixpoint iteration tests ─────────────────────────────────
+    // These three tests verify the core contract added in issue #824.
+
+    /// <summary>
+    /// --relink-all drives RunBatchAsync until linked == 0 across passes.
+    /// With a linker that returns 3 linked → 2 linked → 0 linked, the loop
+    /// must run exactly 3 passes and reset exactly once.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_RelinkAll_ConvergesInMultiplePasses_CallsRunBatchExactlyNTimes()
+    {
+        var linker = Substitute.For<IDocumentLinker>();
+        linker.ResetForRelinkAsync(Arg.Any<CancellationToken>()).Returns(200);
+        // Returns linked=3, linked=2, linked=0 on successive calls.
+        // NSubstitute wraps each value in Task.FromResult for Task<T>-returning methods.
+        linker.RunBatchAsync(Arg.Any<CancellationToken>())
+              .Returns(
+                  (10, 3, 0, 7, 0, 0),
+                  (7, 2, 0, 5, 0, 0),
+                  (5, 0, 0, 5, 0, 0));
+
+        using var provider = BuildProviderWith(linker);
+
+        await InvokeRunAsync(provider, relinkAll: true);
+
+        // Reset runs once; RunBatch runs once per pass until convergence.
+        await linker.Received(1).ResetForRelinkAsync(Arg.Any<CancellationToken>());
+        await linker.Received(3).RunBatchAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// --relink-all prints a per-pass progress line and a final aggregate summary
+    /// that names the total pass count and cumulative link count.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_RelinkAll_PrintsAggregateSummaryWithPassCount()
+    {
+        var linker = Substitute.For<IDocumentLinker>();
+        linker.ResetForRelinkAsync(Arg.Any<CancellationToken>()).Returns(200);
+        linker.RunBatchAsync(Arg.Any<CancellationToken>())
+              .Returns(
+                  (10, 3, 0, 7, 0, 0),
+                  (7, 2, 0, 5, 0, 0),
+                  (5, 0, 0, 5, 0, 0));
+
+        using var provider = BuildProviderWith(linker);
+
+        await InvokeRunAsync(provider, relinkAll: true);
+
+        var output = _stdout.ToString();
+        // Final aggregate: 3 passes, cumulative linked = 3+2+0 = 5.
+        Assert.Contains("--relink-all complete (3 passes)", output);
+        Assert.Contains("linked=5", output);
+        // Per-pass progress lines must be present so the nightly log shows convergence.
+        Assert.Contains("Pass 1", output);
+        Assert.Contains("Pass 2", output);
+        Assert.Contains("Pass 3", output);
+    }
+
+    /// <summary>
+    /// Plain --link-documents (relinkAll=false) runs exactly one RunBatchAsync pass
+    /// and never calls ResetForRelinkAsync. The nightly job converges the corpus
+    /// incrementally across successive nightly runs, so multi-pass iteration here
+    /// is not needed.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PlainLinkDocuments_CallsRunBatchExactlyOnce()
+    {
+        var linker = Substitute.For<IDocumentLinker>();
+        linker.RunBatchAsync(Arg.Any<CancellationToken>())
+              .Returns((10, 7, 0, 3, 0, 0));
+
+        using var provider = BuildProviderWith(linker);
+
+        await InvokeRunAsync(provider, relinkAll: false);
+
+        await linker.Received(1).RunBatchAsync(Arg.Any<CancellationToken>());
+        await linker.DidNotReceive().ResetForRelinkAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A pathological linker that never returns linked == 0 must be stopped by the
+    /// hard pass bound (10 passes). A warning must be written to stderr.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_RelinkAll_WhenLinkerNeverConverges_StopsAtHardBound()
+    {
+        var linker = Substitute.For<IDocumentLinker>();
+        linker.ResetForRelinkAsync(Arg.Any<CancellationToken>()).Returns(100);
+        // Always reports linked=1 — would loop forever without the bound.
+        linker.RunBatchAsync(Arg.Any<CancellationToken>())
+              .Returns((5, 1, 0, 4, 0, 0));
+
+        using var provider = BuildProviderWith(linker);
+
+        await InvokeRunAsync(provider, relinkAll: true);
+
+        // The hard limit is 10 passes (RelinkMaxPasses, private const).
+        await linker.Received(10).RunBatchAsync(Arg.Any<CancellationToken>());
+        // Operator must be informed that convergence was not reached.
+        Assert.Contains("hard limit", _stderr.ToString());
+    }
 }
