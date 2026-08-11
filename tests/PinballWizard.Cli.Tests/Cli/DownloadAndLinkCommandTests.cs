@@ -1,11 +1,13 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
 
@@ -125,7 +127,9 @@ public sealed class DownloadAndLinkCommandTests : IDisposable
             });
 
         var downloadService = new DocumentDownloadService(
-            repo, downloader, blobStore, NullLogger<DocumentDownloadService>.Instance);
+            repo, downloader, blobStore,
+            Options.Create(new ScraperSettings()),
+            NullLogger<DocumentDownloadService>.Instance);
 
         var services = new ServiceCollection();
         services.AddSingleton(downloadService);

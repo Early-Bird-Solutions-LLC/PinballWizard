@@ -91,4 +91,12 @@ public sealed class RawDocumentRecord
     // when it cannot resolve ambiguity; cleared when the admin assigns a machine
     // (the doc is reset to Pending for re-processing with the override in place).
     public LinkReviewInfo? LinkReview { get; set; }
+
+    // Non-null when a previous download attempt was permanently skipped (e.g. the file
+    // exceeds the configured size cap). DocumentDownloadService checks this field before
+    // attempting a download and skips re-attempt unless the cap has been raised enough
+    // to cover ObservedSizeBytes. Cleared implicitly: once a successful download stamps
+    // File.LocalPath + Sha256 + ContentHash, the fast-path skip fires first so this
+    // field is never re-checked for that document.
+    public DownloadSkipInfo? DownloadSkip { get; set; }
 }
