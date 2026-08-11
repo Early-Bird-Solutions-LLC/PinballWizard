@@ -294,6 +294,14 @@ Emitted by `DocumentReclassifier.RunAsync` for the CLI maintenance verb that re-
 | `pinwiz.reclassify.failed` | Counter | (none) | Per-document errors caught and logged without aborting the run (invariant #17 degrade-visibly). Non-zero rate means some documents were not reclassified; check Error logs for document IDs and exception types. |
 | `pinwiz.reclassify.duration_ms` | Histogram | (none) | Wall-clock duration of a complete `--reclassify-documents` run. Useful for capacity planning at corpus scale. |
 
+### Document download instruments (`--download-documents`)
+
+Emitted by `DocumentDownloadService.RunAsync` when a document is permanently skipped because its file size exceeds the configured cap. The counter increments on every run that skips the document — both the first pass (which stamps a `download_skip` marker on the `scraped_documents_raw` record) and every later pass that reads that marker — so the rate reflects how many oversized documents are in the corpus, not how many were newly discovered.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.download.too_large_skip_total` | Counter | `source_type` | Documents skipped because their size exceeds `ScraperSettings.MaxFileSizeBytes`. A non-zero steady-state rate is expected for multi-GB manufacturer files (e.g. Spooky S3 software images); a spike in a new `source_type` means a new category of oversized files. These are terminal skips — reported as `skipped_too_large` and excluded from the `failed` count, so they do not set a non-zero exit code. Pair with the `Stamped as terminal skip` log line to identify specific documents. |
+
 ### RAG embedding token usage
 
 | Instrument | Type | Tags | Purpose |
