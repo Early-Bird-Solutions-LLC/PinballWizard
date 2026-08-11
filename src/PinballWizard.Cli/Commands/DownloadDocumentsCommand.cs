@@ -26,8 +26,12 @@ internal static class DownloadDocumentsCommand
         Console.WriteLine();
         Console.WriteLine($"--download-documents complete: " +
             $"downloaded={summary.Downloaded} skipped={summary.Skipped} failed={summary.Failed} " +
-            $"backfilled={summary.Backfilled}");
+            $"skipped_too_large={summary.SkippedTooLarge} backfilled={summary.Backfilled}");
 
+        // Only UNEXPECTED failures drive the non-zero exit code. TooLarge docs are
+        // permanent terminal skips under the current cap — they are expected, visible,
+        // and metered (pinwiz.download.too_large_skip_total) but not operationally
+        // actionable until MaxFileSizeBytes is deliberately raised.
         if (summary.Failed > 0)
             Environment.ExitCode = 1;
     }

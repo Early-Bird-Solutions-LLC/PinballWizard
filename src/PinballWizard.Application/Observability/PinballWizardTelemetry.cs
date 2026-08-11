@@ -721,6 +721,27 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Count of machine-resolution attempts, tagged with outcome (resolved/resolved_family/ambiguous/no_match), stage, and evidence_kind. Watch the outcome MIX, not the absolute rate: a collapse toward no_match indicates a resolution regression, while ambiguous is the resolver correctly declining to guess (ADR-0054).");
 
+    // ── Document download instrumentation ────────────────────────────────
+    //
+    // Emitted by DocumentDownloadService when a download is permanently skipped
+    // because the file exceeds the configured size cap (DownloadSkipInfo.Reasons.TooLarge).
+    // A non-zero rate at steady state is EXPECTED for multi-GB manufacturer files
+    // (e.g. Spooky S3 software images) — it becomes a signal only if new source_types
+    // appear or the count grows unexpectedly.
+    //
+    // Pair with the log line "Stamped as terminal skip" to identify specific documents.
+    // The counter increments on EVERY run that skips the document (both the first-stamp
+    // pass and all subsequent passes that read the stored skip record) so the rate
+    // reflects how many TooLarge docs are in the corpus, not how many were newly
+    // discovered.
+    //
+    // Tags:
+    //   source_type — the scraper source type (e.g. spooky_support_page, stern_manuals_page)
+    public static readonly Counter<long> DownloadTooLargeSkipsTotal = Meter.CreateCounter<long>(
+        "pinwiz.download.too_large_skip_total",
+        unit: "{document}",
+        description: "Documents skipped during --download-documents because their size exceeds MaxFileSizeBytes. A non-zero steady-state rate is expected for multi-GB manufacturer images (e.g. Spooky S3 software). Tagged with source_type. A spike in a new source_type indicates a new category of oversized files. These are permanent skips (not transient failures) and do NOT increment pinwiz.download.failed_total.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

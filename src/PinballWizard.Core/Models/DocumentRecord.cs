@@ -112,6 +112,51 @@ public sealed class DownloadedFileInfo
 }
 
 /// <summary>
+/// Permanent download-skip marker stamped when a download cannot succeed under the
+/// current configuration — e.g. the file exceeds the configured size cap.
+/// Stored in the raw record so future runs skip without re-attempting.
+/// </summary>
+public sealed class DownloadSkipInfo
+{
+    /// <summary>
+    /// Why the download was permanently skipped. Use the <c>Reasons.*</c> constants.
+    /// Stored as a snake_case string on the wire so Cosmos is queryable without
+    /// knowing the C# type (mirrors <c>link_status</c>).
+    /// </summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// File size in bytes as reported by the <c>Content-Length</c> response header
+    /// at skip time. Null when the server omitted the header.
+    /// When non-null, a future run re-attempts only if the current cap is >=
+    /// <see cref="ObservedSizeBytes"/> (the file now fits). When null, a future run
+    /// re-attempts when the cap has been raised above <see cref="CapBytesAtSkip"/>.
+    /// </summary>
+    public long? ObservedSizeBytes { get; init; }
+
+    /// <summary>
+    /// <c>MaxFileSizeBytes</c> that was active when this skip was recorded.
+    /// Used for cap-raise detection: if the current cap exceeds this value (and
+    /// <see cref="ObservedSizeBytes"/> is unknown), the document is re-attempted.
+    /// </summary>
+    public required long CapBytesAtSkip { get; init; }
+
+    /// <summary>UTC timestamp when this skip marker was stamped.</summary>
+    public required DateTime SkippedAt { get; init; }
+
+    /// <summary>Well-known <see cref="Reason"/> constants.</summary>
+    public static class Reasons
+    {
+        /// <summary>
+        /// The file's <c>Content-Length</c> (or streamed size) exceeded the configured
+        /// <c>MaxFileSizeBytes</c>. This is a permanent property under the current cap —
+        /// not a transient error — so the record is skipped until the cap is raised.
+        /// </summary>
+        public const string TooLarge = "too_large";
+    }
+}
+
+/// <summary>
 /// HTTP metadata from the server response, used for conditional requests.
 /// </summary>
 public sealed class HttpMetadata

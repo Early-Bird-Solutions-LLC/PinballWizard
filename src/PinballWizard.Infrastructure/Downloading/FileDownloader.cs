@@ -125,13 +125,15 @@ public sealed class FileDownloader : IFileDownloader
             var contentLength = response.Content.Headers.ContentLength;
             if (contentLength > _settings.MaxFileSizeBytes)
             {
-                _logger.LogWarning("File too large ({Size:N0} bytes), skipping: {Url}",
-                    contentLength, fileUrl);
+                var detail = $"{contentLength:N0} bytes exceeds MaxFileSizeBytes={_settings.MaxFileSizeBytes:N0}";
+                _logger.LogWarning("File too large: {Url} — {Detail}", fileUrl, detail);
                 return new DownloadResult
                 {
                     Status = DownloadStatus.TooLarge,
                     FileUrl = fileUrl,
-                    LocalPath = localPath
+                    LocalPath = localPath,
+                    SizeBytes = contentLength,
+                    ErrorMessage = detail,
                 };
             }
 
@@ -145,6 +147,7 @@ public sealed class FileDownloader : IFileDownloader
             long bytesWritten = 0;
             var buffer = new byte[81920];
             var contentBuffer = new MemoryStream();
+            bool exceededDuringTransfer = false;
 
             await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
             {
@@ -157,11 +160,28 @@ public sealed class FileDownloader : IFileDownloader
 
                     if (bytesWritten > _settings.MaxFileSizeBytes)
                     {
-                        await contentBuffer.DisposeAsync();
-                        throw new InvalidOperationException(
-                            $"File exceeded max size during download: {bytesWritten:N0} bytes");
+                        exceededDuringTransfer = true;
+                        break;
                     }
                 }
+            }
+
+            if (exceededDuringTransfer)
+            {
+                await contentBuffer.DisposeAsync();
+                // Server omitted Content-Length so the pre-check above passed;
+                // discovered the cap breach mid-transfer. Same TooLarge semantics
+                // as the Content-Length path — permanent under the current cap.
+                var detail = $"{bytesWritten:N0} bytes exceeds MaxFileSizeBytes={_settings.MaxFileSizeBytes:N0}";
+                _logger.LogWarning("File exceeded cap during transfer (no Content-Length): {Url} — {Detail}", fileUrl, detail);
+                return new DownloadResult
+                {
+                    Status = DownloadStatus.TooLarge,
+                    FileUrl = fileUrl,
+                    LocalPath = localPath,
+                    SizeBytes = bytesWritten,
+                    ErrorMessage = detail,
+                };
             }
 
             hash.TransformFinalBlock([], 0, 0);
