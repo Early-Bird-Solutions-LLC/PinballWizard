@@ -112,13 +112,19 @@ internal static class LinkerReplayHarness
         };
 
     // Builds a Machine where ManufacturerSlugs[manufacturerKey] = slug.
-    internal static Machine MakeMachine(string id, string manufacturerKey, string title, string slug)
+    // groupId is optional: null (the default) leaves Machine.GroupId unset, which
+    // preserves all existing synthetic and golden replay callers unchanged.
+    // The live page-text replay passes the captured GroupId so that edition-family
+    // documents — same title, multiple machines sharing a GroupId — resolve as a
+    // ResolvedFamily rather than an ambiguous NeedsReview.
+    internal static Machine MakeMachine(string id, string manufacturerKey, string title, string slug, string? groupId = null)
         => new()
         {
             Id = id,
             PartitionKey = manufacturerKey,
             ManufacturerDisplayName = manufacturerKey,
             Title = title,
+            GroupId = groupId,
             ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [manufacturerKey] = slug,

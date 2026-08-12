@@ -155,7 +155,8 @@ public sealed class PageTextLinkSetReplayTests
                 id: g.Key,
                 manufacturerKey: g.First().ExpectedMachineManufacturer,
                 title: g.First().ExpectedMachineTitle,
-                slug: $"unused-{g.Key.ToLowerInvariant()}"))
+                slug: $"unused-{g.Key.ToLowerInvariant()}",
+                groupId: g.First().ExpectedMachineGroupId))
             .ToList();
 
         var pagesByBlobName = fixture.Entries
@@ -245,6 +246,7 @@ public sealed class PageTextLinkSetReplayTests
         public string ExpectedMachineId { get; init; } = string.Empty;
         public string ExpectedMachineTitle { get; init; } = string.Empty;
         public string ExpectedMachineManufacturer { get; init; } = string.Empty;
+        public string? ExpectedMachineGroupId { get; init; }
         public List<string> PageTexts { get; init; } = [];
         public bool Truncated { get; init; }
     }

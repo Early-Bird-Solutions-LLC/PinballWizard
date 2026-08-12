@@ -371,6 +371,7 @@ internal static class CaptureGoldenSetCommand
                     ExpectedMachineId = machineId,
                     ExpectedMachineTitle = machine?.Title ?? string.Empty,
                     ExpectedMachineManufacturer = machine?.PartitionKey ?? string.Empty,
+                    ExpectedMachineGroupId = machine?.GroupId,
                     PageTexts = [.. pageTexts],
                     Truncated = truncated,
                 });
@@ -505,6 +506,7 @@ internal sealed class PageTextLinkEntry
     public string ExpectedMachineId { get; init; } = string.Empty;
     public string ExpectedMachineTitle { get; init; } = string.Empty;
     public string ExpectedMachineManufacturer { get; init; } = string.Empty;
+    public string? ExpectedMachineGroupId { get; init; }
     public List<string> PageTexts { get; init; } = [];       // index 0 = page 1
     public bool Truncated { get; init; }
 }
