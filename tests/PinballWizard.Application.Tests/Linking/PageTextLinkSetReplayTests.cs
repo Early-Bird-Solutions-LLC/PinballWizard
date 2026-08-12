@@ -106,7 +106,7 @@ public sealed class PageTextLinkSetReplayTests
         // of Oktoberfest. The policy check the live test applies:
         var expectedMachineId = "SYNTH-OK-01";
         var misattributed = result.FinalStatus == LinkStatus.Linked
-            && !result.LinkedMachineIds.Contains(expectedMachineId, StringComparer.OrdinalIgnoreCase);
+            && !(result.LinkedMachineIds ?? []).Contains(expectedMachineId, StringComparer.OrdinalIgnoreCase);
         Assert.True(misattributed, "harness failed to detect a planted mis-attribution");
     }
 
