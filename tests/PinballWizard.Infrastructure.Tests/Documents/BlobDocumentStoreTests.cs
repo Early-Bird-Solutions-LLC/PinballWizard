@@ -174,4 +174,73 @@ public sealed class BlobDocumentStoreTests
             await containerClient.DeleteIfExistsAsync();
         }
     }
+
+    // --- #832 temp-file backing ------------------------------------------------
+
+    [RequiresAzuriteFact]
+    public async Task OpenReadAsync_ReturnsSeekableFileStream_NotMemoryStream_AndDeletesTempFileOnDispose()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerClient = serviceClient.GetBlobContainerClient($"test-{Guid.NewGuid():N}");
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+            var expected = new byte[] { 10, 20, 30, 40 };
+            using (var writeStream = new MemoryStream(expected))
+                await sut.WriteAsync("temp-backed.bin", writeStream, CancellationToken.None);
+
+            string tempPath;
+            var stream = await sut.OpenReadAsync("temp-backed.bin", CancellationToken.None);
+            await using (stream)
+            {
+                // The whole point of #832: the blob must NOT be materialized on
+                // the heap. A FileStream is the contract; IsNotType<MemoryStream>
+                // is the regression tripwire.
+                Assert.IsNotType<MemoryStream>(stream);
+                var fileStream = Assert.IsType<FileStream>(stream);
+                tempPath = fileStream.Name;
+
+                Assert.True(stream.CanSeek);
+                Assert.Equal(0, stream.Position);
+                var actual = new byte[expected.Length];
+                await stream.ReadExactlyAsync(actual);
+                Assert.Equal(expected, actual);
+            }
+
+            // DeleteOnClose semantics: the temp file must be gone after dispose.
+            // (On Linux the unlink happens at dispose via SafeFileHandle
+            // .ReleaseHandle — not at open — so this asserts the only
+            // cross-platform guarantee: absence AFTER dispose.)
+            Assert.False(File.Exists(tempPath));
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
+
+    [RequiresAzuriteFact]
+    public async Task TryOpenReadAsync_MissingBlob_StillReturnsNull_AndLeavesNoTempFile()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerClient = serviceClient.GetBlobContainerClient($"test-{Guid.NewGuid():N}");
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+
+            var result = await sut.TryOpenReadAsync("does-not-exist.pdf", CancellationToken.None);
+
+            Assert.Null(result);
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
 }

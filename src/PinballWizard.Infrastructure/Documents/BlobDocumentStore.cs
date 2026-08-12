@@ -10,13 +10,10 @@ namespace PinballWizard.Infrastructure.Documents;
 // there and injected here to keep this class testable without a real
 // storage account.
 //
-// OpenReadAsync downloads into a MemoryStream so callers (PdfPig text
-// extractor) get a seekable, random-access buffer. The largest raw
-// document in scope (~80 MB Stern Godzilla service manual) fits inside
-// the ACA container's 1 GiB memory limit with room to spare; revisit
-// with a temp-file-backed stream only if substantially larger PDFs land
-// in scope. This is the same buffering decision HttpDocumentBytesSource
-// makes for the same downstream consumer.
+// OpenReadAsync/TryOpenReadAsync hand back a seekable temp-file-backed
+// FileStream (DeleteOnClose) so callers (PdfPig text extractor, SHA-256
+// backfill) get random access without the blob ever being materialized on
+// the heap (#832). See DownloadToTempFileAsync for the memory/disk budget.
 public sealed class BlobDocumentStore : IDocumentBlobStore
 {
     public const string ContainerName = "pinwiz-raw";
@@ -87,16 +84,10 @@ public sealed class BlobDocumentStore : IDocumentBlobStore
 
         _logger.LogDebug("BlobDocumentStore: opening blob '{BlobName}'", blobName);
 
-        // Download into a MemoryStream for seekable random access.
         // Azure.RequestFailedException with Status=404 propagates to the
         // caller when the blob does not exist — callers treat 404 as "not
         // yet downloaded" rather than a hard error.
-        var buffer = new MemoryStream();
-        await _container.GetBlobClient(blobName)
-            .DownloadToAsync(buffer, cancellationToken)
-            .ConfigureAwait(false);
-        buffer.Position = 0;
-        return buffer;
+        return await DownloadToTempFileAsync(blobName, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Stream?> TryOpenReadAsync(
@@ -113,17 +104,56 @@ public sealed class BlobDocumentStore : IDocumentBlobStore
         // error is not silently swallowed as "not available".
         try
         {
-            var buffer = new MemoryStream();
-            await _container.GetBlobClient(blobName)
-                .DownloadToAsync(buffer, cancellationToken)
-                .ConfigureAwait(false);
-            buffer.Position = 0;
-            return buffer;
+            return await DownloadToTempFileAsync(blobName, cancellationToken).ConfigureAwait(false);
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
             _logger.LogDebug("BlobDocumentStore: blob '{BlobName}' not found (404) — treating as miss.", blobName);
             return null;
+        }
+    }
+
+    // #832: download into a temp FileStream instead of a MemoryStream, so
+    // peak memory is O(copy buffer) regardless of blob size. The previous
+    // MemoryStream buffering reasoned about ONE document fitting in the ACA
+    // container's memory; it never accounted for concurrent extractions, and
+    // MemoryStream's doubling growth transiently costs old+new buffers on the
+    // LOH (the Azure SDK's PartitionedDownloader never pre-sizes the
+    // destination — verified at tag Azure.Storage.Blobs_12.29.1).
+    //
+    // DeleteOnClose on Linux unlinks at DISPOSE (SafeFileHandle.ReleaseHandle
+    // "mimics" the flag), not at open — so a SIGKILL leaves the file. That is
+    // acceptable by construction: ACA container-scoped storage "disappears
+    // when the container shuts down or restarts" (Microsoft Learn, storage
+    // mounts), so an orphan can never outlive the failed execution. Budget:
+    // ExtractionConcurrency(4) x MaxStreamBytes(100 MB) = 400 MB, inside the
+    // 2 GiB ephemeral allowance at <=0.5 vCPU.
+    private async Task<FileStream> DownloadToTempFileAsync(
+        string blobName,
+        CancellationToken cancellationToken)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var stream = new FileStream(
+            tempPath,
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            bufferSize: 81920,
+            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+        try
+        {
+            await _container.GetBlobClient(blobName)
+                .DownloadToAsync(stream, cancellationToken)
+                .ConfigureAwait(false);
+            stream.Position = 0;
+            return stream;
+        }
+        catch
+        {
+            // DeleteOnClose removes the temp file with the handle; nothing to
+            // clean by hand even on the 404 path.
+            await stream.DisposeAsync().ConfigureAwait(false);
+            throw;
         }
     }
 }
