@@ -91,6 +91,19 @@ public class LinkingUtilitiesTests
         Assert.Equal("stern", LinkingUtilities.InferManufacturerKey(source));
     }
 
+    [Theory]
+    // The domain appears in the URL but NOT as the host — attribution must not switch.
+    // Manufacturer hint decides which machines a document may bind to, so a path or
+    // query-string mention is not provenance.
+    [InlineData("https://sternpinball.com/redirect?to=american-pinball.com/bulletin.pdf")]
+    [InlineData("https://sternpinball.com/american-pinball.com/sb200.pdf")]
+    // A look-alike registrable domain must not match the suffix check either.
+    [InlineData("https://notamerican-pinball.com/sb201.pdf")]
+    public void InferManufacturerKey_ServiceBulletinPage_ApDomainOutsideHost_StaysStern(string fileUrl)
+        => Assert.Equal(
+            "stern",
+            LinkingUtilities.InferManufacturerKey(SourceWith(SourceType.ServiceBulletinPage, fileUrl)));
+
     // The exhaustiveness guard's inverse: SynthesizedArticle MUST have no manufacturer key,
     // because its manufacturer is per-record (DocumentRecord.Manufacturer), not inferable from
     // the source type. This pins that intent so a future change can't quietly give it one.

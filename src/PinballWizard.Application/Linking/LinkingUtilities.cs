@@ -200,6 +200,18 @@ public static class LinkingUtilities
     // Matches the American Pinball registrable domain. AP bulletin files are served
     // from s4.american-pinball.com (CDN subdomain); the support page itself is
     // www.american-pinball.com. Both match this predicate.
-    private static bool IsAmericanPinballUrl(string url) =>
-        url.Contains("american-pinball.com", StringComparison.OrdinalIgnoreCase);
+    //
+    // Parses the HOST rather than substring-matching the whole URL: manufacturer
+    // attribution decides which machines a document can bind to, so a query string
+    // or path segment that merely mentions the domain (".../redirect?to=american-pinball.com")
+    // must not silently re-attribute another manufacturer's document.
+    private const string ApDomain = "american-pinball.com";
+
+    private static bool IsAmericanPinballUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        var host = uri.Host;
+        return host.Equals(ApDomain, StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith("." + ApDomain, StringComparison.OrdinalIgnoreCase);
+    }
 }
