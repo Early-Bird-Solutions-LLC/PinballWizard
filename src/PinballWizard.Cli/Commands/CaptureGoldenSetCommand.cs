@@ -1,6 +1,10 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using PinballWizard.Application.Documents;
+using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Rag.Extraction;
+using PinballWizard.Application.Resolution;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 
@@ -261,6 +265,184 @@ internal static class CaptureGoldenSetCommand
         Console.WriteLine(
             $"--capture-reconciler-parity complete: {totalMachines} machines, {slugEntries.Count} slug entries → {fixturePath}");
     }
+
+    private const int PageExcerptBudget = 1000;
+    private const int PageTierCount = 2;
+
+    // #832 copyright posture: fixtures store the smallest excerpt that still
+    // resolves identically to the full page. Compares the resolver outcome of
+    // the truncated excerpt against the full text (both as PageText evidence
+    // with the same manufacturer hint the linker would use); on divergence the
+    // full page is kept — a truncated fixture must never encode a weaker
+    // resolver input than production sees.
+    internal static string TruncateWithResolutionParity(
+        string fullPageText,
+        string? manufacturerKey,
+        MachineResolver resolver,
+        int budget)
+    {
+        if (fullPageText.Length <= budget) return fullPageText;
+
+        var excerpt = fullPageText[..budget];
+
+        static string? Outcome(ResolutionResult r) => r switch
+        {
+            ResolutionResult.Resolved res => res.MachineId,
+            ResolutionResult.ResolvedFamily fam => $"family:{fam.GroupId}",
+            _ => null,
+        };
+
+        var full = Outcome(resolver.Resolve(new ResolutionQuery(fullPageText, EvidenceKind.PageText, manufacturerKey)));
+        var truncated = Outcome(resolver.Resolve(new ResolutionQuery(excerpt, EvidenceKind.PageText, manufacturerKey)));
+
+        return string.Equals(full, truncated, StringComparison.Ordinal) ? excerpt : fullPageText;
+    }
+
+    internal static async Task RunPageTextSetAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        var rawRepo = services.GetService<IRawDocumentRepository>();
+        var scrapedRepo = services.GetService<IScrapedDocumentRepository>();
+        var machineRepo = services.GetService<IMachineRepository>();
+        var aliasLoader = services.GetService<IMachineAliasLoader>();
+        var blobStore = services.GetService<IDocumentBlobStore>();
+        var preview = services.GetService<IDocumentPreviewExtractor>();
+        if (rawRepo is null || scrapedRepo is null || machineRepo is null
+            || aliasLoader is null || blobStore is null || preview is null)
+        {
+            Console.Error.WriteLine(
+                "--capture-page-text requires Cosmos AND blob storage to be configured " +
+                "(ConnectionStrings:cosmos or Cosmos:AccountEndpoint, plus the pinwiz-raw blob store): " +
+                "page text exists only transiently inside extraction, so capture must download and " +
+                "preview-extract each page-tier blob.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Building resolver (machines + aliases) for truncation parity checks...");
+        var machines = new List<Machine>();
+        await foreach (var m in machineRepo.StreamAllAsync(cancellationToken)) machines.Add(m);
+        var machinesById = machines.ToDictionary(m => m.Id, StringComparer.Ordinal);
+        var aliases = await aliasLoader.LoadAsync(cancellationToken);
+        var resolver = new MachineResolver(InMemoryMachineIndex.Build(machines, aliases), machinesById);
+
+        Console.WriteLine("Streaming page-tier-linked documents from scraped_documents_raw...");
+        var entries = new List<PageTextLinkEntry>();
+        var docCount = 0;
+        var skippedNoBlob = 0;
+        var skippedExtract = 0;
+
+        await foreach (var raw in rawRepo.StreamByStatusAsync([LinkStatus.Linked], cancellationToken))
+        {
+            // Page-tier strategies: page_1_resolver / page_2_resolver (+ _edition variants).
+            if (raw.ResolutionStrategy?.StartsWith("page_", StringComparison.Ordinal) is not true) continue;
+            if (raw.File?.LocalPath is null) continue;
+            docCount++;
+
+            await using var stream = await blobStore.TryOpenReadAsync(raw.File.LocalPath, cancellationToken);
+            if (stream is null) { skippedNoBlob++; continue; }
+
+            var extracted = await preview.ExtractPreviewAsync(stream, PageTierCount, cancellationToken);
+            if (extracted.Status != ExtractionStatus.Success) { skippedExtract++; continue; }
+
+            var mfrHint = LinkingUtilities.InferManufacturerKey(raw.Source);
+            var pageTexts = new List<string>(extracted.Pages.Count);
+            var truncated = true;
+            foreach (var page in extracted.Pages)
+            {
+                var excerpt = TruncateWithResolutionParity(page.Text, mfrHint, resolver, PageExcerptBudget);
+                if (ReferenceEquals(excerpt, page.Text) && page.Text.Length > PageExcerptBudget) truncated = false;
+                pageTexts.Add(excerpt);
+            }
+
+            await foreach (var machineId in scrapedRepo.StreamByDocumentIdAsync(raw.DocumentId, cancellationToken))
+            {
+                machinesById.TryGetValue(machineId, out var machine);
+                entries.Add(new PageTextLinkEntry
+                {
+                    DocumentId = raw.DocumentId,
+                    LocalPath = raw.File.LocalPath,
+                    FileUrl = raw.Source.FileUrl,
+                    SourceType = raw.Source.SourceType.ToString(),
+                    GameSlug = raw.Game?.Slug,
+                    DocumentType = raw.DocumentType.ToString(),
+                    ResolutionStrategy = raw.ResolutionStrategy!,
+                    ExpectedMachineId = machineId,
+                    ExpectedMachineTitle = machine?.Title ?? string.Empty,
+                    ExpectedMachineManufacturer = machine?.PartitionKey ?? string.Empty,
+                    PageTexts = pageTexts,
+                    Truncated = truncated,
+                });
+            }
+        }
+
+        var capturedAt = DateTimeOffset.UtcNow;
+        var fixture = new PageTextLinkSetFixture
+        {
+            CapturedAt = capturedAt,
+            Source = "live Cosmos scraped_documents_raw (link_status=Linked, resolution_strategy=page_*) "
+                + "+ pinwiz-raw blob preview extraction (first 2 pages, parity-truncated excerpts)",
+            DocumentCount = docCount,
+            EntryCount = entries.Count,
+            Entries = entries,
+        };
+
+        var outputDir = Path.Combine("tests", "PinballWizard.Application.Tests", "Fixtures", "Linking");
+        Directory.CreateDirectory(outputDir);
+        var fixturePath = Path.Combine(outputDir, "page-text-link-set.captured.json");
+        await File.WriteAllTextAsync(fixturePath, JsonSerializer.Serialize(fixture, JsonOptions), cancellationToken);
+
+        var captureMd = $"""
+            # Page-Text Link Set — Capture Record
+
+            Generated by `--capture-page-text` against live Cosmos + blob storage. The
+            fixture (`page-text-link-set.captured.json`) arms the #832 page-tier
+            regression gate: `PageTextLinkSetReplayTests` replays these excerpts
+            through a fake IDocumentPreviewExtractor so tiers 3/4 execute OFFLINE —
+            the coverage the slug-only golden set structurally cannot provide
+            (its replay runs with previewExtractor: null).
+
+            ## Capture details
+
+            | Field | Value |
+            |---|---|
+            | Source | live Cosmos `scraped_documents_raw` (link_status=Linked, resolution_strategy=page_*) + pinwiz-raw blob preview extraction |
+            | Captured at | {capturedAt:O} |
+            | Page-tier documents | {docCount} |
+            | Fan-out entries | {entries.Count} |
+            | Skipped (blob missing) | {skippedNoBlob} |
+            | Skipped (extraction non-Success) | {skippedExtract} |
+
+            Skipped rows are named so a thin capture is never mistaken for full
+            coverage. Non-zero skips mean some page-tier documents contribute no
+            gate coverage — investigate before treating this as the baseline.
+
+            ## Copyright posture
+
+            Excerpts are the first {PageExcerptBudget} characters of raw page text
+            (cover-page title territory) — the smallest excerpt verified AT CAPTURE
+            TIME to resolve identically to the full page (see
+            TruncateWithResolutionParity). Entries where truncation would change
+            the resolution keep full page text and record Truncated=false.
+
+            ## To recapture
+
+            ```bash
+            export AZURE_TOKEN_CREDENTIALS=dev
+            export Cosmos__AccountEndpoint="https://pinwiz-cosmos-dev-buutj.documents.azure.com:443/"
+            dotnet run --project src/PinballWizard.Cli -c Release -- --capture-page-text
+            ```
+
+            Re-run only after a deliberate re-link that you want as the new baseline.
+            """;
+        await File.WriteAllTextAsync(Path.Combine(outputDir, "CAPTURE-PAGE-TEXT.md"), captureMd, cancellationToken);
+
+        Console.WriteLine();
+        Console.WriteLine(
+            $"--capture-page-text complete: {docCount} page-tier documents, {entries.Count} fan-out entries "
+            + $"(blob-missing={skippedNoBlob}, extract-skip={skippedExtract}) → {fixturePath}");
+    }
 }
 
 // ── Fixture data types ────────────────────────────────────────────────────────
@@ -309,4 +491,29 @@ internal sealed class ReconcilerParityFixture
     public int TotalSlugged { get; init; }
     public Dictionary<string, ManufacturerSlugStat> ManufacturerStats { get; init; } = [];
     public List<ReconcilerParityEntry> Entries { get; init; } = [];
+}
+
+internal sealed class PageTextLinkEntry
+{
+    public string DocumentId { get; init; } = string.Empty;
+    public string LocalPath { get; init; } = string.Empty;   // blob name — the replay's lookup key
+    public string FileUrl { get; init; } = string.Empty;
+    public string SourceType { get; init; } = string.Empty;
+    public string? GameSlug { get; init; }
+    public string DocumentType { get; init; } = string.Empty;
+    public string ResolutionStrategy { get; init; } = string.Empty;
+    public string ExpectedMachineId { get; init; } = string.Empty;
+    public string ExpectedMachineTitle { get; init; } = string.Empty;
+    public string ExpectedMachineManufacturer { get; init; } = string.Empty;
+    public List<string> PageTexts { get; init; } = [];       // index 0 = page 1
+    public bool Truncated { get; init; }
+}
+
+internal sealed class PageTextLinkSetFixture
+{
+    public DateTimeOffset CapturedAt { get; init; }
+    public string Source { get; init; } = string.Empty;
+    public int DocumentCount { get; init; }
+    public int EntryCount { get; init; }
+    public List<PageTextLinkEntry> Entries { get; init; } = [];
 }
