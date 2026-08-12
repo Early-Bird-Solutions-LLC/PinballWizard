@@ -2396,6 +2396,120 @@ public class DocumentLinkerTests
 
         await preview.Received(1).ExtractPreviewAsync(Arg.Any<Stream>(), 2, Arg.Any<CancellationToken>());
     }
+
+    // --- #832 extraction concurrency gate ---------------------------------------
+
+    // Fake that PARKS every extraction on a gate the test controls. Without the
+    // parking, a near-synchronous fake completes before its peers start and
+    // max-observed concurrency never exceeds 1 whether or not the production
+    // semaphore exists — the test would pass with the fix reverted, which is
+    // exactly the false-green no-masking-skips.md forbids. Parked workers make
+    // the final MaxObserved assertion deterministic: ANY overlap beyond the
+    // gate's width is recorded before release.
+    private sealed class GatedPreviewExtractor : IDocumentPreviewExtractor
+    {
+        private int _current;
+        private int _max;
+        private int _started;
+        public SemaphoreSlim Gate { get; } = new(0);
+        public int MaxObserved => Volatile.Read(ref _max);
+        public int Started => Volatile.Read(ref _started);
+
+        public async Task<ExtractedPreview> ExtractPreviewAsync(Stream pdfStream, int pageCount, CancellationToken ct)
+        {
+            var now = Interlocked.Increment(ref _current);
+            int snapshot;
+            while ((snapshot = Volatile.Read(ref _max)) < now)
+            {
+                if (Interlocked.CompareExchange(ref _max, now, snapshot) == snapshot) break;
+            }
+            Interlocked.Increment(ref _started);
+
+            await Gate.WaitAsync(ct);
+
+            Interlocked.Decrement(ref _current);
+            return new ExtractedPreview(ExtractionStatus.Success, [new ExtractedPage(1, "no evidence")], null);
+        }
+    }
+
+    private async Task<DocumentLinker> BuildLinkerForBatchAsync(
+        IDocumentPreviewExtractor extractor,
+        IDocumentBlobStore blobStore,
+        List<RawDocumentRecord> pendingDocs,
+        int cosmosWriteConcurrency = 20,
+        int extractionConcurrency = 4)
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        rawRepo.StreamByStatusAsync(
+            Arg.Any<IReadOnlyCollection<LinkStatus>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(pendingDocs.ToAsyncEnumerable());
+
+        overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, LinkOverrideRecord>());
+        machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Machine>().ToAsyncEnumerable());
+
+        var aliasLoader = Substitute.For<IMachineAliasLoader>();
+        aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<MachineAliasEntry>());
+
+        var linker = new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            previewExtractor: extractor, NullLogger<DocumentLinker>.Instance, aliasLoader,
+            cosmosWriteConcurrency: cosmosWriteConcurrency,
+            blobStore: blobStore,
+            extractionConcurrency: extractionConcurrency);
+        await linker.InitializeAsync(CancellationToken.None);
+        return linker;
+    }
+
+    [Fact]
+    public async Task RunBatchAsync_ExtractionConcurrency_NeverExceedsConfiguredGate()
+    {
+        const int docCount = 8;
+        const int gateWidth = 2;
+
+        var extractor = new GatedPreviewExtractor();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
+        blobStore.TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream([1]));
+
+        // cosmosWriteConcurrency deliberately WIDER than the gate: the whole
+        // point of #832's Section D is that the Parallel.ForEachAsync width no
+        // longer governs parse memory.
+        var linker = await BuildLinkerForBatchAsync(
+            extractor, blobStore,
+            pendingDocs: Enumerable.Range(0, docCount)
+                .Select(i => MakeRawWithLocalPath($"doc_gate_{i}", $"manualspage/g{i}.pdf"))
+                .ToList(),
+            cosmosWriteConcurrency: docCount,
+            extractionConcurrency: gateWidth);
+
+        var batch = linker.RunBatchAsync(CancellationToken.None);
+
+        // Wait until the gate is saturated (exactly gateWidth workers parked),
+        // then release everyone and let the batch drain.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (extractor.Started < gateWidth && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+        Assert.Equal(gateWidth, extractor.Started); // a third worker must NOT have started
+
+        extractor.Gate.Release(docCount);
+        await batch;
+
+        // Deterministic ceiling: every extraction parked until release, so any
+        // overlap beyond the gate was recorded in MaxObserved before this line.
+        Assert.True(extractor.MaxObserved <= gateWidth,
+            $"extraction concurrency reached {extractor.MaxObserved}, gate is {gateWidth}");
+        Assert.Equal(docCount, extractor.Started); // and everyone eventually ran
+    }
 }
 
 // Extension helpers for test-only async enumerable construction.

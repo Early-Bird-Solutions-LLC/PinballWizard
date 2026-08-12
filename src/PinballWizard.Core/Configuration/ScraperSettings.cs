@@ -22,6 +22,20 @@ public sealed class ScraperSettings
     /// <summary>Maximum concurrent Cosmos upserts during scrape and link passes. Internal writes only — never applied to external HTTP.</summary>
     public int CosmosWriteConcurrency { get; set; } = 20;
 
+    /// <summary>Default for <see cref="ExtractionConcurrency"/> — also the DocumentLinker ctor default (single source).</summary>
+    public const int DefaultExtractionConcurrency = 4;
+
+    /// <summary>
+    /// Maximum concurrent PDF page-preview extractions during --link-documents (#832).
+    /// Deliberately separate from CosmosWriteConcurrency: writes are cheap I/O tuned
+    /// wide (20); extractions are memory-bound (temp file + PdfPig parse structures)
+    /// and must stay narrow on the 0.5 vCPU / 1 GiB linker job. Peak extraction
+    /// memory ~ ExtractionConcurrency x per-document parse cost; peak temp disk =
+    /// ExtractionConcurrency x MaxStreamBytes (400 MB at defaults, inside the 2 GiB
+    /// ACA ephemeral allowance at &lt;=0.5 vCPU).
+    /// </summary>
+    public int ExtractionConcurrency { get; set; } = DefaultExtractionConcurrency;
+
     /// <summary>HTTP request timeout in seconds.</summary>
     public int HttpTimeoutSeconds { get; set; } = 120;
 
