@@ -2,7 +2,21 @@
 
 **Date:** 2026-08-12
 **Issue:** [#832](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/832)
-**Status:** approved, not yet implemented
+**Status:** approved, not yet implemented — revised once after adversarial review (see below)
+
+> **Revision, 2026-08-12.** Adversarial review of the first draft falsified two of its claims, and
+> both corrections are load-bearing rather than cosmetic:
+>
+> 1. The draft cited the golden-link-set replay as proof that this refactor changes no behaviour.
+>    The replay runs with `textExtractor: null`, so it cannot execute the tiers this change
+>    touches. The spec now requires building the gate that was assumed to exist.
+> 2. The draft put a required `ExtractPreviewAsync` on the shared `IDocumentTextExtractor`,
+>    justified by compile-time enforcement across all implementations. The ADI implementation
+>    cannot honor a memory bound and its preview would be unreachable, so the design moved to a
+>    narrow `IDocumentPreviewExtractor`.
+>
+> Both errors were assertions made without opening the file that would have refuted them. Recorded
+> here rather than quietly edited, because a spec's revision history is part of its evidence.
 
 ## Problem
 
@@ -104,6 +118,21 @@ in the same change.
 This also removes the same buffering from `DocumentDownloadService`'s SHA-256 backfill, which
 today streams a hash over a fully-materialized blob.
 
+Temp files are created under `Path.GetTempPath()` (`/tmp` in the Linux container) with
+`Path.GetRandomFileName()` and `FileMode.CreateNew`. On .NET for Linux, `DeleteOnClose` unlinks
+the file immediately after open, so the directory entry never outlives the handle and a SIGKILL
+frees the inode — no orphan, no disk leak. The size guard in Section C fires before any stream is
+opened, so an over-cap blob never reaches this path at all.
+
+**Effect on the RAG ingestion path.** `ScrapedDocumentIngestionPipeline` reaches the same blobs
+through `BlobDocumentBytesSource` → `OpenReadAsync`, so it inherits this fix and stops holding
+whole documents on the heap. It continues to call the full `ExtractAsync` (all pages) — that is
+intentional and correct: the indexer needs the entire document. It is not exposed to the failure
+this spec fixes, because the Change-Feed worker processes one document per pipeline invocation
+and so has no concurrency multiplier at the extraction layer, and it runs in a different
+container envelope from the linker job's 0.5 vCPU / 1 GiB. Stated here so a reader does not have
+to derive it.
+
 **Alternative considered — blob range-streaming.** `BlobBaseClient.OpenReadAsync` returns a
 `LazyLoadingReadOnlyStream`, verified against the SDK source at tag
 `Azure.Storage.Blobs_12.29.1`: `CanSeek` returns `true`, `Seek` is fully implemented (reusing
@@ -113,36 +142,61 @@ table is at EOF and object streams are scattered — so every out-of-buffer seek
 range GET. That trades a known OOM for an unmeasured latency risk. A temp file makes those seeks
 local and predictable.
 
-### B. `ExtractPreviewAsync` returning a distinct `ExtractedPreview`
+### B. A separate `IDocumentPreviewExtractor`, returning a distinct `ExtractedPreview`
 
-New **required** method on `IDocumentTextExtractor`:
+New **narrow interface** in `Application/Rag/Extraction/`, implemented only by PdfPig:
 
 ```csharp
-Task<ExtractedPreview> ExtractPreviewAsync(Stream pdfStream, int pageCount, CancellationToken ct);
+public interface IDocumentPreviewExtractor
+{
+    Task<ExtractedPreview> ExtractPreviewAsync(Stream pdfStream, int pageCount, CancellationToken ct);
+}
 ```
 
 `ExtractedPreview` carries `Status`, the first N `ExtractedPage`s, and `Error` — deliberately
 **no** whole-document `Text` and **no** `Outline`. That omission is what eliminates sink #2.
 
-- `PdfPigDocumentTextExtractor` implements it with `document.GetPage(i)` for
-  `i in 1..min(pageCount, NumberOfPages)`. Verified against PdfPig source at tag `v0.1.15`
-  (`src/UglyToad.PdfPig/Content/Pages.cs`): `GetPage` resolves a single page node and calls
-  `pageFactory.Create` for that page only — construction is strictly on demand, with no page
-  cache. Requesting two pages therefore parses two pages, not all of them.
-- `AzureDocumentIntelligenceExtractor` honors the limit via its page-range parameter.
-- `FallbackDocumentTextExtractor` forwards, falling back on the same conditions as `ExtractAsync`.
-- `DocumentLinker` calls it with `pageCount: 2`, matching the only two page tiers it has.
+- `PdfPigDocumentTextExtractor` implements both interfaces. The preview uses
+  `document.GetPage(i)` for `i in 1..min(pageCount, NumberOfPages)`. Verified against PdfPig
+  source at tag `v0.1.15` (`src/UglyToad.PdfPig/Content/Pages.cs`): `GetPage` resolves a single
+  page node and calls `pageFactory.Create` for that page only — construction is strictly on
+  demand, with no page cache. Requesting two pages therefore parses two pages, not all of them.
+- `IDocumentTextExtractor` is **unchanged**. The RAG indexing path keeps exactly the contract it
+  has today.
+- `DocumentLinker` depends on `IDocumentPreviewExtractor` and calls it with `pageCount: 2`,
+  matching the only two page tiers it has.
 
 The preview path deliberately does **not** apply the `OcrRequiredCharFloor` heuristic. That
 classification exists for the indexing path; a linker preview yielding empty text simply produces
 no evidence and the tier declines, which is the honest outcome.
 
-**Why a distinct type rather than a `maxPages` parameter.** A required method is
-compiler-enforced across all three implementations, so an implementation that ignores the limit
-cannot silently compile and keep OOMing. And because `ExtractedPreview` is not an
-`ExtractedDocument`, a truncated parse is *type-incompatible* with the chunking/indexing path —
-a partial document cannot be indexed as if complete. The bad state is unrepresentable rather
-than merely discouraged, which is the posture `.claude/rules/sdd-artifact-hygiene.md` argues for.
+**Why a separate interface rather than a method on `IDocumentTextExtractor`.** The first draft of
+this design put a *required* `ExtractPreviewAsync` on the shared interface, arguing that
+compiler-enforcement across all three implementations prevents one from silently ignoring the
+limit and continuing to OOM. Review falsified that argument on two counts:
+
+1. **ADI cannot honor a memory bound.** `AzureDocumentIntelligenceExtractor.ReadToBytesAsync`
+   (`AzureDocumentIntelligenceExtractor.cs:96-104`) does `CopyToAsync` into a `MemoryStream` and
+   then `ToArray()` — **two** full copies of the blob — before the request is sent. ADI's page
+   range limits what the service *analyses*; it cannot limit what the client materializes. A
+   required method that one implementation can only satisfy dishonestly is not enforcement.
+2. **It would be dead code.** `FallbackDocumentTextExtractor` delegates to ADI only when the
+   primary returns `OcrRequired` (`FallbackDocumentTextExtractor.cs:54`), and the preview path
+   deliberately never returns `OcrRequired`. An ADI preview implementation would therefore be
+   unreachable on every real execution path — dead code in a repo whose bar is that a senior
+   architect can trace any subsystem in five minutes.
+
+A narrow interface implemented by the one type that can honor it is the honest expression:
+nothing unreachable, nothing unhonourable, and the RAG contract untouched. The cost is a second
+abstraction over the same parser, and the loss of a future OCR-backed preview — which is Tier 5,
+already deferred. If Tier 5 ever lands, ADI can implement `IDocumentPreviewExtractor` then, when
+there is a real caller.
+
+`ExtractedPreview` remains a distinct type rather than a flagged `ExtractedDocument`: because it
+is not an `ExtractedDocument`, a truncated parse is *type-incompatible* with the chunking and
+indexing path, so a partial document cannot be indexed as if complete. The bad state is
+unrepresentable rather than merely discouraged, which is the posture
+`.claude/rules/sdd-artifact-hygiene.md` argues for.
 
 ### C. Size guard moves upstream
 
@@ -155,6 +209,15 @@ may be up to the 500 MB download cap.
 The extractor keeps its `.Length` check as defence in depth; it is now meaningful, because the
 stream is disk-backed by the time it runs. `PdfExtractionOptions.MaxStreamBytes` remains the
 single source of the threshold — one value, two enforcement points, no duplicated constant.
+
+**How the linker gets the value — as a primitive, not an `IOptions<T>`.** `DocumentLinker`'s
+constructor already takes `int cosmosWriteConcurrency = 20` as a plain parameter resolved at DI
+registration (`DocumentLinker.cs:98`, wired in `Persistence/Cosmos/ServiceCollectionExtensions.cs`).
+`maxExtractionBytes` follows that established precedent: DI plucks `options.Value.MaxStreamBytes`
+and passes a `long`. This keeps `PdfExtractionOptions` as the single source of the constant while
+avoiding a direct dependency from a 9-parameter orchestration class onto an extraction-config
+type. Injecting `IOptions<PdfExtractionOptions>` into `DocumentLinker` is explicitly **not** the
+intended implementation.
 
 ### D. Dedicated extraction gate
 
@@ -187,14 +250,42 @@ absence of an OOM.
 |---|---|
 | `BlobDocumentStore` | returned stream is seekable and not a `MemoryStream`; temp file is gone after dispose; `TryOpenReadAsync` still returns `null` on 404; `OpenReadAsync` still throws on 404 |
 | `PdfPigDocumentTextExtractor.ExtractPreviewAsync` | returns exactly N pages on a multi-page fixture and no more; encrypted → `Encrypted`; malformed → `Malformed`; oversize → `SizeExceeded`; preview carries no whole-document text |
-| `FallbackDocumentTextExtractor` | forwards preview calls; falls back under the same conditions as `ExtractAsync` |
-| `DocumentLinker` | oversized document is skipped with `TryOpenReadAsync` never called (`DidNotReceive()`); a throwing blob-open marks that document `Failed` and the batch completes; a fake extractor recording max-observed concurrency never exceeds `ExtractionConcurrency` |
+| `DocumentLinker` | oversized document is skipped with `TryOpenReadAsync` never called (`DidNotReceive()`); a throwing blob-open marks that document `Failed` and the batch completes; extraction concurrency never exceeds `ExtractionConcurrency` (see the gate note below) |
 
-**The strongest regression evidence already exists.** The linker only ever consumed pages 0 and
-1, so a 2-page preview must produce byte-identical linking outcomes. The committed golden link
-set (`tests/PinballWizard.Application.Tests/Fixtures/Linking/golden-link-set.captured.json`,
-640 docs / 755 fan-out entries) and its 18/18 replay are the check that this refactor changed no
-behaviour. Replay drift means the design is wrong, not that the baseline needs recapturing.
+**The concurrency test must not be able to pass vacuously.** If the fake extractor returns
+synchronously, workers complete before their peers start and max-observed concurrency may never
+exceed 1 — with or without the semaphore. A test that passes when the fix is reverted proves
+nothing (`no-masking-skips.md`). The fake must therefore hold a gate: increment a counter, record
+the max, `await` a `SemaphoreSlim` the test controls, decrement on release. The test asserts the
+max **while the workers are still parked**, then releases. Written that way it fails if the
+production gate is removed; written the obvious way it does not.
+
+### The regression evidence this change needs does not exist yet — build it
+
+An earlier draft of this spec claimed the committed golden link set and its replay were "the check
+that this refactor changed no behaviour." **That claim was false.**
+`GoldenLinkSetReplayTests.MakeLinkerAsync` constructs the linker with
+`textExtractor: null, blobStore: null` (`GoldenLinkSetReplayTests.cs:100-105`), so tiers 3 and 4 —
+the only consumers of extraction — never execute during replay. The replay passes identically
+whether this change is correct, broken, or absent. Citing it would have been the exact defect
+`docs/learning-from-failure.md` records for PR #752: a gate that reads as proof and verifies
+nothing.
+
+The existing replay still earns its place as a guard that **slug- and filename-tier behaviour is
+unchanged**, and it must stay green. It simply cannot speak to the page tiers.
+
+So this PR adds the missing gate: a **page-text replay fixture**. Each entry carries the
+document's recorded page-1 and page-2 text alongside its expected machine binding; the test wires
+a fake `IDocumentPreviewExtractor` that replays those excerpts, so tiers 3 and 4 execute offline
+with no Azure dependency. Its assertions are the same no-misattribution check the existing replay
+makes.
+
+This closes a second, pre-existing gap found in the same review. The 23 American Pinball entries
+added by the `#834` re-capture contribute **zero** regression protection today: AP documents have
+a null `GameSlug`, so with no extractor they resolve `NotInCatalog` → `needs_review` → 
+non-blocking. The fixture grew from 631 to 640 documents while the assurance did not move. A
+page-text replay is what makes those entries load-bearing, and it is required work in this PR
+rather than a follow-up, because it is the only thing that can protect the change this PR makes.
 
 ## Observability
 
@@ -216,7 +307,9 @@ for this change will carry both.
 
 ## Acceptance
 
-1. Mechanism tests green; golden-link-set replay unchanged at 18/18.
+1. Mechanism tests green; existing golden-link-set replay still green (slug/filename tiers
+   unchanged); **new page-text replay green**, and demonstrably red when the page-limited preview
+   is reverted — a gate that cannot fail is not a gate.
 2. Post-merge `Deploy` run green.
 3. Linker ACA job triggered manually: `doc_4ea5f0c438428b8b` extracts (or is honestly recorded as
    a skip with a reason), and the execution reports **Succeeded**.
