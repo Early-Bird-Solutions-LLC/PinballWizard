@@ -589,7 +589,7 @@ git commit -m "feat(cli) wire forgiving resolver + fuzzy_resolved counter into t
 
 **Files:** none (operational).
 
-- [ ] **Step 1: Re-run the live sync** using the [live-load runbook](../../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/reference_local_live_load_runbook.md) env (isolated `AZURE_CONFIG_DIR`, `AZURE_TOKEN_CREDENTIALS=dev`, Cosmos + AiSearch + AiFoundry endpoints), from this worktree:
+- [ ] **Step 1: Re-run the live sync** using the live-load runbook (`reference_local_live_load_runbook.md`, private project memory, not in this repo) env (isolated `AZURE_CONFIG_DIR`, `AZURE_TOKEN_CREDENTIALS=dev`, Cosmos + AiSearch + AiFoundry endpoints), from this worktree:
 
 ```
 dotnet run --project src/PinballWizard.Cli -- --sync-tiltforums-rulesheets

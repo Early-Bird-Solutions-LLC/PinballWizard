@@ -98,6 +98,24 @@ gh run watch "$DEPLOY_ID" --exit-status
 - **Failed** → triage immediately (root-cause + fix-forward, or revert). The
   `report` job also opens a `deploy-failure` issue automatically; annotate/close it
   as you resolve. Do NOT declare the work done.
+- **Cancelled** → **not a pass, and not a failure — resolve it.** Rapid merges make
+  the concurrency group cancel an in-flight Deploy, so a `cancelled` conclusion is
+  the normal outcome when another merge lands first. It is still not evidence that
+  your change shipped. Establish that a *later* successful Deploy carries your
+  commit:
+
+  ```bash
+  # SHA of the newest successful Deploy
+  DEPLOYED=$(gh run list --workflow=deploy.yml --branch main --status success \
+    --limit 1 --json headSha --jq '.[0].headSha')
+  # Does that deploy contain your merge commit?
+  git merge-base --is-ancestor <your-merge-sha> "$DEPLOYED" \
+    && echo "SHIPPED via $DEPLOYED" || echo "NOT SHIPPED — re-run the deploy"
+  ```
+
+  If it is not an ancestor, re-run Deploy for your commit. Reporting a cancelled
+  run as "deployed" is the same defect class as citing a build without checking
+  its filter — the run is green-adjacent and proves nothing about your change.
 
 At session start (or when picking up work), check for open deploy-failure issues
 first — a red deploy blocks everyone's changes from going live:

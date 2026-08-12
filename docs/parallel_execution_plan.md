@@ -34,7 +34,7 @@ Both are **small, focused PRs**. They unblock everything downstream, so they shi
 ### Gate 2 — PoliteScraper base class
 
 **Scope:**
-- `PinballWizard.Infrastructure/Scraping/PoliteScraper.cs` — abstract base encoding the politeness invariants in [`feedback_polite_scraping.md`](../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_polite_scraping.md):
+- `PinballWizard.Infrastructure/Scraping/PoliteScraper.cs` — abstract base encoding the politeness invariants in `feedback_polite_scraping.md` (private project memory, not in this repo):
   - Descriptive User-Agent identifying the project + repo
   - Conditional requests (`If-None-Match` / `If-Modified-Since`) on every re-fetch
   - Robots.txt parse + cache + respect on first request to a host
@@ -148,9 +148,9 @@ A.1 is intentionally bounded — it's portfolio polish, not architecture. Should
 Regardless of which track a PR is in, the locked rules apply:
 
 - **Gate 1 (Cosmos schema) PRs lock more carefully than feature PRs.** Schema breaking changes downstream are expensive — review-pause and write-tests-first are appropriate.
-- **PoliteScraper PRs visibly demonstrate politeness.** XML doc comments on the delay / conditional-request / robots.txt code; user-readable explanation in the README. The point is for the politeness to be conspicuous, per [`feedback_polite_scraping.md`](../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_polite_scraping.md).
+- **PoliteScraper PRs visibly demonstrate politeness.** XML doc comments on the delay / conditional-request / robots.txt code; user-readable explanation in the README. The point is for the politeness to be conspicuous, per `feedback_polite_scraping.md` (private project memory, not in this repo).
 - **Manufacturer scraper PRs always include captured-fixture tests.** Live-site smoke is acceptable for one-shot validation; CI tests use saved HTML, never live network.
-- **AI Router / RAG PRs always include a "no answer" path test.** Threshold-driven refusal is an architectural invariant per [`project_phase2_architecture_decisions.md`](../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md). PRs that don't exercise the threshold path are incomplete.
+- **AI Router / RAG PRs always include a "no answer" path test.** Threshold-driven refusal is an architectural invariant per `project_phase2_architecture_decisions.md` (private project memory, not in this repo). PRs that don't exercise the threshold path are incomplete.
 - **Frontend PRs include bUnit tests + responsive screenshot evidence in the PR description.** The portfolio reviewer will look at screenshots; the bUnit tests are the safety net.
 - **Bicep PRs include a `what-if` output in the PR body.** No "trust me, the deploy works" — show the diff.
 

@@ -5,7 +5,7 @@
 
 ## Context
 
-[`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
+`project_phase2_architecture_decisions.md` (private project memory, not in this repo)
 locks the principle that the Wizard must refuse rather than
 fabricate when confidence is low: *"Manual wiring questions can be
 physically dangerous; threshold-driven refusal is non-negotiable."*
@@ -212,7 +212,7 @@ Analytics + (post-deployPhase2) App Insights.
   against the eval set is small effort and produces a defensible
   number.
 - **No refusal mechanism** (always answer). Rejected:
-  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
+  `project_phase2_architecture_decisions.md` (private project memory, not in this repo)
   locked refusal as non-negotiable for safety reasons. This ADR
   honors that lock.
 - **Foundry-side refusal only** (drop our confidence layer entirely).

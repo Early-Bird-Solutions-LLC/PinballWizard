@@ -148,7 +148,7 @@ Decisions that are smaller — tool versions within a category, threshold settin
 
 ### Explicit non-gate
 
-**XML doc completeness on public surface is not a quality gate.** Per [`feedback_no_xml_docs.md`](C:\Users\JimKeeley\.claude\projects\c--earlybird-PinballWizard\memory\feedback_no_xml_docs.md): user finds them not worth the maintenance cost; project doesn't ship a public NuGet package; `/local-review` § Comments policy explicitly does not flag missing XML docs. Revisit only if a NuGet package ships externally.
+**XML doc completeness on public surface is not a quality gate.** Per `feedback_no_xml_docs.md` (private project memory, not in this repo): user finds them not worth the maintenance cost; project doesn't ship a public NuGet package; `/local-review` § Comments policy explicitly does not flag missing XML docs. Revisit only if a NuGet package ships externally.
 
 ## Operational quality (Phase 6)
 

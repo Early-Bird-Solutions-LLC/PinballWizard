@@ -12,8 +12,8 @@ Rules, Repair), grounds each against the catalog (OPDB in Phase 3,
 RAG corpus in Phase 4), and returns a cited answer or a refusal.
 
 The original architecture lock in
-[`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
-(memory, 2026-05-02) named **Semantic Kernel** as the orchestration
+`project_phase2_architecture_decisions.md` (private project memory, not in this repo;
+2026-05-02) named **Semantic Kernel** as the orchestration
 framework. That decision was revisited at the start of Phase 3.
 
 PinballWizard is, per [`vision.md`](../vision.md), the customer-facing

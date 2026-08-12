@@ -200,7 +200,7 @@ Each control still works for the current page-load. No errors thrown; no banner.
 
 ## Out of scope for this spec
 
-- **Account / profile / sign-in.** v1 is anonymous on the public surface. If end-user accounts ship later (Entra External ID for end-user social login per [`memory/project_phase2_architecture_decisions.md`](../../../../Users/JimKeeley/.claude/projects/C--projects-PinballWizard/memory/project_phase2_architecture_decisions.md) — when passport ships), an account section *may* be added here, but it lives in a separate Settings v2 spec PR.
+- **Account / profile / sign-in.** v1 is anonymous on the public surface. If end-user accounts ship later (Entra External ID for end-user social login per `project_phase2_architecture_decisions.md` (private project memory, not in this repo) — when passport ships), an account section *may* be added here, but it lives in a separate Settings v2 spec PR.
 - **Saved questions / history.** Forbidden in v1 per [ADR-0027](../../adr/0027-community-resource-posture.md) § 10 (engagement-metric framing). The shareable-deep-link pattern (`/wizard/q/{slug}` per [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § 1) covers the "I want to come back to this answer" use case without state on the client.
 - **Notifications preferences.** No notifications in v1. If notifications ever ship for genuinely useful reasons (a manufacturer publishes a service bulletin for a machine the user explicitly subscribed to), they go through a dedicated subscriptions surface, not a generic notifications-prefs surface.
 - **Data export / data import.** No per-user data exists in v1 to export. If account-bound data exists later, this is a separate Settings v2 surface.
