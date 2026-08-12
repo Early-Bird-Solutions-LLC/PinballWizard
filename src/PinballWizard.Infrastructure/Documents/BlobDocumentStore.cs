@@ -150,8 +150,8 @@ public sealed class BlobDocumentStore : IDocumentBlobStore
         }
         catch
         {
-            // DeleteOnClose removes the temp file with the handle; nothing to
-            // clean by hand even on the 404 path.
+            // Disposing closes the handle; DeleteOnClose deletes the file
+            // automatically — no File.Delete needed.
             await stream.DisposeAsync().ConfigureAwait(false);
             throw;
         }

@@ -223,7 +223,7 @@ public sealed class BlobDocumentStoreTests
     }
 
     [RequiresAzuriteFact]
-    public async Task TryOpenReadAsync_MissingBlob_StillReturnsNull_AndLeavesNoTempFile()
+    public async Task TryOpenReadAsync_MissingBlob_ReturnsNull()
     {
         var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
         var serviceClient = new BlobServiceClient(azuriteUrl);
@@ -236,6 +236,10 @@ public sealed class BlobDocumentStoreTests
 
             var result = await sut.TryOpenReadAsync("does-not-exist.pdf", CancellationToken.None);
 
+            // Null return on 404 is the only observable contract here. Temp-file
+            // cleanup on the error path is a structural guarantee of
+            // DownloadToTempFileAsync's catch-dispose, covered by the
+            // OpenReadAsync test's post-dispose File.Exists(tempPath) check.
             Assert.Null(result);
         }
         finally
