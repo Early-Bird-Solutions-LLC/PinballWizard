@@ -29,6 +29,19 @@ public static class ServiceCollectionExtensions
         services.AddOptions<PdfExtractionOptions>();
         services.TryAddSingleton<PdfPigDocumentTextExtractor>();
 
+        // #832: the preview interface always maps to the PdfPig singleton,
+        // in BOTH branches. Only PdfPig can honor a page/memory bound (ADI's
+        // ReadToBytesAsync materializes the whole blob before its page-range
+        // parameter limits anything), and the fallback decorator would never
+        // route a preview to ADI anyway (it fires only on OcrRequired, which
+        // the preview path never returns). Registered here — not in each
+        // branch — so "extraction module present ⇒ preview resolvable" is
+        // structural. DocumentLinker resolves this with GetService; a missed
+        // registration would disable page tiers silently (see
+        // ExtractionServiceCollectionTests).
+        services.TryAddSingleton<IDocumentPreviewExtractor>(sp =>
+            sp.GetRequiredService<PdfPigDocumentTextExtractor>());
+
         var adiEndpoint = configuration?[DocumentIntelligenceOptions.EndpointKey];
         if (!string.IsNullOrWhiteSpace(adiEndpoint))
         {
