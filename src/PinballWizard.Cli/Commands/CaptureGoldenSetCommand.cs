@@ -371,7 +371,7 @@ internal static class CaptureGoldenSetCommand
                     ExpectedMachineId = machineId,
                     ExpectedMachineTitle = machine?.Title ?? string.Empty,
                     ExpectedMachineManufacturer = machine?.PartitionKey ?? string.Empty,
-                    PageTexts = pageTexts,
+                    PageTexts = [.. pageTexts],
                     Truncated = truncated,
                 });
             }
