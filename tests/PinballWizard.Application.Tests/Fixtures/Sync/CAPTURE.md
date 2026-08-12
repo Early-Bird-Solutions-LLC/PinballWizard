@@ -10,7 +10,7 @@ the captured slugs and asserts the reconciler algorithm still matches them corre
 | Field | Value |
 |---|---|
 | Source | live Cosmos `machines` container |
-| Captured at | 2026-08-11T02:40:54.7024126+00:00 |
+| Captured at | 2026-08-12T13:52:56.0546939+00:00 |
 | Total machines | 2183 |
 | Machines with slugs | 150 |
 
