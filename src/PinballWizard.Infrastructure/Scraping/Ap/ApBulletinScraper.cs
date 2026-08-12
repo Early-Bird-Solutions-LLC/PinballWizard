@@ -70,7 +70,10 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
             yield return new ScrapedItem
             {
                 Link = link,
-                SourceType = SourceType.ServiceBulletinPage,
+                // ApBulletinPage (not ServiceBulletinPage) so InferManufacturerKey scopes
+                // the linker to americanpinball machines. ServiceBulletinPage was originally
+                // Stern-only (#827); using it here gave every AP bulletin a "stern" hint.
+                SourceType = SourceType.ApBulletinPage,
                 DiscoveryUrl = supportPageUrl.ToString(),
                 DiscoveryContext = "American Pinball Support Page",
             };

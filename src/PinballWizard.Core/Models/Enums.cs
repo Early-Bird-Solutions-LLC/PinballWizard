@@ -10,6 +10,13 @@ public enum SourceType
     ServiceBulletinPage,
     JjpProductPage,
     AmericanPinballGamePage,
+    // AP service-bulletin PDFs discovered from american-pinball.com/support/. Added in
+    // #827 to give AP bulletins their own typed identity — ServiceBulletinPage was
+    // originally Stern-only, so re-using it gave AP documents a "stern" manufacturer
+    // hint and scoped the linker away from real American Pinball machines. Documents
+    // discovered before #827 retain ServiceBulletinPage in Cosmos (issue #762); the
+    // InferManufacturerKey fallback in LinkingUtilities handles those via host URL.
+    ApBulletinPage,
     SpookyPinballGamePage,
     SpookyPinballSupportPage,
     PinballBrothersGamePage,

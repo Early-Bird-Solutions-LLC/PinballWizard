@@ -99,10 +99,12 @@ public sealed class ApDocumentClassificationTests
         }
     }
 
-    // Issue #815: the live AP scraper sets source_type=ServiceBulletinPage.
+    // Issue #815: the live AP scraper previously set source_type=ServiceBulletinPage.
     // Documents with bare titles that contain no keyword (e.g. "Bar Door Check",
     // "Tank Treads Installation") must classify as ServiceBulletin via the
     // source-type shortcut so they are admitted to RAG ingestion.
+    // The shortcut remains correct for pre-#827 Cosmos records (issue #762 means
+    // stored source_type is never updated by re-scrape) and for Stern bulletins.
     [Theory]
     [InlineData("Bar-Door-Check.pdf", "Bar Door Check")]
     [InlineData("Tank-Treads-Installation.pdf", "Tank Treads Installation")]
@@ -115,6 +117,26 @@ public sealed class ApDocumentClassificationTests
         };
 
         var actual = ScraperOrchestrator.ClassifyDocumentType(link, ApSupportContext, SourceType.ServiceBulletinPage);
+
+        Assert.Equal(DocumentType.ServiceBulletin, actual);
+    }
+
+    // Issue #827: the AP bulletin scraper now emits ApBulletinPage instead of
+    // ServiceBulletinPage. The source-type shortcut must cover the new value too —
+    // without it, bare-title bulletins would fall through the heuristics and land on
+    // Other, blocking them from RAG ingestion exactly as before #815.
+    [Theory]
+    [InlineData("Bar-Door-Check.pdf", "Bar Door Check")]
+    [InlineData("Tank-Treads-Installation.pdf", "Tank Treads Installation")]
+    public void ClassifyDocumentType_ApWithApBulletinPageSourceType_ReturnsServiceBulletin(string filename, string linkText)
+    {
+        var link = new DiscoveredLink
+        {
+            FileUrl = $"http://s4.american-pinball.com/img/support/2022-04/{filename}",
+            LinkText = linkText,
+        };
+
+        var actual = ScraperOrchestrator.ClassifyDocumentType(link, ApSupportContext, SourceType.ApBulletinPage);
 
         Assert.Equal(DocumentType.ServiceBulletin, actual);
     }

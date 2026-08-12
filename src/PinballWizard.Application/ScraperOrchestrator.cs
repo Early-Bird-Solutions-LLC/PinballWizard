@@ -310,11 +310,14 @@ public sealed class ScraperOrchestrator
         // Support Page") and bare link texts ("Bar Door Check") contain no
         // bulletin keyword, so the heuristics below would silently fall through
         // to Other and the AP corpus would be dropped from RAG ingestion.
+        // ApBulletinPage (#827) is the typed successor to ServiceBulletinPage for
+        // AP bulletins and carries the same unambiguous content classification.
         // ManualsPage is equally unambiguous: every link on a manuals listing
         // is a manual. Mixed-content page types (GamePage, SpookyPinballSupportPage,
         // JjpSupportPage, etc.) are intentionally excluded here so their heuristics
         // continue to decide per-document.
-        if (sourceType == SourceType.ServiceBulletinPage) return DocumentType.ServiceBulletin;
+        if (sourceType is SourceType.ServiceBulletinPage or SourceType.ApBulletinPage)
+            return DocumentType.ServiceBulletin;
         if (sourceType == SourceType.ManualsPage) return DocumentType.Manual;
 
         var url = link.FileUrl.ToLowerInvariant();

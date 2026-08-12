@@ -15,6 +15,15 @@ public class LinkingUtilitiesTests
         SourceType = type,
     };
 
+    private static SourceInfo SourceWith(SourceType type, string fileUrl) => new()
+    {
+        DiscoveryUrl = "https://example.com/",
+        DiscoveryContext = "test",
+        FileUrl = fileUrl,
+        ScrapedAt = DateTime.UtcNow,
+        SourceType = type,
+    };
+
     // Exhaustiveness guard: EVERY SourceType maps to a manufacturer key. Each of
     // the current values is a manufacturer-specific scraper page, so all must
     // resolve — a future scraper that adds a SourceType without updating
@@ -45,6 +54,55 @@ public class LinkingUtilitiesTests
         }
         return data;
     }
+
+    // Manufacturer-hint correctness for AP bulletins (#827):
+    //   ApBulletinPage   → americanpinball  (new scrapes after #827)
+    //   ServiceBulletinPage + AP URL  → americanpinball  (backward compat for pre-#827 stored records)
+    //   ServiceBulletinPage + non-AP URL → stern (Stern's original type is unchanged)
+
+    [Fact]
+    public void InferManufacturerKey_ApBulletinPage_YieldsAmericanPinball()
+        => Assert.Equal(
+            "americanpinball",
+            LinkingUtilities.InferManufacturerKey(SourceWith(
+                SourceType.ApBulletinPage,
+                "http://s4.american-pinball.com/img/support/2024-12/Tank-Treads-Installation.pdf")));
+
+    [Fact]
+    public void InferManufacturerKey_StaleServiceBulletinPage_WithApUrl_YieldsAmericanPinball()
+    {
+        // Pre-#827 AP bulletins carry ServiceBulletinPage in Cosmos because issue #762
+        // (re-scrape does not update scraper-owned fields) means the stored source_type
+        // is never corrected. The URL-based fallback in InferManufacturerKey handles them.
+        var source = SourceWith(
+            SourceType.ServiceBulletinPage,
+            "http://s4.american-pinball.com/img/support/2019-7/Bar-Door-Check.pdf");
+        Assert.Equal("americanpinball", LinkingUtilities.InferManufacturerKey(source));
+    }
+
+    [Fact]
+    public void InferManufacturerKey_ServiceBulletinPage_WithSternUrl_YieldsStern()
+    {
+        // Regression guard: Stern's ServiceBulletinPage documents are unaffected by the
+        // AP URL-based fallback — only american-pinball.com URLs switch the hint.
+        var source = SourceWith(
+            SourceType.ServiceBulletinPage,
+            "https://sternpinball.com/wp-content/uploads/some-bulletin.pdf");
+        Assert.Equal("stern", LinkingUtilities.InferManufacturerKey(source));
+    }
+
+    [Theory]
+    // The domain appears in the URL but NOT as the host — attribution must not switch.
+    // Manufacturer hint decides which machines a document may bind to, so a path or
+    // query-string mention is not provenance.
+    [InlineData("https://sternpinball.com/redirect?to=american-pinball.com/bulletin.pdf")]
+    [InlineData("https://sternpinball.com/american-pinball.com/sb200.pdf")]
+    // A look-alike registrable domain must not match the suffix check either.
+    [InlineData("https://notamerican-pinball.com/sb201.pdf")]
+    public void InferManufacturerKey_ServiceBulletinPage_ApDomainOutsideHost_StaysStern(string fileUrl)
+        => Assert.Equal(
+            "stern",
+            LinkingUtilities.InferManufacturerKey(SourceWith(SourceType.ServiceBulletinPage, fileUrl)));
 
     // The exhaustiveness guard's inverse: SynthesizedArticle MUST have no manufacturer key,
     // because its manufacturer is per-record (DocumentRecord.Manufacturer), not inferable from
