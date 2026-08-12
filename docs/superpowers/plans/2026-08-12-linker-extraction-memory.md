@@ -1818,7 +1818,14 @@ Expected: PASS (the skip is gone — the test executed; verify the test count sa
 
 - [ ] **Step 3: Prove the gate can go red (acceptance criterion 1: "demonstrably red when the fix is reverted")**
 
-Corrupt one entry in a scratch copy and confirm the gate fires:
+Corrupt one document's **evidence** (page text) in a scratch copy and confirm the gate fires.
+
+> **Do NOT corrupt `ExpectedMachineId` — that proof is vacuous.** Verified live 2026-08-12:
+> the replay seeds its machine catalog FROM the fixture, so a corrupted expectation also
+> corrupts the seeded world consistently (the fake machine inherits the entry's title and
+> GroupId, joins the edition family, and satisfies its own expectation — the test stays
+> green). The gate detects CODE regressions; the honest perturbation is therefore the
+> evidence the code consumes, with the expectation left standing:
 
 ```bash
 python - <<'PY'
@@ -1826,14 +1833,18 @@ import json, shutil
 p = "tests/PinballWizard.Application.Tests/Fixtures/Linking/page-text-link-set.captured.json"
 shutil.copy(p, p + ".bak")
 with open(p, encoding="utf-8") as f: fx = json.load(f)
-fx["Entries"][0]["ExpectedMachineId"] = "WRONG-MACHINE-00"
+doc = fx["Entries"][0]["DocumentId"]
+for e in fx["Entries"]:
+    if e["DocumentId"] == doc:
+        e["PageTexts"] = ["Oktoberfest Pinball on Tap Service Manual — American Pinball", ""]
 with open(p, "w", encoding="utf-8") as f: json.dump(fx, f, indent=2)
-print("corrupted entry 0:", fx["Entries"][0]["DocumentId"])
+print("evidence-corrupted doc:", doc)
 PY
 dotnet test tests/PinballWizard.Application.Tests -c Release --filter "FullyQualifiedName~PageTextLinkSet_Replays_WithNoMisattribution"
 ```
 
-Expected: **FAIL** naming the corrupted document. Then restore:
+Expected: **FAIL** naming the corrupted document (entries sharing the same `LocalPath` blob
+may fail with it — faithful, since one blob has one content). Then restore:
 
 ```bash
 mv tests/PinballWizard.Application.Tests/Fixtures/Linking/page-text-link-set.captured.json.bak \
