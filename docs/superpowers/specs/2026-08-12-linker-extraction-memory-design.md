@@ -17,6 +17,18 @@
 >
 > Both errors were assertions made without opening the file that would have refuted them. Recorded
 > here rather than quietly edited, because a spec's revision history is part of its evidence.
+>
+> **Second revision, same day.** A re-audit of the first revision (design attack + independent
+> fact-falsification, run in parallel) produced four more corrections: the Linux `DeleteOnClose`
+> unlink was claimed to happen at open — refuted from `SafeFileHandle.Unix.cs`, it happens at
+> dispose, so crash safety now rests on ACA container-scoped storage lifetime (cited); the
+> `IDocumentPreviewExtractor` DI registration was unspecified, which would have failed *silently*
+> (optional resolution → extraction quietly disabled in production while every test stayed
+> green); the page-text fixture's capture mechanism was understated (page text is transient —
+> capturing it is a new CLI verb with blob access, and the fixture now takes an explicit
+> truncated-excerpt copyright posture); and `GetSizeAsync`'s error handling is now pinned inside
+> the per-document try. The ephemeral-storage budget (2 GiB at 0.5 vCPU) is now cited from
+> Microsoft Learn rather than left unquantified.
 
 ## Problem
 
@@ -119,10 +131,26 @@ This also removes the same buffering from `DocumentDownloadService`'s SHA-256 ba
 today streams a hash over a fully-materialized blob.
 
 Temp files are created under `Path.GetTempPath()` (`/tmp` in the Linux container) with
-`Path.GetRandomFileName()` and `FileMode.CreateNew`. On .NET for Linux, `DeleteOnClose` unlinks
-the file immediately after open, so the directory entry never outlives the handle and a SIGKILL
-frees the inode — no orphan, no disk leak. The size guard in Section C fires before any stream is
-opened, so an over-cap blob never reaches this path at all.
+`Path.GetRandomFileName()` and `FileMode.CreateNew` + `FileOptions.DeleteOnClose`.
+
+**What `DeleteOnClose` does and does not guarantee on Linux** (verified against .NET runtime
+source, `SafeFileHandle.Unix.cs` — "Unix doesn't directly support DeleteOnClose, so we mimic it
+here"): the `Unlink` happens in `SafeFileHandle.ReleaseHandle()`, i.e. **at dispose, not at
+open**. The normal path is therefore clean — `await using` disposes the stream and the file is
+deleted immediately. But a SIGKILL (e.g. the container OOM-killer) never runs `ReleaseHandle`,
+so the file survives on disk. An earlier draft claimed the unlink happened at open, POSIX
+anonymous-file style; that was wrong.
+
+Crash safety comes from the platform instead: ACA **container-scoped storage "is temporary and
+disappears when the container shuts down or restarts"** (Microsoft Learn,
+*Use storage mounts in Azure Container Apps*, retrieved 2026-08-12). A process killed hard takes
+its container down, and the orphaned temp file dies with it — it can never outlive the failed
+execution, and the next execution starts on a fresh filesystem.
+
+**Disk budget** (same source): total ephemeral storage at ≤0.5 vCPU is **2 GiB**. Worst case
+here is `ExtractionConcurrency (4) × MaxStreamBytes (100 MB) = 400 MB` — inside the budget with
+4× headroom, and the size guard in Section C fires before any stream is opened, so an over-cap
+blob never reaches disk at all.
 
 **Effect on the RAG ingestion path.** `ScrapedDocumentIngestionPipeline` reaches the same blobs
 through `BlobDocumentBytesSource` → `OpenReadAsync`, so it inherits this fix and stops holding
@@ -165,6 +193,33 @@ public interface IDocumentPreviewExtractor
   has today.
 - `DocumentLinker` depends on `IDocumentPreviewExtractor` and calls it with `pageCount: 2`,
   matching the only two page tiers it has.
+
+**DI registration (load-bearing — do not skip).** `AddPdfDocumentTextExtractor`
+(`Rag/Extraction/ServiceCollectionExtensions.cs`) must register the preview interface in **both**
+branches (with and without ADI):
+
+```csharp
+services.TryAddSingleton<IDocumentPreviewExtractor>(
+    sp => sp.GetRequiredService<PdfPigDocumentTextExtractor>());
+```
+
+The linker's DI factory (`Persistence/Cosmos/ServiceCollectionExtensions.cs`) resolves it with
+`GetService` — optional, like `IDocumentTextExtractor` today, because scraper-only CLI mode
+legitimately runs without extraction wiring. That optionality is exactly what makes a missed
+registration a **silent** failure: startup would not throw, the unit tests construct fakes
+directly and would stay green, and in production every page-tier document would quietly fall to
+`not_in_catalog` — the OOM "fixed" by disabling the feature. Registering the preview interface
+inside the same method that registers PdfPig makes "extraction module present ⇒ preview
+resolvable" an invariant rather than a thing to remember. The extraction-wired linker path gets
+one integration test asserting that a container built with `AddPdfDocumentTextExtractor` resolves
+a non-null `IDocumentPreviewExtractor`.
+
+`ExtractedPreview.Status` reuses `ExtractionStatus`, and the preview path can produce exactly
+four of its values: `Success`, `Encrypted`, `Malformed`, `SizeExceeded`. `OcrRequired` (heuristic
+deliberately skipped) and `OcrFailed` (no ADI in the preview path) never appear — the
+`ExtractPreviewAsync` doc comment states this so a reader doesn't have to reason about zombie
+states. A dedicated narrower enum was considered and rejected: two status enums over one parser
+is more surface than the two unreachable values cost.
 
 The preview path deliberately does **not** apply the `OcrRequiredCharFloor` heuristic. That
 classification exists for the indexing path; a linker preview yielding empty text simply produces
@@ -209,6 +264,12 @@ may be up to the 500 MB download cap.
 The extractor keeps its `.Length` check as defence in depth; it is now meaningful, because the
 stream is disk-backed by the time it runs. `PdfExtractionOptions.MaxStreamBytes` remains the
 single source of the threshold — one value, two enforcement points, no duplicated constant.
+
+**`GetSizeAsync` lives inside the same `try` as the open** (Section E's reasoning applies to it
+identically — it is a network call whose transient failure must degrade per-document, not escape
+to the batch handler). A `null` return (blob absent, 404) maps to the same `blob_missing` skip as
+a `null` from `TryOpenReadAsync`; a size over the cap maps to the `size_exceeded` skip; only a
+thrown exception marks the document `Failed`.
 
 **How the linker gets the value — as a primitive, not an `IOptions<T>`.** `DocumentLinker`'s
 constructor already takes `int cosmosWriteConcurrency = 20` as a plain parameter resolved at DI
@@ -279,6 +340,26 @@ document's recorded page-1 and page-2 text alongside its expected machine bindin
 a fake `IDocumentPreviewExtractor` that replays those excerpts, so tiers 3 and 4 execute offline
 with no Azure dependency. Its assertions are the same no-misattribution check the existing replay
 makes.
+
+**Capturing it is new tooling, not the existing Cosmos query.** Page text exists only transiently
+inside extraction — it is never written to Cosmos, and the existing `--capture-golden-set`
+(a Cosmos join, per `Fixtures/Linking/CAPTURE.md`) cannot produce it. The capture path is a new
+CLI verb (or an extension flag on the existing one) that: selects documents whose recorded
+resolution strategy is a page tier, opens each blob via `IDocumentBlobStore`, runs
+`ExtractPreviewAsync(pageCount: 2)`, and serializes the excerpts with the expected machine ID.
+It needs live blob access, so capture runs from a correctly-wired terminal like every other
+capture — the *replay* is what becomes offline. Budget this as real work in the plan; it is the
+largest single piece of the testing section.
+
+**Copyright posture (explicit, so it isn't discovered mid-PR):** the fixture stores **truncated
+excerpts, not whole pages** — the first ~1,000 normalized characters per page, which is where a
+manual's cover-page title lives and is all the resolver consumes evidence from. Small excerpts of
+published manuals, used solely as test fixtures for interoperability, in a repo that already
+commits titles, link text and URLs from the same sources, is a deliberately conservative fair-use
+posture. The capture tool must verify at capture time that each truncated excerpt still resolves
+to the same machine as the full page did, and keep more text for any entry where truncation
+changes the outcome — otherwise the fixture would silently encode a weaker resolver input than
+production sees.
 
 This closes a second, pre-existing gap found in the same review. The 23 American Pinball entries
 added by the `#834` re-capture contribute **zero** regression protection today: AP documents have
