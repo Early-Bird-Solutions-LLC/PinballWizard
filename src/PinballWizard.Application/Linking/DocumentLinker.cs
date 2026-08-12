@@ -30,11 +30,12 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly ILinkOverrideRepository _overrideRepo;
     private readonly IMachineRepository _machineRepo;
     private readonly IScrapedDocumentRepository _docWriter;
-    private readonly IDocumentTextExtractor? _textExtractor;
+    private readonly IDocumentPreviewExtractor? _previewExtractor;
     private readonly ILogger<DocumentLinker> _logger;
     private readonly IDocumentBlobStore? _blobStore;
     private readonly int _cosmosWriteConcurrency;
     private readonly IMachineAliasLoader _aliasLoader;
+    private readonly long _maxExtractionBytes;
 
     private static readonly Meter LinkerMeter =
         new("PinballWizard.Linking", "1.0");
@@ -57,6 +58,17 @@ public sealed class DocumentLinker : IDocumentLinker
             description: "Number of duplicate machine ids encountered during InitializeAsync deduplication. " +
                          "A non-zero value means a prior sync left stale old-partition copies (#814). " +
                          "The linker keeps the copy with the latest LastSeenAt and discards the rest.");
+
+    private static readonly Counter<long> ExtractionSkippedCounter =
+        LinkerMeter.CreateCounter<long>(
+            "pinwiz.linker.extraction_skipped_total",
+            unit: "{document}",
+            description: "Documents whose page-tier extraction was skipped, tagged by reason: " +
+                         "size_exceeded (blob larger than MaxStreamBytes — never downloaded), " +
+                         "blob_missing (not in the store / deleted between size check and open), " +
+                         "extract_failed (parse returned a non-Success status: encrypted/malformed/oversize). " +
+                         "Skips are honest degradation, not failures — they do NOT increment failed counts " +
+                         "(mirrors pinwiz.download.too_large_skip_total, #819).");
 
     // Populated by InitializeAsync — safe to read after that call.
     private IReadOnlyDictionary<string, LinkOverrideRecord> _overrides
@@ -92,11 +104,12 @@ public sealed class DocumentLinker : IDocumentLinker
         ILinkOverrideRepository overrideRepo,
         IMachineRepository machineRepo,
         IScrapedDocumentRepository docWriter,
-        IDocumentTextExtractor? textExtractor,
+        IDocumentPreviewExtractor? previewExtractor,
         ILogger<DocumentLinker> logger,
         IMachineAliasLoader aliasLoader,
         int cosmosWriteConcurrency = 20,
-        IDocumentBlobStore? blobStore = null)
+        IDocumentBlobStore? blobStore = null,
+        long maxExtractionBytes = PdfExtractionOptions.DefaultMaxStreamBytes)
     {
         ArgumentNullException.ThrowIfNull(rawRepo);
         ArgumentNullException.ThrowIfNull(overrideRepo);
@@ -108,11 +121,12 @@ public sealed class DocumentLinker : IDocumentLinker
         _overrideRepo = overrideRepo;
         _machineRepo = machineRepo;
         _docWriter = docWriter;
-        _textExtractor = textExtractor;
+        _previewExtractor = previewExtractor;
         _logger = logger;
         _blobStore = blobStore;
         _cosmosWriteConcurrency = cosmosWriteConcurrency;
         _aliasLoader = aliasLoader;
+        _maxExtractionBytes = maxExtractionBytes;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -257,7 +271,7 @@ public sealed class DocumentLinker : IDocumentLinker
         }
 
         // Tiers 3–4: page-text matching. Extract once, try pages 0 and 1.
-        if (_textExtractor is not null && _blobStore is not null && raw.File?.LocalPath is not null)
+        if (_previewExtractor is not null && _blobStore is not null && raw.File?.LocalPath is not null)
         {
             var (extracted, extractionFailed) = await TryExtractDocumentAsync(raw, cancellationToken).ConfigureAwait(false);
 
@@ -761,28 +775,68 @@ public sealed class DocumentLinker : IDocumentLinker
         }
     }
 
-    // Returns (doc, false) on success, (null, false) when the blob is absent or extraction
-    // returned a non-Success status, and (null, true) when the extractor threw — so the
-    // caller can distinguish a normal fall-through from an error that warrants Failed status.
-    private async Task<(ExtractedDocument? Doc, bool ExtractionFailed)> TryExtractDocumentAsync(
+    // The linker's page tiers read pages 1-2 only ("page_1"/"page_2"); this is
+    // the pageCount handed to the preview extractor. If a tier is ever added
+    // for page 3, this constant is the single place to widen the preview.
+    private const int PageTierCount = 2;
+
+    // Returns (preview, false) on success, (null, false) when the blob is absent /
+    // oversized / extraction returned non-Success (honest skips, metered), and
+    // (null, true) when the path threw — so the caller can distinguish a normal
+    // fall-through from an error that warrants Failed status.
+    //
+    // EVERYTHING here — the GetSizeAsync properties call included — sits inside
+    // the try. Before #832 the blob open sat outside it, so an OOM during
+    // buffering escaped to RunBatchAsync's batch-level catch and logged as
+    // "exception linking" instead of a per-document extraction failure.
+    private async Task<(ExtractedPreview? Doc, bool ExtractionFailed)> TryExtractDocumentAsync(
         RawDocumentRecord raw,
         CancellationToken cancellationToken)
     {
-        // TryOpenReadAsync returns null on 404 (blob not yet downloaded); the 404→null
-        // translation happens in Infrastructure so Application never references Azure SDK types.
-        var stream = await _blobStore!.TryOpenReadAsync(raw.File!.LocalPath!, cancellationToken).ConfigureAwait(false);
-        if (stream is null)
-        {
-            _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — blob not in store.", raw.DocumentId);
-            return (null, false);
-        }
-
         try
         {
+            // Upstream size guard (spec Section C): a blob-properties call, no
+            // body transfer. An oversized blob is never downloaded to disk at all.
+            var size = await _blobStore!.GetSizeAsync(raw.File!.LocalPath!, cancellationToken).ConfigureAwait(false);
+            if (size is null)
+            {
+                _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — blob not in store.", raw.DocumentId);
+                ExtractionSkippedCounter.Add(1, new KeyValuePair<string, object?>("reason", "blob_missing"));
+                return (null, false);
+            }
+            if (size > _maxExtractionBytes)
+            {
+                _logger.LogWarning(
+                    "DocumentLinker: page extraction skipped for {DocId} — blob size {SizeBytes} exceeds MaxStreamBytes={MaxBytes}.",
+                    raw.DocumentId, size, _maxExtractionBytes);
+                ExtractionSkippedCounter.Add(1, new KeyValuePair<string, object?>("reason", "size_exceeded"));
+                return (null, false);
+            }
+
+            // 404→null translation happens in Infrastructure so Application never
+            // references Azure SDK types. Null here is the TOCTOU window: the blob
+            // answered the size probe but vanished before the open.
+            var stream = await _blobStore.TryOpenReadAsync(raw.File.LocalPath!, cancellationToken).ConfigureAwait(false);
+            if (stream is null)
+            {
+                _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — blob gone between size check and open.", raw.DocumentId);
+                ExtractionSkippedCounter.Add(1, new KeyValuePair<string, object?>("reason", "blob_missing"));
+                return (null, false);
+            }
+
             await using (stream)
             {
-                var extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
-                return extracted.Status == ExtractionStatus.Success ? (extracted, false) : (null, false);
+                var extracted = await _previewExtractor!.ExtractPreviewAsync(stream, PageTierCount, cancellationToken).ConfigureAwait(false);
+                if (extracted.Status == ExtractionStatus.Success)
+                {
+                    return (extracted, false);
+                }
+
+                _logger.LogInformation(
+                    "DocumentLinker: page extraction skipped for {DocId} — preview status {Status}: {Error}",
+                    raw.DocumentId, extracted.Status, extracted.Error);
+                ExtractionSkippedCounter.Add(1, new KeyValuePair<string, object?>("reason", "extract_failed"));
+                return (null, false);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -794,7 +848,7 @@ public sealed class DocumentLinker : IDocumentLinker
 
     private LinkingResult? TryMatchPage(
         RawDocumentRecord raw,
-        ExtractedDocument extracted,
+        ExtractedPreview extracted,
         int pageIndex,
         string strategyName,
         AmbiguityCapture ambiguity)

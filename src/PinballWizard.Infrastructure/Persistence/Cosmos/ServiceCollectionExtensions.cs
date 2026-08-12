@@ -256,7 +256,12 @@ public static class ServiceCollectionExtensions
             var overrideRepo = sp.GetRequiredService<ILinkOverrideRepository>();
             var machineRepo = sp.GetRequiredService<IMachineRepository>();
             var linkedRepo = sp.GetRequiredService<IScrapedDocumentRepository>();
-            var textExtractor = sp.GetService<IDocumentTextExtractor>();
+            var previewExtractor = sp.GetService<IDocumentPreviewExtractor>();
+            // Primitive pluck, mirroring cosmosWriteConcurrency below: the
+            // options type stays the single source of the threshold without the
+            // orchestrator taking a dependency on extraction configuration.
+            var pdfOptions = sp.GetService<IOptions<PdfExtractionOptions>>();
+            var maxExtractionBytes = pdfOptions?.Value.MaxStreamBytes ?? PdfExtractionOptions.DefaultMaxStreamBytes;
             var logger = sp.GetRequiredService<ILogger<DocumentLinker>>();
             var settings = sp.GetService<IOptions<ScraperSettings>>();
             var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
@@ -265,8 +270,8 @@ public static class ServiceCollectionExtensions
             // GetRequiredService — it is registered unconditionally above, and silently
             // running without the resolver would hide a DI regression (invariant #17).
             var aliasLoader = sp.GetRequiredService<IMachineAliasLoader>();
-            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger,
-                cosmosWriteConcurrency: concurrency, blobStore: blobStore, aliasLoader: aliasLoader);
+            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, previewExtractor, logger,
+                aliasLoader, cosmosWriteConcurrency: concurrency, blobStore: blobStore, maxExtractionBytes: maxExtractionBytes);
         });
 
         // Document downloader (--download-documents) — fetches not-yet-downloaded

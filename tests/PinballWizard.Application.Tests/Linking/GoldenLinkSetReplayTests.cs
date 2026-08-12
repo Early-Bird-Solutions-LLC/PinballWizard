@@ -99,7 +99,7 @@ public sealed class GoldenLinkSetReplayTests
 
         var linker = new DocumentLinker(
             rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor: null,
+            previewExtractor: null,
             NullLogger<DocumentLinker>.Instance,
             aliasLoader,
             blobStore: null);

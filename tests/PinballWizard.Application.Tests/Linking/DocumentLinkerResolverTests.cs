@@ -513,24 +513,25 @@ public sealed class DocumentLinkerResolverTests
 
         // Page tiers run only when extractor + blob store are wired and the raw
         // record carries a File.LocalPath (see LinkAsync's Tier 3-4 guard).
-        IDocumentTextExtractor? textExtractor = null;
+        IDocumentPreviewExtractor? previewExtractor = null;
         IDocumentBlobStore? blobStore = null;
         if (pageText is not null)
         {
-            textExtractor = Substitute.For<IDocumentTextExtractor>();
-            textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(new ExtractedDocument(
-                    ExtractionStatus.Success, pageText,
-                    [new ExtractedPage(1, pageText)], [], Error: null));
+            previewExtractor = Substitute.For<IDocumentPreviewExtractor>();
+            previewExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(new ExtractedPreview(
+                    ExtractionStatus.Success,
+                    [new ExtractedPage(1, pageText)], Error: null));
 
             blobStore = Substitute.For<IDocumentBlobStore>();
+            blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
             blobStore.TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(_ => new MemoryStream());
         }
 
         var linker = new DocumentLinker(
             rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor: textExtractor,
+            previewExtractor: previewExtractor,
             NullLogger<DocumentLinker>.Instance,
             blobStore: blobStore,
             aliasLoader: aliasLoader);
