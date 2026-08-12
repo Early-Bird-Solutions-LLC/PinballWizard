@@ -10,9 +10,9 @@ resolver reproduces every binding without mis-attribution.
 | Field | Value |
 |---|---|
 | Source | live Cosmos `scraped_documents_raw` (link_status = Linked / ManuallyLinked), joined to `scraped_documents` fan-out rows |
-| Captured at | 2026-08-11T02:40:49.3685205+00:00 |
-| Documents | 631 |
-| Fan-out entries | 746 |
+| Captured at | 2026-08-12T13:52:51.5903691+00:00 |
+| Documents | 640 |
+| Fan-out entries | 755 |
 | Documents with NO fan-out row | 0 |
 
 A document counted in the last row is marked linked but has no
