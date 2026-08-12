@@ -302,6 +302,14 @@ Emitted by `DocumentDownloadService.RunAsync` when a document is permanently ski
 | --- | --- | --- | --- |
 | `pinwiz.download.too_large_skip_total` | Counter | `source_type` | Documents skipped because their size exceeds `ScraperSettings.MaxFileSizeBytes`. A non-zero steady-state rate is expected for multi-GB manufacturer files (e.g. Spooky S3 software images); a spike in a new `source_type` means a new category of oversized files. These are terminal skips — reported as `skipped_too_large` and excluded from the `failed` count, so they do not set a non-zero exit code. Pair with the `Stamped as terminal skip` log line to identify specific documents. |
 
+### Document linker instruments (`--link-documents`)
+
+Emitted by `DocumentLinker.LinkDocumentsAsync` during the page-tier extraction phase of the `--link-documents` verb. Honest-degradation skips are counted here and excluded from failure counts.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.linker.extraction_skipped_total` | Counter | `reason` | Documents whose page-tier extraction was skipped during `--link-documents`. `reason` ∈ `size_exceeded` (blob larger than `Rag:PdfExtraction:MaxStreamBytes` — never downloaded; the #832 upstream guard), `blob_missing` (blob absent at size-check or open time), `extract_failed` (preview parse returned encrypted/malformed/oversize). Skips are honest degradation and do NOT increment failure counts — mirrors `pinwiz.download.too_large_skip_total` (#819). A spike in `size_exceeded` means a new class of oversized manuals; a spike in `extract_failed` means a scraper is downloading non-PDF or corrupt content. |
+
 ### RAG embedding token usage
 
 | Instrument | Type | Tags | Purpose |

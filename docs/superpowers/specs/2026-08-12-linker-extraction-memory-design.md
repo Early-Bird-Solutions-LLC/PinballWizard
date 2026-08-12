@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 **Issue:** [#832](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/832)
-**Status:** approved, not yet implemented — revised once after adversarial review (see below)
+**Status:** implemented on branch Dev-Issue832-LinkerExtractionMemory (this plan: docs/superpowers/plans/2026-08-12-linker-extraction-memory.md) — revised twice after adversarial review (see below)
 
 > **Revision, 2026-08-12.** Adversarial review of the first draft falsified two of its claims, and
 > both corrections are load-bearing rather than cosmetic:
