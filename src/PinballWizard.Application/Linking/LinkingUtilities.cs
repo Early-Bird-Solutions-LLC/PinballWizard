@@ -25,7 +25,18 @@ public static class LinkingUtilities
             // Stern's three scrapers (the original, unprefixed manufacturer).
             SourceType.ManualsPage => ScraperManufacturerKey.Stern,
             SourceType.GamePage => ScraperManufacturerKey.Stern,
+            // ServiceBulletinPage was originally Stern-only. AP bulletin documents
+            // scraped before #827 carry this type because issue #762 (re-scrape does
+            // not update scraper-owned fields) means the stored source_type is never
+            // corrected. Distinguish by host URL — the AP CDN is american-pinball.com
+            // for both the support page and its s4.* file-serving subdomain.
+            // New AP bulletins use the dedicated ApBulletinPage value below.
+            SourceType.ServiceBulletinPage when IsAmericanPinballUrl(source.FileUrl)
+                => ScraperManufacturerKey.AmericanPinball,
             SourceType.ServiceBulletinPage => ScraperManufacturerKey.Stern,
+            // Dedicated AP bulletin type introduced in #827. Scrapes after #827 emit
+            // this value, so they never need the URL-based fallback above.
+            SourceType.ApBulletinPage => ScraperManufacturerKey.AmericanPinball,
             SourceType.JjpProductPage => ScraperManufacturerKey.Jjp,
             SourceType.JjpSupportPage => ScraperManufacturerKey.Jjp,
             SourceType.AmericanPinballGamePage => ScraperManufacturerKey.AmericanPinball,
@@ -185,4 +196,10 @@ public static class LinkingUtilities
         }
         return null;
     }
+
+    // Matches the American Pinball registrable domain. AP bulletin files are served
+    // from s4.american-pinball.com (CDN subdomain); the support page itself is
+    // www.american-pinball.com. Both match this predicate.
+    private static bool IsAmericanPinballUrl(string url) =>
+        url.Contains("american-pinball.com", StringComparison.OrdinalIgnoreCase);
 }
