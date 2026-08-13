@@ -80,7 +80,7 @@ public class DocumentLinkerTests
         IScrapedDocumentRepository docWriter,
         IReadOnlyDictionary<string, LinkOverrideRecord>? overrides = null,
         IEnumerable<Machine>? machines = null,
-        IDocumentTextExtractor? textExtractor = null,
+        IDocumentPreviewExtractor? previewExtractor = null,
         IDocumentBlobStore? blobStore = null)
     {
         overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
@@ -98,7 +98,7 @@ public class DocumentLinkerTests
             .Returns(Array.Empty<MachineAliasEntry>());
 
         return new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor, NullLogger<DocumentLinker>.Instance, aliasLoader, blobStore: blobStore);
+            previewExtractor, NullLogger<DocumentLinker>.Instance, aliasLoader, blobStore: blobStore);
     }
 
     // -------------------------------------------------------------------------
@@ -1169,7 +1169,7 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var textExtractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var sternPro = MakeMachine(id: "GK17D-MdEqz", manufacturer: "stern", title: "Jurassic Park", slug: "");
@@ -1180,6 +1180,7 @@ public class DocumentLinkerTests
         classic.GroupId = "G4ZVB"; classic.Year = 1993;
 
         const string blobName = "manualspage/JurassicPark-Rulesheet.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1190,11 +1191,11 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "JP-Rulesheet.pdf" });
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "JURASSIC PARK rulesheet — applies to all editions.");
-        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        textExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [sternPro, sternPrem, classic], textExtractor: textExtractor, blobStore: blobStore);
+            machines: [sternPro, sternPrem, classic], previewExtractor: textExtractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1278,7 +1279,7 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var textExtractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var sternPro = MakeMachine(id: "GK1Ej-MwNZr", manufacturer: "stern", title: "Dungeons & Dragons: The Tyrant's Eye", slug: "dungeons-dragons");
@@ -1289,6 +1290,7 @@ public class DocumentLinkerTests
         classic.GroupId = "G4JBP"; classic.Year = 1987;
 
         const string blobName = "manualspage/DungeonsAndDragons_Pro_web.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
         // Filename spells "And" (camelCase) so the slug "dungeons dragons" isn't a
@@ -1300,11 +1302,11 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "DungeonsAndDragons_Pro_web.pdf" });
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "DUNGEONS & DRAGONS — The Tyrant's Eye. Pro model service manual.");
-        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        textExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [sternPro, sternPrem, classic], textExtractor: textExtractor, blobStore: blobStore);
+            machines: [sternPro, sternPrem, classic], previewExtractor: textExtractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1355,11 +1357,12 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var textExtractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var williams = MakeMachine(id: "G592K-MJoxd", manufacturer: "williams", title: "8 Ball", slug: "");
         const string blobName = "manualspage/Batman_LE_Pre_web.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
         var raw = MakeRaw(
@@ -1367,11 +1370,11 @@ public class DocumentLinkerTests
             sourceType: SourceType.ManualsPage,
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "Batman_LE_Pre_web.pdf" });
         var page1 = new ExtractedPage(PageNumber: 1, Text: "Batman LE. Multiball feature includes an 8 ball mode.");
-        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        textExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [williams], textExtractor: textExtractor, blobStore: blobStore);
+            machines: [williams], previewExtractor: textExtractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1458,13 +1461,14 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         // No filename slug match — file is "service_bulletin.pdf".
         const string blobName = "docs/service_bulletin.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1473,11 +1477,11 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "service_bulletin.pdf" });
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "This document covers Godzilla pinball machine service notes.");
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+            machines: [machine], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1495,7 +1499,7 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         // Edition family (group GweeP, year 2021). A rulesheet (group-level doc)
@@ -1506,6 +1510,7 @@ public class DocumentLinkerTests
         premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
 
         const string blobName = "docs/Godzilla-Rulesheet.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1515,11 +1520,11 @@ public class DocumentLinkerTests
             sourceType: SourceType.ManualsPage);
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "Godzilla rulesheet — applies to all editions.");
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [pro, premLe], textExtractor: extractor, blobStore: blobStore);
+            machines: [pro, premLe], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1537,13 +1542,14 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machineA = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
         var machineB = MakeMachine(id: "DPOL-0002", title: "Deadpool", slug: "deadpool");
 
         const string blobName = "docs/multi_bulletin.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1553,11 +1559,11 @@ public class DocumentLinkerTests
 
         var pageText = "Applies to the Godzilla and Deadpool platforms.";
         var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machineA, machineB], textExtractor: extractor, blobStore: blobStore);
+            machines: [machineA, machineB], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1578,12 +1584,13 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         const string blobName = "docs/corrupt.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1593,11 +1600,11 @@ public class DocumentLinkerTests
 
         // Extractor returns Malformed — non-Success status, no exception.
         // This path returns (null, false) → falls through to NotInCatalog normally.
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(ExtractedDocument.Failure(ExtractionStatus.Malformed, "corrupt pdf"));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ExtractedPreview.Failure(ExtractionStatus.Malformed, "corrupt pdf"));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+            machines: [machine], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1616,12 +1623,13 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         const string blobName = "docs/bad.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1629,11 +1637,11 @@ public class DocumentLinkerTests
             fileUrl: "https://example.com/files/bad.pdf",
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "bad.pdf" });
 
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("pdf library crash"));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+            machines: [machine], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1661,12 +1669,13 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         const string blobName = "docs/letterhead_manual.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -1677,11 +1686,11 @@ public class DocumentLinkerTests
         // Page 1 is letterhead-only (no game slug), page 2 has the content.
         var page1 = new ExtractedPage(PageNumber: 1, Text: "Stern Pinball Inc. Proprietary and Confidential.");
         var page2 = new ExtractedPage(PageNumber: 2, Text: "Godzilla pinball machine operator's manual.");
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text + page2.Text, [page1, page2], [], null));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1, page2], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+            machines: [machine], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -2052,12 +2061,13 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machines = new[] { SegaGodzilla(), SternGodzilla() };
 
         const string blobName = "docs/godzilla_pro.pdf";
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
@@ -2069,11 +2079,11 @@ public class DocumentLinkerTests
 
         var pageText = "Owner's manual for the Godzilla pinball machine.";
         var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: machines, textExtractor: extractor, blobStore: blobStore);
+            machines: machines, previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -2096,19 +2106,20 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         const string blobName = "docs/service_bulletin.pdf";
         var blobStream = new MemoryStream([1, 2, 3]);
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(blobStream));
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "This document covers Godzilla pinball machine service notes.");
-        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        extractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         // No xref, filename won't match slug — forces Tier 3.
         var raw = MakeRaw(
@@ -2116,7 +2127,7 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "service_bulletin.pdf" });
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+            machines: [machine], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
 
@@ -2124,7 +2135,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         // Assert: extractor was called (blob bytes were passed through) and link resolved.
-        await extractor.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await extractor.Received(1).ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
         Assert.Equal("page_1_resolver", result.ResolutionStrategy);
         Assert.Single(result.LinkedMachineIds);
@@ -2140,13 +2151,15 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var extractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         const string blobName = "docs/not_yet_downloaded.pdf";
-        // TryOpenReadAsync returns null → blob not present (no exception surfaced).
+        // GetSizeAsync returns 1024 (size guard passes), TryOpenReadAsync returns null
+        // → TOCTOU window: blob vanished between size check and open.
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
         blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Stream?>(null));
 
@@ -2156,7 +2169,7 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "not_yet_downloaded.pdf" });
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+            machines: [machine], previewExtractor: extractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
 
@@ -2164,7 +2177,7 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         // Assert: extractor never called (blob miss skips the tier); falls to NotInCatalog.
-        await extractor.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await extractor.DidNotReceive().ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
     }
 
@@ -2245,6 +2258,257 @@ public class DocumentLinkerTests
         // InitializeAsync did NOT crash and the resolver was built. Whether the
         // stub slug resolves depends on InMemoryMachineIndex internals that are not
         // the subject of this test. The crash-guard is the load-bearing assertion.
+    }
+
+    // ── #832 upstream size guard + honest degradation ─────────────────────────
+
+    private async Task<DocumentLinker> BuildLinkerWithBlobAsync(
+        IDocumentPreviewExtractor preview,
+        IDocumentBlobStore blobStore)
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, LinkOverrideRecord>());
+        machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Machine>().ToAsyncEnumerable());
+
+        var aliasLoader = Substitute.For<IMachineAliasLoader>();
+        aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<MachineAliasEntry>());
+
+        var linker = new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            previewExtractor: preview, NullLogger<DocumentLinker>.Instance, aliasLoader,
+            blobStore: blobStore,
+            maxExtractionBytes: PdfExtractionOptions.DefaultMaxStreamBytes);
+        await linker.InitializeAsync(CancellationToken.None);
+        return linker;
+    }
+
+    private static RawDocumentRecord MakeRawWithLocalPath(string docId, string localPath)
+        => MakeRaw(
+            documentId: docId,
+            game: null,
+            file: new DownloadedFileInfo
+            {
+                LocalPath = localPath,
+                Filename = Path.GetFileName(localPath),
+                SizeBytes = 0,
+                Sha256 = null,
+            });
+
+    [Fact]
+    public async Task LinkAsync_BlobOverMaxExtractionBytes_SkipsWithoutOpeningBlob()
+    {
+        // Size guard fires on the GetSizeAsync properties call BEFORE any body
+        // transfer — the oversized blob must never be downloaded at all.
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(200L * 1024 * 1024); // 200 MB > 100 MB default cap
+        var preview = Substitute.For<IDocumentPreviewExtractor>();
+
+        var linker = await BuildLinkerWithBlobAsync(preview, blobStore);
+        var raw = MakeRawWithLocalPath("doc_oversize", "chicagogaminggamepage/MB_Manual_Rev_1.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        await blobStore.DidNotReceive().TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await preview.DidNotReceive().ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        // A size skip is NOT a failure — the document falls through the page
+        // tiers to the normal no-tier-matched outcome.
+        Assert.NotEqual(LinkStatus.Failed, result.FinalStatus);
+    }
+
+    [Fact]
+    public async Task LinkAsync_GetSizeAsyncReturnsNull_SkipsAsBlobMissing_NotFailed()
+    {
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((long?)null); // 404 — blob not yet downloaded
+        var preview = Substitute.For<IDocumentPreviewExtractor>();
+
+        var linker = await BuildLinkerWithBlobAsync(preview, blobStore);
+        var raw = MakeRawWithLocalPath("doc_noblob", "manualspage/missing.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        await preview.DidNotReceive().ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        Assert.NotEqual(LinkStatus.Failed, result.FinalStatus);
+    }
+
+    [Fact]
+    public async Task LinkAsync_GetSizeAsyncThrows_MarksThatDocumentFailed_AndDoesNotEscape()
+    {
+        // The open path lives INSIDE the per-document try (spec Sections C+E):
+        // a transient storage error degrades to Failed for that one document
+        // instead of escaping to RunBatchAsync's batch-level catch.
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<long?>>(_ => throw new InvalidOperationException("transient storage error"));
+        var preview = Substitute.For<IDocumentPreviewExtractor>();
+
+        var linker = await BuildLinkerWithBlobAsync(preview, blobStore);
+        var raw = MakeRawWithLocalPath("doc_transient", "manualspage/x.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Failed, result.FinalStatus);
+        Assert.Equal("text_extraction_exception", result.FailureReason);
+    }
+
+    [Fact]
+    public async Task LinkAsync_PreviewReturnsNonSuccess_SkipsHonestly_NotFailed()
+    {
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
+        blobStore.TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream([1, 2, 3]));
+        var preview = Substitute.For<IDocumentPreviewExtractor>();
+        preview.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ExtractedPreview.Failure(ExtractionStatus.Encrypted, "encrypted"));
+
+        var linker = await BuildLinkerWithBlobAsync(preview, blobStore);
+        var raw = MakeRawWithLocalPath("doc_encrypted", "manualspage/enc.pdf");
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.NotEqual(LinkStatus.Failed, result.FinalStatus);
+    }
+
+    [Fact]
+    public async Task LinkAsync_RequestsExactlyTwoPreviewPages()
+    {
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
+        blobStore.TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream([1, 2, 3]));
+        var preview = Substitute.For<IDocumentPreviewExtractor>();
+        preview.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedPreview(ExtractionStatus.Success, [new ExtractedPage(1, "no match here")], null));
+
+        var linker = await BuildLinkerWithBlobAsync(preview, blobStore);
+        var raw = MakeRawWithLocalPath("doc_two_pages", "manualspage/t.pdf");
+
+        await linker.LinkAsync(raw, CancellationToken.None);
+
+        await preview.Received(1).ExtractPreviewAsync(Arg.Any<Stream>(), 2, Arg.Any<CancellationToken>());
+    }
+
+    // --- #832 extraction concurrency gate ---------------------------------------
+
+    // Fake that PARKS every extraction on a gate the test controls. Without the
+    // parking, a near-synchronous fake completes before its peers start and
+    // max-observed concurrency never exceeds 1 whether or not the production
+    // semaphore exists — the test would pass with the fix reverted, which is
+    // exactly the false-green no-masking-skips.md forbids. Parked workers make
+    // the final MaxObserved assertion deterministic: ANY overlap beyond the
+    // gate's width is recorded before release.
+    private sealed class GatedPreviewExtractor : IDocumentPreviewExtractor
+    {
+        private int _current;
+        private int _max;
+        private int _started;
+        public SemaphoreSlim Gate { get; } = new(0);
+        public int MaxObserved => Volatile.Read(ref _max);
+        public int Started => Volatile.Read(ref _started);
+
+        public async Task<ExtractedPreview> ExtractPreviewAsync(Stream pdfStream, int pageCount, CancellationToken ct)
+        {
+            var now = Interlocked.Increment(ref _current);
+            int snapshot;
+            while ((snapshot = Volatile.Read(ref _max)) < now)
+            {
+                if (Interlocked.CompareExchange(ref _max, now, snapshot) == snapshot) break;
+            }
+            Interlocked.Increment(ref _started);
+
+            await Gate.WaitAsync(ct);
+
+            Interlocked.Decrement(ref _current);
+            return new ExtractedPreview(ExtractionStatus.Success, [new ExtractedPage(1, "no evidence")], null);
+        }
+    }
+
+    private async Task<DocumentLinker> BuildLinkerForBatchAsync(
+        IDocumentPreviewExtractor extractor,
+        IDocumentBlobStore blobStore,
+        List<RawDocumentRecord> pendingDocs,
+        int cosmosWriteConcurrency = 20,
+        int extractionConcurrency = 4)
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        rawRepo.StreamByStatusAsync(
+            Arg.Any<IReadOnlyCollection<LinkStatus>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(pendingDocs.ToAsyncEnumerable());
+
+        overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, LinkOverrideRecord>());
+        machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Machine>().ToAsyncEnumerable());
+
+        var aliasLoader = Substitute.For<IMachineAliasLoader>();
+        aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<MachineAliasEntry>());
+
+        var linker = new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            previewExtractor: extractor, NullLogger<DocumentLinker>.Instance, aliasLoader,
+            cosmosWriteConcurrency: cosmosWriteConcurrency,
+            blobStore: blobStore,
+            extractionConcurrency: extractionConcurrency);
+        await linker.InitializeAsync(CancellationToken.None);
+        return linker;
+    }
+
+    [Fact]
+    public async Task RunBatchAsync_ExtractionConcurrency_NeverExceedsConfiguredGate()
+    {
+        const int docCount = 8;
+        const int gateWidth = 2;
+
+        var extractor = new GatedPreviewExtractor();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+        blobStore.GetSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(1024L);
+        blobStore.TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream([1]));
+
+        // cosmosWriteConcurrency deliberately WIDER than the gate: the whole
+        // point of #832's Section D is that the Parallel.ForEachAsync width no
+        // longer governs parse memory.
+        var linker = await BuildLinkerForBatchAsync(
+            extractor, blobStore,
+            pendingDocs: Enumerable.Range(0, docCount)
+                .Select(i => MakeRawWithLocalPath($"doc_gate_{i}", $"manualspage/g{i}.pdf"))
+                .ToList(),
+            cosmosWriteConcurrency: docCount,
+            extractionConcurrency: gateWidth);
+
+        var batch = linker.RunBatchAsync(CancellationToken.None);
+
+        // Wait until the gate is saturated (exactly gateWidth workers parked),
+        // then release everyone and let the batch drain.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (extractor.Started < gateWidth && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+        Assert.Equal(gateWidth, extractor.Started); // a third worker must NOT have started
+
+        extractor.Gate.Release(docCount);
+        await batch;
+
+        // Deterministic ceiling: every extraction parked until release, so any
+        // overlap beyond the gate was recorded in MaxObserved before this line.
+        Assert.True(extractor.MaxObserved <= gateWidth,
+            $"extraction concurrency reached {extractor.MaxObserved}, gate is {gateWidth}");
+        Assert.Equal(docCount, extractor.Started); // and everyone eventually ran
     }
 }
 

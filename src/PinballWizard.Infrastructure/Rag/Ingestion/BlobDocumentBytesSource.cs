@@ -102,9 +102,9 @@ public sealed class BlobDocumentBytesSource : IDocumentBytesSource
 
         _logger.LogDebug("BlobDocumentBytesSource: blob hit for '{BlobName}'.", blobName);
 
-        // OpenReadAsync returns a seekable MemoryStream (BlobDocumentStore.OpenReadAsync
-        // downloads into a MemoryStream). The stream is already positioned at 0 by the
-        // store implementation, satisfying PdfPig's random-access requirement.
+        // OpenReadAsync returns a seekable temp-file-backed stream positioned
+        // at 0 (#832 — no longer a MemoryStream), satisfying PdfPig's
+        // random-access requirement without heap cost proportional to size.
         return await _store.OpenReadAsync(blobName, cancellationToken).ConfigureAwait(false);
     }
 

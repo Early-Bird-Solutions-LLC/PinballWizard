@@ -295,6 +295,11 @@ var captureReconcilerParityOption = new Option<bool>("--capture-reconciler-parit
                   "Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var capturePageTextOption = new Option<bool>("--capture-page-text")
+{
+    Description = "Capture page-tier excerpts + bindings for the #832 replay gate (requires Cosmos + blob storage)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -338,6 +343,7 @@ rootCommand.Options.Add(auditCatalogOption);
 rootCommand.Options.Add(backfillManufacturerSlugsOption);
 rootCommand.Options.Add(captureGoldenSetOption);
 rootCommand.Options.Add(captureReconcilerParityOption);
+rootCommand.Options.Add(capturePageTextOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -383,6 +389,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var backfillManufacturerSlugs = parseResult.GetValue(backfillManufacturerSlugsOption);
     var captureGoldenSet = parseResult.GetValue(captureGoldenSetOption);
     var captureReconcilerParity = parseResult.GetValue(captureReconcilerParityOption);
+    var capturePageText = parseResult.GetValue(capturePageTextOption);
 
     // --with-deps only modifies --install-playwright. Accepting it silently on its
     // own would let a mistyped or reordered container build look like it installed
@@ -2094,6 +2101,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (captureReconcilerParity)
     {
         await CaptureGoldenSetCommand.RunReconcilerParityAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --capture-page-text (#832 — read-only fixture capture for the page-tier
+    // replay gate). Streams page-tier-linked documents, preview-extracts each blob's
+    // first two pages, parity-truncates the text, and writes a JSON fixture +
+    // CAPTURE-PAGE-TEXT.md so that PageTextLinkSetReplayTests can assert the linker's
+    // page tiers reproduce the captured bindings offline (no Cosmos, no blob storage).
+    // Operator-gated: run only after a deliberate re-link that you want as the baseline.
+    if (capturePageText)
+    {
+        await CaptureGoldenSetCommand.RunPageTextSetAsync(host.Services, cancellationToken);
         return;
     }
 

@@ -18,7 +18,7 @@ namespace PinballWizard.Infrastructure.Rag.Extraction;
 // `Task.Run` so a CancellationToken can interrupt waiting workers (the
 // in-flight parse itself is not interruptible — PdfPig has no
 // cancellation surface — but for typical manual PDFs parse is sub-second).
-public sealed class PdfPigDocumentTextExtractor : IDocumentTextExtractor
+public sealed class PdfPigDocumentTextExtractor : IDocumentTextExtractor, IDocumentPreviewExtractor
 {
     private readonly PdfExtractionOptions _options;
     private readonly ILogger<PdfPigDocumentTextExtractor> _logger;
@@ -57,6 +57,75 @@ public sealed class PdfPigDocumentTextExtractor : IDocumentTextExtractor
         }
 
         return Task.Run(() => Extract(pdfStream), cancellationToken);
+    }
+
+    // #832 page-limited preview for DocumentLinker's page tiers. Verified
+    // against PdfPig v0.1.15 (src/UglyToad.PdfPig/Content/Pages.cs): GetPage
+    // resolves a single page node and calls pageFactory.Create for that page
+    // only — construction is strictly on demand, no page cache — so requesting
+    // two pages parses two pages, not all of them. PdfDocument.Open itself
+    // reads only xref + catalog.
+    //
+    // Producible statuses: Success, Encrypted, Malformed, SizeExceeded — see
+    // IDocumentPreviewExtractor. The OcrRequiredCharFloor heuristic is
+    // deliberately NOT applied here: an empty preview yields no linking
+    // evidence and the tier declines, which is the honest outcome (the
+    // heuristic belongs to the indexing path).
+    public Task<ExtractedPreview> ExtractPreviewAsync(
+        Stream pdfStream,
+        int pageCount,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(pdfStream);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageCount, 1);
+
+        // Same pre-parse size guard as ExtractAsync — defence in depth behind
+        // the linker's upstream GetSizeAsync check (spec Section C). One
+        // threshold, two enforcement points, zero duplicated constants.
+        if (pdfStream.CanSeek && pdfStream.Length > _options.MaxStreamBytes)
+        {
+            var bytes = pdfStream.Length;
+            _logger.LogWarning(
+                "PDF stream length {StreamBytes} exceeds MaxStreamBytes={MaxStreamBytes}; rejecting preview before parse.",
+                bytes, _options.MaxStreamBytes);
+            return Task.FromResult(ExtractedPreview.Failure(
+                ExtractionStatus.SizeExceeded,
+                $"PDF stream length {bytes} bytes exceeds MaxStreamBytes={_options.MaxStreamBytes}; rejected to bound memory usage."));
+        }
+
+        return Task.Run(() => ExtractPreview(pdfStream, pageCount), cancellationToken);
+    }
+
+    private ExtractedPreview ExtractPreview(Stream pdfStream, int pageCount)
+    {
+        // Same single-try posture as Extract (see the comment there): PdfPig
+        // can throw mid-parse on malformed-but-openable PDFs, and the
+        // structured-result-on-failure contract must hold for every operation
+        // that touches the document.
+        try
+        {
+            using var document = PdfDocument.Open(pdfStream);
+
+            var n = Math.Min(pageCount, document.NumberOfPages);
+            var pages = new List<ExtractedPage>(capacity: n);
+            for (var i = 1; i <= n; i++)
+            {
+                var page = document.GetPage(i);
+                pages.Add(new ExtractedPage(page.Number, page.Text ?? string.Empty));
+            }
+
+            return new ExtractedPreview(ExtractionStatus.Success, pages, Error: null);
+        }
+        catch (UglyToad.PdfPig.Exceptions.PdfDocumentEncryptedException ex)
+        {
+            _logger.LogWarning(ex, "PDF is encrypted; preview skipped.");
+            return ExtractedPreview.Failure(ExtractionStatus.Encrypted, $"PDF is encrypted: {ex.Message}");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "PdfPig failed to parse the document for preview; classifying as Malformed.");
+            return ExtractedPreview.Failure(ExtractionStatus.Malformed, $"PdfPig parse failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private ExtractedDocument Extract(Stream pdfStream)

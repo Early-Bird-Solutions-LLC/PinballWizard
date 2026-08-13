@@ -28,8 +28,13 @@ public sealed class PdfExtractionOptions
     // non-seekable streams skip the check (PdfPig requires seekable
     // input for cross-reference parsing, so a non-seekable stream
     // fails downstream regardless).
+    // Single source of the extraction size threshold (#832): the options
+    // property, the DocumentLinker ctor default, and the upstream size guard
+    // all reference this const — never a second literal.
+    public const long DefaultMaxStreamBytes = 100L * 1024 * 1024;
+
     [Range(typeof(long), "1024", "9223372036854775807")]
-    public long MaxStreamBytes { get; set; } = 100L * 1024 * 1024;
+    public long MaxStreamBytes { get; set; } = DefaultMaxStreamBytes;
 
     // Threshold below which a successfully-parsed PDF is classified as
     // OcrRequired (scanned-image-only). 32 chars covers an empty

@@ -1,8 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using PinballWizard.Application.Linking;
-using PinballWizard.Application.Persistence;
-using PinballWizard.Application.Resolution;
 using PinballWizard.Application.Tests.Fixtures;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
@@ -63,101 +59,27 @@ public sealed class GoldenLinkSetReplayTests
             root, CapturedFixtureRepoPath.Replace('/', Path.DirectorySeparatorChar));
     }
 
-    // ── Shared linker builder ──────────────────────────────────────────────────
+    // ── Shared linker builder, machine factory, raw record factory ────────────
+    // Delegated to LinkerReplayHarness so PageTextLinkSetReplayTests can share them
+    // without duplicating wiring. The golden replay always passes null for the two
+    // new optional params (previewExtractor, blobStore) — no behaviour change.
 
-    // Builds a DocumentLinker seeded with the given machines so Tier-1 (game_slug)
-    // can match. No text extractor or blob store — Tiers 3-4 are skipped, which is
-    // exactly what the CAPTURE.md describes: "the mock catalog only seeds
-    // slug-resolvable machines, so filename/page-text tiers return nothing."
-    private static async Task<DocumentLinker> BuildLinkerAsync(
+    private static Task<DocumentLinker> BuildLinkerAsync(
         IEnumerable<Machine> machines,
         CancellationToken ct = default)
-    {
-        var rawRepo = Substitute.For<IRawDocumentRepository>();
-        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
-        var machineRepo = Substitute.For<IMachineRepository>();
-        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        => LinkerReplayHarness.BuildLinkerAsync(machines, ct: ct);
 
-        overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, LinkOverrideRecord>());
-
-        var machineList = machines.ToList();
-        machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(machineList.ToAsyncEnumerable());
-
-        // FanOutAndUpdateAsync calls UpdateLinkStatusAsync on rawRepo and UpsertFromRawAsync
-        // on docWriter. NSubstitute defaults (Task.CompletedTask for Task returns) are fine.
-        // PruneStaleFanOutRowsAsync calls StreamByDocumentIdAsync — NSubstitute 5.x returns
-        // an empty async enumerable by default; any NullRef is caught inside the try/catch
-        // in PruneStaleFanOutRowsAsync, so the link result is never corrupted.
-
-        // The resolver is mandatory since ADR-0054 Wave 2 Task 8 — the replay runs
-        // the identity-derived index with an empty curated-alias list.
-        var aliasLoader = Substitute.For<IMachineAliasLoader>();
-        aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<MachineAliasEntry>());
-
-        var linker = new DocumentLinker(
-            rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor: null,
-            NullLogger<DocumentLinker>.Instance,
-            aliasLoader,
-            blobStore: null);
-
-        await linker.InitializeAsync(ct);
-        return linker;
-    }
-
-    // Builds a minimal RawDocumentRecord whose Tier-1 slug resolves via raw.Game.Slug.
     private static RawDocumentRecord MakeRaw(
         string documentId,
         string fileUrl,
         string gameSlug,
         string manufacturerKey,
         DocumentType docType = DocumentType.Manual,
-        // The captured source_type must be replayed faithfully. LinkingUtilities
-        // .InferManufacturerKey derives the manufacturer hint FROM SourceType
-        // (ManualsPage => Stern), and that hint drives the resolver's manufacturer
-        // scoping. Hardcoding
-        // ManualsPage would stamp every replayed document "stern" regardless of its real
-        // manufacturer, so a non-Stern document whose slug collides with a Stern machine
-        // would fail the gate as a mis-attribution the linker never made.
         SourceType sourceType = SourceType.ManualsPage)
-        => new()
-        {
-            DocumentId = documentId,
-            DocumentUrl = fileUrl,
-            DocumentType = docType,
-            Source = new SourceInfo
-            {
-                DiscoveryUrl = $"https://example.com/{manufacturerKey}/manuals/",
-                DiscoveryContext = $"{manufacturerKey} Manuals page",
-                FileUrl = fileUrl,
-                ScrapedAt = DateTime.UtcNow,
-                SourceType = sourceType,
-            },
-            Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
-            Game = new GameReference
-            {
-                Title = gameSlug.Replace('-', ' '),
-                Slug = gameSlug,
-                GamePageUrl = $"https://example.com/{manufacturerKey}/game/{gameSlug}/",
-            },
-        };
+        => LinkerReplayHarness.MakeRaw(documentId, fileUrl, gameSlug, manufacturerKey, docType, sourceType);
 
-    // Builds a Machine where ManufacturerSlugs[manufacturerKey] = slug.
     private static Machine MakeMachine(string id, string manufacturerKey, string title, string slug)
-        => new()
-        {
-            Id = id,
-            PartitionKey = manufacturerKey,
-            ManufacturerDisplayName = manufacturerKey,
-            Title = title,
-            ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                [manufacturerKey] = slug,
-            },
-        };
+        => LinkerReplayHarness.MakeMachine(id, manufacturerKey, title, slug);
 
     // Runs the replay policy against one entry and returns (misattribution:bool, needsReview:bool, win:bool).
     // The policy mirrors GoldenLinkSet_Replays_WithNoMisattribution exactly, so any divergence in

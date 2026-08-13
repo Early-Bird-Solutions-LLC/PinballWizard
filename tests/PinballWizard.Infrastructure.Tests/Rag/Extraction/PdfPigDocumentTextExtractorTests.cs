@@ -222,6 +222,88 @@ public sealed class PdfPigDocumentTextExtractorTests
             () => extractor.ExtractAsync(stream, cts.Token));
     }
 
+    // --- ExtractPreviewAsync (#832) -------------------------------------------
+
+    [Fact]
+    public async Task ExtractPreviewAsync_ThreePagePdf_ReturnsExactlyTwoPages()
+    {
+        var pdfBytes = BuildPdfWithPages("Page one text about Godzilla.", "Page two text.", "Page three text.");
+        var extractor = NewExtractor();
+        using var stream = new MemoryStream(pdfBytes);
+
+        var result = await extractor.ExtractPreviewAsync(stream, pageCount: 2, CancellationToken.None);
+
+        Assert.Equal(ExtractionStatus.Success, result.Status);
+        Assert.Equal(2, result.Pages.Count);
+        Assert.Equal(1, result.Pages[0].PageNumber);
+        Assert.Equal(2, result.Pages[1].PageNumber);
+        Assert.Contains("Godzilla", result.Pages[0].Text);
+    }
+
+    [Fact]
+    public async Task ExtractPreviewAsync_SinglePagePdf_ReturnsOnePage_NotAnError()
+    {
+        var pdfBytes = BuildPdfWithText("Only page.");
+        var extractor = NewExtractor();
+        using var stream = new MemoryStream(pdfBytes);
+
+        var result = await extractor.ExtractPreviewAsync(stream, pageCount: 2, CancellationToken.None);
+
+        Assert.Equal(ExtractionStatus.Success, result.Status);
+        Assert.Single(result.Pages);
+    }
+
+    [Fact]
+    public async Task ExtractPreviewAsync_OversizeStream_ReturnsSizeExceededWithoutParsing()
+    {
+        var pdfBytes = BuildPdfWithText("Content irrelevant; the guard fires on stream length.");
+        var extractor = NewExtractor(maxStreamBytes: 16);
+        using var stream = new MemoryStream(pdfBytes);
+
+        var result = await extractor.ExtractPreviewAsync(stream, pageCount: 2, CancellationToken.None);
+
+        Assert.Equal(ExtractionStatus.SizeExceeded, result.Status);
+        Assert.Contains("MaxStreamBytes", result.Error);
+    }
+
+    [Fact]
+    public async Task ExtractPreviewAsync_GarbageBytes_ReturnsMalformed()
+    {
+        var extractor = NewExtractor();
+        using var stream = new MemoryStream([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+
+        var result = await extractor.ExtractPreviewAsync(stream, pageCount: 2, CancellationToken.None);
+
+        Assert.Equal(ExtractionStatus.Malformed, result.Status);
+    }
+
+    [Fact]
+    public async Task ExtractPreviewAsync_NearEmptyText_ReturnsSuccess_NeverOcrRequired()
+    {
+        // The preview path deliberately skips the OcrRequiredCharFloor heuristic
+        // (spec Section B): an empty preview yields no linking evidence and the
+        // page tier declines — that is the honest outcome. OcrRequired belongs
+        // to the indexing path only.
+        var pdfBytes = BuildPdfWithText("x");
+        var extractor = NewExtractor(ocrRequiredCharFloor: 10000);
+        using var stream = new MemoryStream(pdfBytes);
+
+        var result = await extractor.ExtractPreviewAsync(stream, pageCount: 2, CancellationToken.None);
+
+        Assert.Equal(ExtractionStatus.Success, result.Status);
+        Assert.NotEqual(ExtractionStatus.OcrRequired, result.Status);
+    }
+
+    [Fact]
+    public async Task ExtractPreviewAsync_PageCountBelowOne_Throws()
+    {
+        var extractor = NewExtractor();
+        using var stream = new MemoryStream(BuildPdfWithText("content"));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => extractor.ExtractPreviewAsync(stream, pageCount: 0, CancellationToken.None));
+    }
+
     // --- Fixture helpers ----------------------------------------------------
 
     private static PdfPigDocumentTextExtractor NewExtractor(
