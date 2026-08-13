@@ -6,6 +6,7 @@ using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Application.Resolution;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using Xunit;
@@ -1169,7 +1170,7 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var textExtractor = Substitute.For<IDocumentPreviewExtractor>();
+        var previewExtractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var sternPro = MakeMachine(id: "GK17D-MdEqz", manufacturer: "stern", title: "Jurassic Park", slug: "");
@@ -1191,11 +1192,11 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "JP-Rulesheet.pdf" });
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "JURASSIC PARK rulesheet — applies to all editions.");
-        textExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        previewExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [sternPro, sternPrem, classic], previewExtractor: textExtractor, blobStore: blobStore);
+            machines: [sternPro, sternPrem, classic], previewExtractor: previewExtractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1279,7 +1280,7 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var textExtractor = Substitute.For<IDocumentPreviewExtractor>();
+        var previewExtractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var sternPro = MakeMachine(id: "GK1Ej-MwNZr", manufacturer: "stern", title: "Dungeons & Dragons: The Tyrant's Eye", slug: "dungeons-dragons");
@@ -1302,11 +1303,11 @@ public class DocumentLinkerTests
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "DungeonsAndDragons_Pro_web.pdf" });
 
         var page1 = new ExtractedPage(PageNumber: 1, Text: "DUNGEONS & DRAGONS — The Tyrant's Eye. Pro model service manual.");
-        textExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        previewExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [sternPro, sternPrem, classic], previewExtractor: textExtractor, blobStore: blobStore);
+            machines: [sternPro, sternPrem, classic], previewExtractor: previewExtractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -1357,7 +1358,7 @@ public class DocumentLinkerTests
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
-        var textExtractor = Substitute.For<IDocumentPreviewExtractor>();
+        var previewExtractor = Substitute.For<IDocumentPreviewExtractor>();
         var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var williams = MakeMachine(id: "G592K-MJoxd", manufacturer: "williams", title: "8 Ball", slug: "");
@@ -1370,11 +1371,11 @@ public class DocumentLinkerTests
             sourceType: SourceType.ManualsPage,
             file: new DownloadedFileInfo { LocalPath = blobName, Filename = "Batman_LE_Pre_web.pdf" });
         var page1 = new ExtractedPage(PageNumber: 1, Text: "Batman LE. Multiball feature includes an 8 ball mode.");
-        textExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        previewExtractor.ExtractPreviewAsync(Arg.Any<Stream>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ExtractedPreview(ExtractionStatus.Success, [page1], null));
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            machines: [williams], previewExtractor: textExtractor, blobStore: blobStore);
+            machines: [williams], previewExtractor: previewExtractor, blobStore: blobStore);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
@@ -2397,6 +2398,26 @@ public class DocumentLinkerTests
         await preview.Received(1).ExtractPreviewAsync(Arg.Any<Stream>(), 2, Arg.Any<CancellationToken>());
     }
 
+    // --- Constructor argument validation -----------------------------------------
+
+    [Fact]
+    public void Ctor_PreviewExtractorWithoutBlobStore_Throws()
+    {
+        // A previewExtractor without a blobStore is always a misconfiguration:
+        // extraction reads blob bytes, and without a store there is nothing to read.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var previewExtractor = Substitute.For<IDocumentPreviewExtractor>();
+        var aliasLoader = Substitute.For<IMachineAliasLoader>();
+
+        Assert.Throws<ArgumentException>(() =>
+            new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+                previewExtractor, NullLogger<DocumentLinker>.Instance, aliasLoader,
+                blobStore: null));
+    }
+
     // --- #832 extraction concurrency gate ---------------------------------------
 
     // Fake that PARKS every extraction on a gate the test controls. Without the
@@ -2437,7 +2458,7 @@ public class DocumentLinkerTests
         IDocumentBlobStore blobStore,
         List<RawDocumentRecord> pendingDocs,
         int cosmosWriteConcurrency = 20,
-        int extractionConcurrency = 4)
+        int extractionConcurrency = ScraperSettings.DefaultExtractionConcurrency)
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
@@ -2482,7 +2503,7 @@ public class DocumentLinkerTests
         // cosmosWriteConcurrency deliberately WIDER than the gate: the whole
         // point of #832's Section D is that the Parallel.ForEachAsync width no
         // longer governs parse memory.
-        var linker = await BuildLinkerForBatchAsync(
+        using var linker = await BuildLinkerForBatchAsync(
             extractor, blobStore,
             pendingDocs: Enumerable.Range(0, docCount)
                 .Select(i => MakeRawWithLocalPath($"doc_gate_{i}", $"manualspage/g{i}.pdf"))
@@ -2506,6 +2527,9 @@ public class DocumentLinkerTests
 
         // Deterministic ceiling: every extraction parked until release, so any
         // overlap beyond the gate was recorded in MaxObserved before this line.
+        // MaxObserved is the authoritative gate detector: because all workers park
+        // on the semaphore before decrementing their count, any concurrent overlap
+        // past gateWidth is captured — this assertion cannot be a false-green.
         Assert.True(extractor.MaxObserved <= gateWidth,
             $"extraction concurrency reached {extractor.MaxObserved}, gate is {gateWidth}");
         Assert.Equal(docCount, extractor.Started); // and everyone eventually ran
