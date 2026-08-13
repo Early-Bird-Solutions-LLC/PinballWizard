@@ -126,6 +126,10 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(aliasLoader);
         ArgumentOutOfRangeException.ThrowIfLessThan(extractionConcurrency, 1);
+        if (previewExtractor is not null && blobStore is null)
+            throw new ArgumentException(
+                "blobStore is required when previewExtractor is provided.",
+                nameof(blobStore));
         _rawRepo = rawRepo;
         _overrideRepo = overrideRepo;
         _machineRepo = machineRepo;
@@ -829,7 +833,7 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                 // 404→null translation happens in Infrastructure so Application never
                 // references Azure SDK types. Null here is the TOCTOU window: the blob
                 // answered the size probe but vanished before the open.
-                var stream = await _blobStore.TryOpenReadAsync(raw.File.LocalPath!, cancellationToken).ConfigureAwait(false);
+                var stream = await _blobStore!.TryOpenReadAsync(raw.File.LocalPath!, cancellationToken).ConfigureAwait(false);
                 if (stream is null)
                 {
                     _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — blob gone between size check and open.", raw.DocumentId);
