@@ -12,7 +12,7 @@ Functionally: **Phase 1** (live, validated end-to-end as of 2026-05-04) is a pol
 
 Because this app is shown to potential customers, every PR must hold the bar a prospect would expect on day one of an engagement:
 
-- **No quick fixes / shortcuts.** If a proper IaC / DI / abstraction path exists, take it. Tactical hacks have no place in a reference app — ad-hoc CLI calls, hardcoded values, manual workarounds, copy-paste-with-drift, or "we'll clean it up later" all undermine the demo. If unsure, surface the trade-off explicitly per `c:\earlybird\CLAUDE.md` (workspace conventions).
+- **No quick fixes / shortcuts.** If a proper IaC / DI / abstraction path exists, take it. Tactical hacks have no place in a reference app — ad-hoc CLI calls, hardcoded values, manual workarounds, copy-paste-with-drift, or "we'll clean it up later" all undermine the demo. If unsure, surface the trade-off explicitly rather than absorbing it silently.
 - **Architecture must read cleanly.** Clean Architecture layering, ADRs for non-obvious decisions, named abstractions over implicit conventions. A senior architect skimming the repo should be able to trace any subsystem in under five minutes.
 - **Observability and operability are first-class.** OTel traces, structured logging, `/healthz` + `/alive`, friendly error messages with remediation, idempotent operations. The system should look healthy from a dashboard, not just from green tests.
 - **Tests assert behavior, not structure.** A test named "deduplicates" must include a fixture where dedup actually fires. Coverage is necessary but not sufficient — tests are documentation of intent.
@@ -137,7 +137,7 @@ Key invariants to keep top-of-mind:
 
 ## Documentation map
 
-ADRs: [`docs/adr/`](docs/adr/) (index in its README). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in memory (`C:\Users\JimKeeley\.claude\projects\c--earlybird-PinballWizard\memory\`).
+ADRs: [`docs/adr/`](docs/adr/) (index in its README). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in Claude Code project memory, outside this repo.
 
 ## Phase 2 Preview (NOT building yet)
 

@@ -24,7 +24,7 @@ Every layer builds against this contract: AI agents (when generating answers and
 
 ### Linking-to is the inverse of scraping-from
 
-Some destinations in this directory are sites we do *not* scrape. **That distinction is preserved by design.** Pinside in particular has no scraping permission and remains deferred per [`memory/project_external_apis_and_politeness.md`](../../../Users/JimKeeley/.claude/projects/C--projects-PinballWizard/memory/project_external_apis_and_politeness.md). But:
+Some destinations in this directory are sites we do *not* scrape. **That distinction is preserved by design.** Pinside in particular has no scraping permission and remains deferred per `project_external_apis_and_politeness.md` (private project memory, not in this repo). But:
 
 - **Scraping FROM** a site requires their permission (robots.txt, terms, explicit grant). It extracts value from their infrastructure.
 - **Linking TO** a site sends them traffic. It is the friendliest possible interaction. Sites almost universally want inbound links from properly-cited contexts.
