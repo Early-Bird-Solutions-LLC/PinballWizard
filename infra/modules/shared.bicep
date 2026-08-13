@@ -1943,6 +1943,144 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
   }
 }
 
+// Dead-man's switch: alert when a known pinwiz-job-* ACA Job produces no
+// successful completion within its expected cadence window. Complements
+// alertAcaJobFailure above, which only fires when a run DOES happen and logs
+// condition: Failed. If a job never executes — stale image tag, disabled or
+// missing cron, degraded ACA environment, or a deployAiSearch toggle silently
+// removing the job from the schedule — the failure alert stays permanently
+// silent while the data goes stale.
+//
+// Blast radius by cadence (20 jobs total):
+//   6 daily   — linker, stern-manuals, stern-games, stern-bulletins, jjp, ap
+//   13 weekly — opdb, stern-refresh, kineticist-sync, twip, multimorphic, cgc,
+//               jjp-support, ap-bulletins, spooky, spooky-support, pb, pb-docs,
+//               pb-freshdesk
+//   1 monthly — barrelsoffun (intentionally excluded — see below)
+//
+// Per-cadence thresholds (MaxGapH in the KQL datatable):
+//   Daily jobs  — MaxGapH = 25 h. A normally-running job completes within 24 h
+//                 of the previous run; 25 h gives a 1-h jitter buffer while
+//                 still detecting a single missed day at the next P1D evaluation.
+//   Weekly jobs — MaxGapH = 192 h (8 d). A normally-running job runs every
+//                 168 h (7 d); 192 h allows one day of grace while keeping the
+//                 threshold well within the P10D query window (240 h > 192 h).
+//
+// NEVER-RAN COVERAGE: The expected job-type list is seeded in a KQL datatable
+// rather than derived from observed telemetry. A job that has NEVER produced a
+// log line would be invisible to a pure summarize-by-JobName_s query. The left-
+// outer-join makes every expected type appear; a null lastSuccessTime is treated
+// as "never ran" → elapsedH = MaxGapH + 1 → immediately overdue. Caveat: a
+// newly-deployed job will alert until its first successful run completes.
+//
+// MONTHLY JOB EXCLUDED (pinwiz-job-barrelsoffun, cron '0 4 1 * *'):
+// Its 31-day cadence exceeds the P10D (240 h) query window. A healthy run on
+// the 1st of the month leaves the P10D window on day 11; from day 11 onward
+// the job appears "never ran" and would produce a false-positive alert for the
+// remaining ~20 days of every month. The monthly job is explicitly excluded
+// until a longer monitoring mechanism is in place. Tracked in #856 as an
+// accepted limitation.
+//
+// JobType extraction: job names follow pinwiz-job-<type>-<5chars>, where the
+// 5-char suffix is uniqueString(sub,rg)[0:5]. Stripping the 11-char prefix
+// 'pinwiz-job-' and the 6-char dash+suffix via
+//   substring(JobName_s, 11, strlen(JobName_s) - 17)
+// yields the stable type token used as the join key into the datatable.
+// Verified for all 19 covered types, including shortest (ap/jjp) and longest
+// (spooky-support, pb-freshdesk).
+//
+// windowSize P10D / evaluationFrequency P1D / autoMitigate false rationale:
+//   P10D is the minimum window that covers the weekly MaxGapH of 192 h (192 < 240).
+//   P1D evaluation detects a threshold crossing within 24 h of when it occurs.
+//   autoMitigate false: a silently-missing job must produce daily reminders, not
+//   one email followed by suppression — same reasoning as alertAcaJobFailure.
+//   Severity 2 matches the failure alert: a job that never runs is as serious
+//   as one that runs and fails, and warrants the same on-call priority.
+resource alertAcaJobMissingRun 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-aca-job-missing-run'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — ACA Job missing expected run'
+    description: 'A known pinwiz-job-* Container App Job has not produced a successful completion within its expected cadence window (25 h for daily jobs, 192 h for weekly). Excludes barrelsoffun (monthly — 31-day cadence exceeds the 10-day query window). Investigate: az containerapp job execution list -n <job>.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'P1D'
+    windowSize: 'P10D'
+    autoMitigate: false
+    scopes: [logAnalytics.id]
+    criteria: {
+      allOf: [
+        {
+          // Each job type and its maximum allowed gap between successful runs.
+          // Daily jobs use MaxGapH 25 (24 h cadence + 1 h jitter buffer).
+          // Weekly jobs use MaxGapH 192 (168 h cadence + 24 h grace).
+          // barrelsoffun excluded — see comment block above.
+          //
+          // JobType is extracted from JobName_s by stripping the fixed 11-char
+          // prefix 'pinwiz-job-' and 6-char dash+suffix:
+          //   substring(JobName_s, 11, strlen(JobName_s) - 17)
+          //
+          // The left-outer-join against ContainerAppSystemLogs_CL means a job
+          // with no telemetry at all (null lastSuccessTime) is treated as
+          // elapsedH = MaxGapH + 1, firing the alert immediately. This is
+          // intentional: silence is indistinguishable from a broken job.
+          query: '''let expectedJobs = datatable(JobType: string, MaxGapH: long) [
+    'linker', 25L,
+    'stern-manuals', 25L,
+    'stern-games', 25L,
+    'stern-bulletins', 25L,
+    'jjp', 25L,
+    'ap', 25L,
+    'opdb', 192L,
+    'stern-refresh', 192L,
+    'kineticist-sync', 192L,
+    'twip', 192L,
+    'multimorphic', 192L,
+    'cgc', 192L,
+    'jjp-support', 192L,
+    'ap-bulletins', 192L,
+    'spooky', 192L,
+    'spooky-support', 192L,
+    'pb', 192L,
+    'pb-docs', 192L,
+    'pb-freshdesk', 192L
+];
+let recentRuns = ContainerAppSystemLogs_CL
+| where JobName_s startswith 'pinwiz-job-'
+| where Log_s startswith 'Saw completed job'
+| where Log_s !contains 'condition: Failed'
+| extend JobType = substring(JobName_s, 11, strlen(JobName_s) - 17)
+| summarize lastSuccessTime = max(TimeGenerated) by JobType;
+expectedJobs
+| join kind=leftouter (recentRuns) on JobType
+| extend elapsedH = iif(isnull(lastSuccessTime), MaxGapH + 1L, datetime_diff('Hour', now(), lastSuccessTime))
+| where elapsedH > MaxGapH
+| summarize overdueRunCount = count() by JobType'''
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'overdueRunCount'
+          operator: 'GreaterThan'
+          threshold: 0
+          dimensions: [
+            {
+              name: 'JobType'
+              operator: 'Include'
+              values: ['*']
+            }
+          ]
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
 // -----------------------------------------------------------------------------
 // App Insights availability test — synthetic ping every 5 min
 // -----------------------------------------------------------------------------

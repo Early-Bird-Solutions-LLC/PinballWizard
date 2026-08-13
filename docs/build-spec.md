@@ -1118,7 +1118,7 @@ Phase 6 provisions a single Application Insights workbook titled **"PinballWizar
 
 ### Alert routing
 
-Six metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phase 2 block (`deployPhase2 = true`). All route to a single action group `pinwiz-ops-alerts` with the personal Earlybird email; no PagerDuty for v1 (single operator, hobby-cadence response, per `quality-spec.md` § Alerting).
+Seven metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phase 2 block (`deployPhase2 = true`). All route to a single action group `pinwiz-ops-alerts` with the personal Earlybird email; no PagerDuty for v1 (single operator, hobby-cadence response, per `quality-spec.md` § Alerting).
 
 | Alert rule name | Condition | Severity | Action |
 | --- | --- | --- | --- |
@@ -1128,6 +1128,7 @@ Six metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phas
 | `pinwiz-alert-dead-letters` | `pinwiz.rag.changefeed_dead_letter_total` cumulative increment > 50 in a 1-h window | Sev 3 | Email notify; investigate per runbook `04-ai-search-rebuild.md` § triage section |
 | `pinwiz-alert-availability` | Availability test success rate < 99.5% over rolling 7-day window | Sev 1 | Email notify; investigate per runbook `01-incident-response.md` |
 | `pinwiz-alert-aca-job-failure` | Any `pinwiz-job-*` ACA Job logs `Saw completed job … condition: Failed`; evaluated daily over a matching 1-day window with `autoMitigate: false`, split by `JobName_s`, so a job failing nightly yields one email per failing night naming the job | Sev 2 | Email notify; `az containerapp job execution list -n <job>` |
+| `pinwiz-alert-aca-job-missing-run` | A known `pinwiz-job-*` ACA Job has produced no successful completion within its expected cadence window: 25 h for the 6 daily jobs, 192 h (8 d) for the 13 weekly jobs; evaluated daily over a P10D window with `autoMitigate: false`. A seeded datatable catches jobs that have never run (no telemetry). `barrelsoffun` (monthly) excluded — 31-day cadence exceeds the 10-day query window | Sev 2 | Email notify; investigate per runbook `07-job-missing-run.md` |
 
 **Alert-proven requirement (pre-launch gate item):** before launch, each alert is proven to fire by inducing a synthetic condition in a dev environment. The proof is recorded as a dated comment in `docs/decision-log.md` per the DR drill procedure.
 
