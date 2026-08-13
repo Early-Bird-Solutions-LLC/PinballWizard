@@ -416,6 +416,26 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // Build host with DI
     using var host = CreateHost(args);
 
+    // OpenTelemetry providers (TracerProvider / MeterProvider) are registered
+    // as lazy DI singletons by AddOpenTelemetry() in ServiceDefaults and are
+    // only instantiated when TelemetryHostedService.StartAsync() fires.
+    // Without this call the providers are NEVER created, so no ActivityListener
+    // subscribes to the PinballWizard ActivitySource — every span is a silent
+    // no-op and every metric is discarded, regardless of how
+    // APPLICATIONINSIGHTS_CONNECTION_STRING is configured.
+    //
+    // StopAsync() is equally load-bearing: it triggers ForceFlush() on the
+    // providers so batched telemetry already in memory is exported to Azure
+    // Monitor before the process exits. A short-lived CLI job that skips
+    // StopAsync loses all in-flight telemetry. The try/finally below
+    // guarantees StopAsync runs on EVERY exit path — normal return, early
+    // return from a verb handler, or an unhandled exception.
+    //
+    // DO NOT remove this call or the try/finally. This is the fix for #840.
+    await host.StartAsync(cancellationToken);
+    try
+    {
+
     // Resolve the scraper orchestrator lazily/gracefully: its Cosmos-backed
     // dependencies are not activatable without Cosmos config, and utility verbs
     // (--eval, --corpus-coverage, --ensure-*, --gc-rag-index, etc.) do not need
@@ -2142,6 +2162,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         // code as the job's success/failure status: without this, a fully-failed
         // scraper run reports "Succeeded" on the dashboard (Invariant #17).
         Environment.ExitCode = 1;
+    }
+
+    } // end try: all verb handlers have run (or returned early)
+    finally
+    {
+        // ForceFlush: exports any telemetry still buffered in the OTel pipeline
+        // to Azure Monitor before the process terminates. Critical for a short-lived
+        // CLI job — without this, all in-flight spans and metrics are discarded on
+        // exit. This is paired with StartAsync() above; see #840 for the root cause.
+        await host.StopAsync(cancellationToken);
     }
 });
 
