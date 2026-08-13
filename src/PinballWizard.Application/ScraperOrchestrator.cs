@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
@@ -87,6 +88,10 @@ public sealed class ScraperOrchestrator
                 // group are safe because the source-group loop drains all pending tasks
                 // in the finally block before the next scraper starts (sequential ETags).
                 var seenDocuments = new Dictionary<string, DocumentRecord>(StringComparer.Ordinal);
+                // Raw per-scraper link count (before dedup): the yield guard checks this
+                // against Scraper:MinimumYieldPerScraper[scraper.Name] to detect scrapers
+                // that silently collected nothing (e.g. Playwright not installed — #857).
+                var scraperLinkCount = 0;
 
                 try
                 {
@@ -102,6 +107,7 @@ public sealed class ScraperOrchestrator
 
                         result.TotalLinks++;
                         sourceDocCount++;
+                        scraperLinkCount++;
 
                         if (dryRun) continue;
 
@@ -124,6 +130,42 @@ public sealed class ScraperOrchestrator
                         {
                             seenDocuments[record.DocumentId] = record;
                         }
+                    }
+
+                    // Telemetry (Option 3): always emit per-scraper link count so dashboards
+                    // can chart throughput trends and detect collapses before they are fatal.
+                    PinballWizardTelemetry.ScraperLinksDiscovered.Add(
+                        scraperLinkCount,
+                        new System.Diagnostics.TagList { { "scraper", scraper.Name } });
+
+                    // Yield guard (Option 2, #857): a scraper that silently collects nothing
+                    // (e.g. swallowed PlaywrightException, broken URL pattern) exits 0 today
+                    // because the CLI only checks result.Errors — which is only populated on
+                    // upsert failure or caught exceptions from the scraper. Adding the error
+                    // here makes the empty-yield case indistinguishable from an explicit failure
+                    // (INVARIANT #17: fallbacks must not hide failures; degrade visibly).
+                    //
+                    // Semantics of MinimumYieldPerScraper[scraper.Name]:
+                    //   missing entry — no guard enforced (backward-compatible opt-in)
+                    //   0             — explicit opt-out (source legitimately has no documents yet)
+                    //   N > 0         — must yield at least N links or the run is a failure
+                    if (_settings.MinimumYieldPerScraper.TryGetValue(scraper.Name, out var minimumYield)
+                        && scraperLinkCount < minimumYield)
+                    {
+                        var guardMsg = $"{scraper.Name}: yielded {scraperLinkCount} links, expected at least {minimumYield}. " +
+                                       "The scraper may have silently failed (e.g. browser not installed, URL pattern changed).";
+                        _logger.LogError(
+                            "Yield guard fired for {ScraperName}: {Actual} links discovered, minimum is {Minimum}. " +
+                            "Check whether the scraper swallowed an internal exception or the source site changed. " +
+                            "See GitHub issue #857.",
+                            scraper.Name, scraperLinkCount, minimumYield);
+                        result.Errors.Add(guardMsg);
+                        sourceFailed = true;
+                        firstError ??= guardMsg;
+
+                        PinballWizardTelemetry.ScraperYieldGuardFailures.Add(
+                            1,
+                            new System.Diagnostics.TagList { { "scraper", scraper.Name } });
                     }
 
                     // Phase 2: dispatch one upsert per unique DocumentId (concurrent, under semaphore).

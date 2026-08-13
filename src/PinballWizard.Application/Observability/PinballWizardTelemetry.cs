@@ -762,6 +762,29 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Documents permanently skipped during --download-documents because the origin returned HTTP 403 Forbidden, 404 Not Found, or 410 Gone. A non-zero steady-state rate is expected for access-controlled or removed files (e.g. Spooky S3 pkg files, #839); a spike in a new source_type means a previously-healthy origin is now rejecting requests. These are terminal skips — reported as skipped_permanent_rejection and excluded from the failed count, so they do NOT set a non-zero exit code. Pair with the 'Permanently rejected' log line to identify specific documents.");
 
+    // ── Scraper yield instrumentation (#857) ─────────────────────────────
+    // Emitted by ScraperOrchestrator after each ISourceScraper.ScrapeAsync
+    // completes (phase 1 accumulation). Two instruments:
+    //   links_discovered_total — the raw count of link items yielded; always
+    //     emitted so dashboards can chart per-scraper throughput trends.
+    //   yield_guard_failures_total — increments only when the guard fires
+    //     (yield below the configured minimum). A non-zero rate is an alert
+    //     that a scraper ran successfully (no unhandled exception) but collected
+    //     nothing — the silent-green-job failure class (#857).
+    //
+    // Tags (both instruments):
+    //   scraper — ISourceScraper.Name (e.g. "Manuals", "Game Pages")
+
+    public static readonly Counter<long> ScraperLinksDiscovered = Meter.CreateCounter<long>(
+        "pinwiz.scraper.links_discovered_total",
+        unit: "{link}",
+        description: "Link items yielded by a single ISourceScraper.ScrapeAsync run. Tagged with scraper (ISourceScraper.Name). Pair with pinwiz.scraper.yield_guard_failures_total: a drop to zero for a scraper whose minimum is > 0 means the guard should fire. Tracks per-scraper throughput; a sustained drop vs. baseline is a leading indicator of a broken URL pattern or a removed manufacturer listing.");
+
+    public static readonly Counter<long> ScraperYieldGuardFailures = Meter.CreateCounter<long>(
+        "pinwiz.scraper.yield_guard_failures_total",
+        unit: "{run}",
+        description: "Scraper runs that failed the per-scraper yield guard — the scraper yielded fewer link items than the configured minimum (Scraper:MinimumYieldPerScraper). Tagged with scraper. A non-zero rate means a scraper collected nothing when it was expected to collect something; the run exits 1. This is the observability-layer signal for the silent-green-job failure class that hid Playwright-not-installed for 45+ days on pinwiz-job-stern-games (#857).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

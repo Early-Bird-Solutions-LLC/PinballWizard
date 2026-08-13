@@ -72,6 +72,34 @@ public sealed class ScraperSettings
     // How this run was invoked (e.g. "scheduled" from an ACA job). Null = manual.
     public string? Trigger { get; set; }
 
+    /// <summary>
+    /// Per-scraper minimum number of link items expected from a single
+    /// <see cref="PinballWizard.Core.Scraping.ISourceScraper.ScrapeAsync"/> run.
+    /// Key: <see cref="PinballWizard.Core.Scraping.ISourceScraper.Name"/>
+    /// (e.g. <c>"Manuals"</c>, <c>"Game Pages"</c>).
+    /// Value semantics:
+    /// <list type="bullet">
+    ///   <item>Missing entry — no minimum enforced (opt-in; backward-compatible default).</item>
+    ///   <item>0 — explicit opt-out; zero-yield is allowed for sources that have no
+    ///     documents yet or that run through a non-scraper path (e.g. OPDB).</item>
+    ///   <item>N &gt; 0 — the scraper must yield at least N link items or the run is
+    ///     recorded as failed. Catches silent failures where a scraper swallows its own
+    ///     exception (e.g. <c>PlaywrightException</c> when Chromium is not installed)
+    ///     and returns 0 items instead of propagating the error (#857).</item>
+    /// </list>
+    /// Configure via <c>appsettings.json</c>:
+    /// <code>
+    /// "Scraper": {
+    ///   "MinimumYieldPerScraper": {
+    ///     "Manuals": 10,
+    ///     "Game Pages": 20,
+    ///     "JJP": 0
+    ///   }
+    /// }
+    /// </code>
+    /// </summary>
+    public Dictionary<string, int> MinimumYieldPerScraper { get; set; } = [];
+
     // Derived paths
     public string DownloadsPath => Path.Combine(DataPath, "downloads");
     public string MetadataPath => Path.Combine(DataPath, "metadata");
