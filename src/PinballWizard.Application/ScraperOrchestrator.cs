@@ -145,12 +145,16 @@ public sealed class ScraperOrchestrator
                     // here makes the empty-yield case indistinguishable from an explicit failure
                     // (INVARIANT #17: fallbacks must not hide failures; degrade visibly).
                     //
-                    // Semantics of MinimumYieldPerScraper[scraper.Name]:
-                    //   missing entry — no guard enforced (backward-compatible opt-in)
+                    // Semantics of MinimumYieldPerScraper[scraper.Name] — OPT-OUT design:
+                    //   missing entry — default minimum of 1 enforced. A scraper that discovers
+                    //                   zero links fails the run unless it explicitly opts out.
+                    //                   Write an explicit 0 to allow zero yield.
                     //   0             — explicit opt-out (source legitimately has no documents yet)
                     //   N > 0         — must yield at least N links or the run is a failure
-                    if (_settings.MinimumYieldPerScraper.TryGetValue(scraper.Name, out var minimumYield)
-                        && scraperLinkCount < minimumYield)
+                    var minimumYield = _settings.MinimumYieldPerScraper.TryGetValue(scraper.Name, out var configuredMinimum)
+                        ? configuredMinimum
+                        : 1;  // default: at least one link discovered (opt-out design, #857)
+                    if (scraperLinkCount < minimumYield)
                     {
                         var guardMsg = $"{scraper.Name}: yielded {scraperLinkCount} links, expected at least {minimumYield}. " +
                                        "The scraper may have silently failed (e.g. browser not installed, URL pattern changed).";

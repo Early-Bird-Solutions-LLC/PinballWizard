@@ -522,12 +522,31 @@ public sealed class ScraperOrchestratorTests : IDisposable
     }
 
     [Fact]
-    public async Task YieldGuard_NoMinimumConfigured_ZeroYieldDoesNotRecordError()
+    public async Task YieldGuard_DefaultConfiguration_ZeroYield_RecordsError()
     {
-        // Backward compatibility: scrapers not listed in MinimumYieldPerScraper
-        // must not be guarded (opt-in design, no false alarms on rollout day).
-        var settings = new ScraperSettings { DataPath = _tempDir };
+        // THE critical regression test (#857): with DEFAULT configuration
+        // (MinimumYieldPerScraper empty — as shipped in production), a scraper that
+        // discovers zero links must fail the run. Missing-key defaults to minimum=1.
+        // This is the exact production scenario: pinwiz-job-stern-games runs with no
+        // explicit minimums configured; GameListingScraper swallows PlaywrightException
+        // → 0 items yielded → exits 0 silently. This test would have caught the bug.
+        var settings = new ScraperSettings { DataPath = _tempDir };  // empty — default config
         var scraper = new StubScraper("Manuals", []);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("Manuals", error);
+    }
+
+    [Fact]
+    public async Task YieldGuard_DefaultConfiguration_NonZeroYield_NoError()
+    {
+        // A scraper that finds at least one link passes the default guard of 1.
+        // Ensures opt-out inversion does not false-fail normal production scrapers.
+        var settings = new ScraperSettings { DataPath = _tempDir };  // empty — default config
+        var scraper = new StubScraper("Manuals", [LinkItem()]);
         var orch = CreateOrchestrator([scraper], settings: settings);
 
         var result = await orch.ScrapeAsync(dryRun: true);
@@ -558,12 +577,10 @@ public sealed class ScraperOrchestratorTests : IDisposable
         // A scraper that catches its own exception (like GameListingScraper swallowing
         // PlaywrightException when Chromium isn't installed) returns 0 items — the
         // orchestrator never sees an exception. The yield guard is the only signal.
-        // This simulates the silent-green-job failure proven in production (#857).
-        var settings = new ScraperSettings
-        {
-            DataPath = _tempDir,
-            MinimumYieldPerScraper = new Dictionary<string, int> { ["Manuals"] = 1 }
-        };
+        // Uses DEFAULT config (no explicit minimum) to prove that zero-yield is caught
+        // without any operator-side configuration. This simulates the exact production
+        // failure (#857).
+        var settings = new ScraperSettings { DataPath = _tempDir };  // default config — no explicit minimum
         var scraper = new InternallySwallowingZeroYieldScraper("Manuals");
         var orch = CreateOrchestrator([scraper], settings: settings);
 

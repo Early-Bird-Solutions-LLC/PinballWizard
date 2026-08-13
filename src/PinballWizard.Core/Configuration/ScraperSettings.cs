@@ -77,15 +77,17 @@ public sealed class ScraperSettings
     /// <see cref="PinballWizard.Core.Scraping.ISourceScraper.ScrapeAsync"/> run.
     /// Key: <see cref="PinballWizard.Core.Scraping.ISourceScraper.Name"/>
     /// (e.g. <c>"Manuals"</c>, <c>"Game Pages"</c>).
-    /// Value semantics:
+    /// Value semantics (opt-OUT design, #857):
     /// <list type="bullet">
-    ///   <item>Missing entry — no minimum enforced (opt-in; backward-compatible default).</item>
+    ///   <item>Missing entry — default minimum of 1 enforced. A scraper that discovers
+    ///     zero links fails the run unless it is explicitly opted out. This catches the
+    ///     production silent-green scenario where a scraper swallows its own exception
+    ///     (e.g. <c>PlaywrightException</c> when Chromium is not installed) and returns
+    ///     0 items without propagating the error. Write an explicit 0 to allow zero yield.</item>
     ///   <item>0 — explicit opt-out; zero-yield is allowed for sources that have no
     ///     documents yet or that run through a non-scraper path (e.g. OPDB).</item>
     ///   <item>N &gt; 0 — the scraper must yield at least N link items or the run is
-    ///     recorded as failed. Catches silent failures where a scraper swallows its own
-    ///     exception (e.g. <c>PlaywrightException</c> when Chromium is not installed)
-    ///     and returns 0 items instead of propagating the error (#857).</item>
+    ///     recorded as failed.</item>
     /// </list>
     /// Configure via <c>appsettings.json</c>:
     /// <code>
