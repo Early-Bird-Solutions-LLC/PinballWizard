@@ -48,6 +48,27 @@ public sealed class ScraperSettings
     /// <summary>Initial delay (in milliseconds) before the first retry; doubles per subsequent attempt.</summary>
     public int InitialRetryDelayMs { get; set; } = 1000;
 
+    /// <summary>
+    /// Default for <see cref="PlaywrightContextRecycleInterval"/> — also the
+    /// <see cref="PolitePlaywrightScraperBase"/> constructor default.
+    /// </summary>
+    public const int DefaultPlaywrightContextRecycleInterval = 20;
+
+    /// <summary>
+    /// Number of pages to open on a single Playwright <c>IBrowserContext</c>
+    /// before closing it and creating a fresh one. Recycling bounds the
+    /// V8/Chromium renderer state that accumulates across sequential Vue-SPA
+    /// page loads without being released when a page is closed — the root cause
+    /// of the OOMKill on <c>pinwiz-job-stern-games</c> (GitHub issue #855).
+    /// </summary>
+    /// <remarks>
+    /// Each context recycled costs one Chromium context-teardown + context-creation
+    /// round trip (~100–200 ms at typical scraping speeds). With the default of 20
+    /// and 79 Stern game pages, the run creates at most 4 contexts — overhead is
+    /// negligible compared to the 2–3 s per-page politeness delay.
+    /// </remarks>
+    public int PlaywrightContextRecycleInterval { get; set; } = DefaultPlaywrightContextRecycleInterval;
+
     // How this run was invoked (e.g. "scheduled" from an ACA job). Null = manual.
     public string? Trigger { get; set; }
 

@@ -127,7 +127,175 @@ public sealed class PolitePlaywrightScraperBaseTests
         Assert.Null(ex);
     }
 
+    // --------------- Context recycling tests ---------------
+
+    [Fact]
+    public async Task NewPolitePageAsync_WithinRecycleInterval_ReusesContext()
+    {
+        // Arrange — recycleInterval = 5; open 4 pages (< interval)
+        // Verify: exactly 1 context created, none disposed
+        const int recycleInterval = 5;
+
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+
+        // Act — open fewer pages than the interval triggers
+        for (int i = 0; i < recycleInterval - 1; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        // Assert — first context was created and is still alive
+        Assert.Equal(1, contextLog.CreatedCount);
+        Assert.Equal(0, contextLog.DisposedCount);
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_AtRecycleInterval_RecyclesContextOnNextPage()
+    {
+        // Arrange — recycleInterval = 3; open exactly 3 pages (fills context), then 1 more
+        // Verify: 2 contexts created, first one disposed before the 4th page is served
+        const int recycleInterval = 3;
+
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+
+        // Act — fill the first context
+        for (int i = 0; i < recycleInterval; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        Assert.Equal(1, contextLog.CreatedCount);
+        Assert.Equal(0, contextLog.DisposedCount); // No recycle yet — interval fires on NEXT call
+
+        // Act — the recycleInterval+1th call triggers context recycle
+        await using var page4 = await scraper.OpenPageAsync("https://example.com/");
+
+        // Assert — second context created, first one disposed
+        Assert.Equal(2, contextLog.CreatedCount);
+        Assert.Equal(1, contextLog.DisposedCount);
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_AcrossMultipleRecycles_CreatesExpectedContextCount()
+    {
+        // Arrange — recycleInterval = 3; open 7 pages → 2 recycles should fire
+        // Pages 1-3: context C1. Page 4: recycle to C2. Pages 4-6: context C2.
+        // Page 7: recycle to C3. = 3 total contexts, 2 disposed.
+        const int recycleInterval = 3;
+        const int totalPages = 7;
+
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+
+        // Act
+        for (int i = 0; i < totalPages; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        // Assert
+        Assert.Equal(3, contextLog.CreatedCount); // C1 → C2 → C3
+        Assert.Equal(2, contextLog.DisposedCount); // C1 and C2 recycled
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_HonorsPolitenessGateThroughRecycles()
+    {
+        // Arrange — polite-by-construction is a LOCKED invariant; verify the gate is
+        // acquired for every page, even across a context recycle boundary.
+        const int recycleInterval = 3;
+        const int totalPages = 7; // spans two recycles
+
+        int gateAcquireCount = 0;
+        var gate = Substitute.For<IPolitenessGate>();
+        gate.AcquireForRequestAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                gateAcquireCount++;
+                return Task.FromResult<IAsyncDisposable>(new TrackingLease(() => { }));
+            });
+
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog, gate: gate);
+
+        // Act
+        for (int i = 0; i < totalPages; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        // Assert — one gate acquire per page, no page bypasses the gate
+        Assert.Equal(totalPages, gateAcquireCount);
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_WhenContextCreationFailsAfterRecycle_OldContextDisposedAndNoLeak()
+    {
+        // Arrange — context creation fails on the second attempt (when recycle fires).
+        // Verify: C1 is disposed, no context is held after the exception,
+        // and the next successful call returns a fresh context C3.
+        const int recycleInterval = 3;
+
+        var contextLog = new ContextLog();
+        int createAttempts = 0;
+        IBrowserContext? c1 = null;
+
+        IBrowserContext ContextFactory()
+        {
+            createAttempts++;
+            return createAttempts switch
+            {
+                1 => c1 = contextLog.MakeContext(),
+                2 => throw new InvalidOperationException("Simulated Playwright crash on context creation"),
+                _ => contextLog.MakeContext()
+            };
+        }
+
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog, contextFactory: ContextFactory);
+
+        // Act — fill C1 to the interval threshold
+        for (int i = 0; i < recycleInterval; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        // Trigger recycle; CreateContextAsync() throws on attempt 2 → exception propagates
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => scraper.OpenPageAsync("https://example.com/"));
+
+        // Assert — C1 was disposed (recycle completes before creation is attempted)
+        Assert.Equal(1, contextLog.DisposedCount);
+
+        // Assert — no context is leaked: the next call creates a fresh one
+        await using var recovery = await scraper.OpenPageAsync("https://example.com/");
+        Assert.Equal(3, createAttempts); // attempt 1 (C1) + attempt 2 (throw) + attempt 3 (C3)
+        Assert.Equal(2, contextLog.CreatedCount); // C1 and C3 (attempt 2 threw, no context object made)
+    }
+
     // --- helpers ---
+
+    private static TrackingPlaywrightScraper BuildTrackingScraper(
+        int recycleInterval,
+        ContextLog contextLog,
+        IPolitenessGate? gate = null,
+        Func<IBrowserContext>? contextFactory = null)
+    {
+        gate ??= BuildPassthroughGate();
+        contextFactory ??= contextLog.MakeContext;
+
+        var factory = new PlaywrightFactory(NullLogger<PlaywrightFactory>.Instance);
+        return new TrackingPlaywrightScraper(factory, gate, DefaultOptions, recycleInterval, contextFactory);
+    }
+
+    private static IPolitenessGate BuildPassthroughGate()
+    {
+        var gate = Substitute.For<IPolitenessGate>();
+        gate.AcquireForRequestAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IAsyncDisposable>(new TrackingLease(() => { })));
+        return gate;
+    }
 
     private sealed class TrackingLease(Action onDispose) : IAsyncDisposable
     {
@@ -135,6 +303,43 @@ public sealed class PolitePlaywrightScraperBaseTests
         {
             onDispose();
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Tracks all <see cref="IBrowserContext"/> objects created and disposed during a
+    /// test, without launching a real Chromium instance.
+    /// </summary>
+    private sealed class ContextLog
+    {
+        private int _createdCount;
+        private int _disposedCount;
+
+        public int CreatedCount => _createdCount;
+        public int DisposedCount => _disposedCount;
+
+        public IBrowserContext MakeContext()
+        {
+            Interlocked.Increment(ref _createdCount);
+
+            var mockPage = Substitute.For<IPage>();
+            mockPage.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions?>())
+                .Returns(Task.FromResult<IResponse?>(null));
+            mockPage.CloseAsync().Returns(Task.CompletedTask);
+
+            var ctx = Substitute.For<IBrowserContext>();
+            ctx.NewPageAsync().Returns(Task.FromResult(mockPage));
+
+            // Track disposal — IBrowserContext.DisposeAsync() is called on recycle and shutdown.
+            // NSubstitute returns default(ValueTask) = ValueTask.CompletedTask for unconfigured
+            // ValueTask-returning members; the When/Do action adds disposal tracking on top.
+            // CA2012 suppressed: c.DisposeAsync() inside When() is a NSubstitute interception
+            // expression, not a real call — NSubstitute never evaluates the returned ValueTask.
+#pragma warning disable CA2012
+            ctx.When(c => c.DisposeAsync()).Do(_ => Interlocked.Increment(ref _disposedCount));
+#pragma warning restore CA2012
+
+            return ctx;
         }
     }
 
@@ -148,4 +353,32 @@ public sealed class PolitePlaywrightScraperBaseTests
         IPolitenessGate gate,
         PolitenessOptions options)
         : PolitePlaywrightScraperBase(factory, gate, options, NullLogger<NopPlaywrightScraper>.Instance);
+
+    /// <summary>
+    /// Test-only concrete subclass that overrides <see cref="PolitePlaywrightScraperBase.CreateContextAsync"/>
+    /// to return mock contexts without launching Chromium, and exposes
+    /// <see cref="OpenPageAsync"/> so tests can call the protected
+    /// <c>NewPolitePageAsync</c> without subclassing.
+    /// </summary>
+    private sealed class TrackingPlaywrightScraper : PolitePlaywrightScraperBase
+    {
+        private readonly Func<IBrowserContext> _contextFactory;
+
+        public TrackingPlaywrightScraper(
+            PlaywrightFactory factory,
+            IPolitenessGate gate,
+            PolitenessOptions options,
+            int recycleInterval,
+            Func<IBrowserContext> contextFactory)
+            : base(factory, gate, options, NullLogger<TrackingPlaywrightScraper>.Instance, recycleInterval)
+        {
+            _contextFactory = contextFactory;
+        }
+
+        protected override Task<IBrowserContext> CreateContextAsync()
+            => Task.FromResult(_contextFactory());
+
+        public Task<PolitePage> OpenPageAsync(string url, CancellationToken ct = default)
+            => NewPolitePageAsync(url, ct);
+    }
 }
