@@ -8,11 +8,11 @@ Read alongside [`build-spec.md`](build-spec.md) Phase 2 § Scope item 5 (the sco
 
 - **Meter and ActivitySource:** [`PinballWizard.Application.Observability.PinballWizardTelemetry`](../src/PinballWizard.Application/Observability/PinballWizardTelemetry.cs) is the single project-wide source of metrics and traces. Both are named `"PinballWizard"`. New instruments — counters, histograms, activities — live alongside the existing ones in this static class.
 - **Registration:** [`PinballWizard.ServiceDefaults`](../src/PinballWizard.ServiceDefaults/Extensions.cs) registers the Meter via `AddMeter("PinballWizard")` and the ActivitySource via `AddSource("PinballWizard")` in its `ConfigureOpenTelemetry`. The string literal is duplicated in ServiceDefaults rather than referencing the typed constant — a typed reference would invert the layering (ServiceDefaults → Application). The duplication is documented in both files.
-- **Exporter:** the Aspire dashboard injects `OTEL_EXPORTER_OTLP_ENDPOINT` when running under `start-apphost.ps1`, which makes ServiceDefaults wire `UseOtlpExporter()`. Container Apps (Phase 5+) will inject the same env var pointing at Application Insights' OTLP endpoint, so the exporter wiring is unchanged across environments.
+- **Exporter:** the Aspire dashboard injects `OTEL_EXPORTER_OTLP_ENDPOINT` when running under `start-apphost.ps1`, which makes ServiceDefaults wire `UseOtlpExporter()`. Deployed, every ACA resource — the container apps *and* every scheduled CLI job — receives `APPLICATIONINSIGHTS_CONNECTION_STRING` from `infra/modules/shared.bicep`, which makes ServiceDefaults wire the Azure Monitor exporter for metrics, traces, and logs. The two paths are independent: the Azure Monitor block is a no-op when the connection string is absent (local dev), and Bicep env changes only take effect after a stack run (`Deploy-SharedResources.ps1`).
 - **Where signals land today:** Log Analytics (via Cosmos diagnostic settings — Phase 1 Bicep). Aspire dashboard locally.
-- **Where signals will land (Phase 6+):** Application Insights, once Phase 2 Bicep flips. Same OTLP exporter + Meter / Source names continue to work; only the destination changes.
+- **Where signals will land (Phase 6+):** Application Insights, once Phase 2 Bicep flips. The Azure Monitor exporter in ServiceDefaults writes there; Meter / Source names are unchanged.
 
-The diagram below traces how telemetry moves from emitting sources through the shared instrumentation layer, out via the OTLP exporter, and into the backend(s) that back alert rules.
+The diagram below traces how telemetry moves from emitting sources through the shared instrumentation layer, out via the configured exporters, and into the backend(s) that back alert rules.
 
 ```mermaid
 flowchart TD
@@ -31,7 +31,7 @@ flowchart TD
 
     TELEM[PinballWizardTelemetry<br/>Meter + ActivitySource]
 
-    SD[ServiceDefaults<br/>UseOtlpExporter]
+    SD[ServiceDefaults<br/>OTLP + Azure Monitor exporters]
 
     ASPIRE[(Aspire dashboard<br/>local only)]
     LA[(Log Analytics<br/>today — Phase 1 Bicep)]
@@ -53,7 +53,7 @@ flowchart TD
 
     SD -->|local: OTLP to dashboard| ASPIRE
     SD -->|deployed: OTLP| LA
-    SD -->|Phase 6+: OTLP| AI
+    SD -->|deployed: Azure Monitor exporter| AI
 
     LA --> ALERTS
     AI --> ALERTS
@@ -151,7 +151,7 @@ AppMetrics
 
 ### Deployed (Application Insights — Phase 6+)
 
-Once Phase 2 Bicep flips and App Insights is provisioned, the same OTLP exporter writes there. KQL queries port directly; UI charts pick the metric names from the Meter automatically.
+Once Phase 2 Bicep flips and App Insights is provisioned, the Azure Monitor exporter in ServiceDefaults writes there — enabled by the `APPLICATIONINSIGHTS_CONNECTION_STRING` env var that Bicep supplies to every ACA resource. KQL queries port directly; UI charts pick the metric names from the Meter automatically.
 
 ## Adding new instruments (Phase 3 / 4 / 5 pattern)
 
