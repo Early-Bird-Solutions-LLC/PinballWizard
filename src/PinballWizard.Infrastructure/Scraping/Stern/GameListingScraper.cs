@@ -40,7 +40,6 @@ public sealed class GameListingScraper : PolitePlaywrightScraperBase
         : base(playwrightFactory, politeness, politenessOptions.Value, logger,
                ResolveRecycleInterval(settings))
     {
-        ArgumentNullException.ThrowIfNull(settings);
         _settings = settings.Value;
     }
 

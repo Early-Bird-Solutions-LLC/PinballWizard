@@ -47,7 +47,6 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
                ResolveRecycleInterval(settings))
     {
         ArgumentNullException.ThrowIfNull(listingScraper);
-        ArgumentNullException.ThrowIfNull(settings);
         _listingScraper = listingScraper;
     }
 
