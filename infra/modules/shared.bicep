@@ -1956,7 +1956,7 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
 //   13 weekly — opdb, stern-refresh, kineticist-sync, twip, multimorphic, cgc,
 //               jjp-support, ap-bulletins, spooky, spooky-support, pb, pb-docs,
 //               pb-freshdesk
-//   1 monthly — barrelsoffun (intentionally excluded — see below)
+//   1 monthly — pinwiz-job-barrelsoffun (intentionally excluded — see below)
 //
 // Per-cadence thresholds (MaxGapH in the KQL datatable):
 //   Daily jobs  — MaxGapH = 25 h. A normally-running job completes within 24 h
@@ -1966,10 +1966,10 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
 //                 168 h (7 d); 192 h allows one day of grace while keeping the
 //                 threshold well within the P10D query window (240 h > 192 h).
 //
-// NEVER-RAN COVERAGE: The expected job-type list is seeded in a KQL datatable
+// NEVER-RAN COVERAGE: The full expected job list is seeded in a KQL datatable
 // rather than derived from observed telemetry. A job that has NEVER produced a
 // log line would be invisible to a pure summarize-by-JobName_s query. The left-
-// outer-join makes every expected type appear; a null lastSuccessTime is treated
+// outer-join makes every expected name appear; a null lastSuccessTime is treated
 // as "never ran" → elapsedH = MaxGapH + 1 → immediately overdue. Caveat: a
 // newly-deployed job will alert until its first successful run completes.
 //
@@ -1977,17 +1977,20 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
 // Its 31-day cadence exceeds the P10D (240 h) query window. A healthy run on
 // the 1st of the month leaves the P10D window on day 11; from day 11 onward
 // the job appears "never ran" and would produce a false-positive alert for the
-// remaining ~20 days of every month. The monthly job is explicitly excluded
-// until a longer monitoring mechanism is in place. Tracked in #856 as an
-// accepted limitation.
+// remaining ~20 days of every month. Explicitly excluded until a longer
+// monitoring mechanism is in place. Tracked in #856 as an accepted limitation.
 //
-// JobType extraction: job names follow pinwiz-job-<type>-<5chars>, where the
-// 5-char suffix is uniqueString(sub,rg)[0:5]. Stripping the 11-char prefix
-// 'pinwiz-job-' and the 6-char dash+suffix via
-//   substring(JobName_s, 11, strlen(JobName_s) - 17)
-// yields the stable type token used as the join key into the datatable.
-// Verified for all 19 covered types, including shortest (ap/jjp) and longest
-// (spooky-support, pb-freshdesk).
+// JobName_s format in 'Saw completed job' log lines:
+// These system log lines carry the BARE job name (e.g. 'pinwiz-job-linker'),
+// NOT the suffixed deployment name ('pinwiz-job-linker-buutj') that appears in
+// Reason_s lines (OOMKilled, PodDeletion, BackoffLimitExceeded). The datatable
+// is therefore keyed on the bare name and joined directly on JobName_s — no
+// substring extraction, no arithmetic, no suffix stripping. Verified across all
+// 19 covered job types over 7 days of live workspace data (#856).
+//
+// Completion condition strings (verified against live workspace):
+// - 'condition: Complete' — successful execution (selected by !contains Failed)
+// - 'condition: Failed'   — failed execution (excluded; covered by alertAcaJobFailure)
 //
 // windowSize P10D / evaluationFrequency P1D / autoMitigate false rationale:
 //   P10D is the minimum window that covers the weekly MaxGapH of 192 h (192 < 240).
@@ -2002,7 +2005,7 @@ resource alertAcaJobMissingRun 'Microsoft.Insights/scheduledQueryRules@2023-03-1
   tags: tags
   properties: {
     displayName: 'PinballWizard — ACA Job missing expected run'
-    description: 'A known pinwiz-job-* Container App Job has not produced a successful completion within its expected cadence window (25 h for daily jobs, 192 h for weekly). Excludes barrelsoffun (monthly — 31-day cadence exceeds the 10-day query window). Investigate: az containerapp job execution list -n <job>.'
+    description: 'A known pinwiz-job-* Container App Job has not produced a successful completion within its expected cadence window (25 h for daily jobs, 192 h for weekly). Excludes pinwiz-job-barrelsoffun (monthly — 31-day cadence exceeds the 10-day query window). Investigate: az containerapp job execution list -n <job>.'
     severity: 2
     enabled: true
     evaluationFrequency: 'P1D'
@@ -2012,58 +2015,52 @@ resource alertAcaJobMissingRun 'Microsoft.Insights/scheduledQueryRules@2023-03-1
     criteria: {
       allOf: [
         {
-          // Each job type and its maximum allowed gap between successful runs.
-          // Daily jobs use MaxGapH 25 (24 h cadence + 1 h jitter buffer).
-          // Weekly jobs use MaxGapH 192 (168 h cadence + 24 h grace).
-          // barrelsoffun excluded — see comment block above.
-          //
-          // JobType is extracted from JobName_s by stripping the fixed 11-char
-          // prefix 'pinwiz-job-' and 6-char dash+suffix:
-          //   substring(JobName_s, 11, strlen(JobName_s) - 17)
-          //
-          // The left-outer-join against ContainerAppSystemLogs_CL means a job
-          // with no telemetry at all (null lastSuccessTime) is treated as
-          // elapsedH = MaxGapH + 1, firing the alert immediately. This is
-          // intentional: silence is indistinguishable from a broken job.
-          query: '''let expectedJobs = datatable(JobType: string, MaxGapH: long) [
-    'linker', 25L,
-    'stern-manuals', 25L,
-    'stern-games', 25L,
-    'stern-bulletins', 25L,
-    'jjp', 25L,
-    'ap', 25L,
-    'opdb', 192L,
-    'stern-refresh', 192L,
-    'kineticist-sync', 192L,
-    'twip', 192L,
-    'multimorphic', 192L,
-    'cgc', 192L,
-    'jjp-support', 192L,
-    'ap-bulletins', 192L,
-    'spooky', 192L,
-    'spooky-support', 192L,
-    'pb', 192L,
-    'pb-docs', 192L,
-    'pb-freshdesk', 192L
+          // The datatable keys on the BARE job name as it appears in
+          // 'Saw completed job' log lines (e.g. 'pinwiz-job-linker', not
+          // 'pinwiz-job-linker-buutj'). Join is direct on JobName_s.
+          // Daily MaxGapH = 25 h; weekly MaxGapH = 192 h (8 d).
+          // pinwiz-job-barrelsoffun excluded — 31-day cadence > P10D window.
+          // A null lastSuccessTime (job has never run) sets elapsedH = MaxGapH + 1
+          // so the alert fires immediately — silence is indistinguishable from
+          // a broken job.
+          query: '''let expectedJobs = datatable(JobName_s: string, MaxGapH: long) [
+    'pinwiz-job-linker', 25L,
+    'pinwiz-job-stern-manuals', 25L,
+    'pinwiz-job-stern-games', 25L,
+    'pinwiz-job-stern-bulletins', 25L,
+    'pinwiz-job-jjp', 25L,
+    'pinwiz-job-ap', 25L,
+    'pinwiz-job-opdb', 192L,
+    'pinwiz-job-stern-refresh', 192L,
+    'pinwiz-job-kineticist-sync', 192L,
+    'pinwiz-job-twip', 192L,
+    'pinwiz-job-multimorphic', 192L,
+    'pinwiz-job-cgc', 192L,
+    'pinwiz-job-jjp-support', 192L,
+    'pinwiz-job-ap-bulletins', 192L,
+    'pinwiz-job-spooky', 192L,
+    'pinwiz-job-spooky-support', 192L,
+    'pinwiz-job-pb', 192L,
+    'pinwiz-job-pb-docs', 192L,
+    'pinwiz-job-pb-freshdesk', 192L
 ];
 let recentRuns = ContainerAppSystemLogs_CL
 | where JobName_s startswith 'pinwiz-job-'
 | where Log_s startswith 'Saw completed job'
 | where Log_s !contains 'condition: Failed'
-| extend JobType = substring(JobName_s, 11, strlen(JobName_s) - 17)
-| summarize lastSuccessTime = max(TimeGenerated) by JobType;
+| summarize lastSuccessTime = max(TimeGenerated) by JobName_s;
 expectedJobs
-| join kind=leftouter (recentRuns) on JobType
+| join kind=leftouter (recentRuns) on JobName_s
 | extend elapsedH = iif(isnull(lastSuccessTime), MaxGapH + 1L, datetime_diff('Hour', now(), lastSuccessTime))
 | where elapsedH > MaxGapH
-| summarize overdueRunCount = count() by JobType'''
+| summarize overdueRunCount = count() by JobName_s'''
           timeAggregation: 'Total'
           metricMeasureColumn: 'overdueRunCount'
           operator: 'GreaterThan'
           threshold: 0
           dimensions: [
             {
-              name: 'JobType'
+              name: 'JobName_s'
               operator: 'Include'
               values: ['*']
             }
