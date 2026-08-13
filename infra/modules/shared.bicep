@@ -1992,6 +1992,16 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
 // - 'condition: Complete' — successful execution (selected by !contains Failed)
 // - 'condition: Failed'   — failed execution (excluded; covered by alertAcaJobFailure)
 //
+// SCHEDULED runs only — and that is deliberate. Verified 2026-08-13: a cron-triggered
+// execution (serial name, e.g. pinwiz-job-ap-buutj-29776680) emits a 'Saw completed job'
+// line under the BARE JobName_s. A manually started execution (random name, e.g.
+// pinwiz-job-linker-buutj-6ojzc8u) emits no such line at all — it reports Reason_s
+// 'Completed' under the SUFFIXED name instead. So an operator running a job by hand does
+// NOT reset this alert's clock. That is the correct semantic for a missing-run check: the
+// question is "did the schedule fire?", and a hand-run proves nothing about the schedule.
+// Do not "fix" this by widening the filter to Reason_s == 'Completed' — that would let a
+// one-off manual run mask an indefinitely broken cron.
+//
 // windowSize P10D / evaluationFrequency P1D / autoMitigate false rationale:
 //   P10D is the minimum window that covers the weekly MaxGapH of 192 h (192 < 240).
 //   P1D evaluation detects a threshold crossing within 24 h of when it occurs.
@@ -2024,25 +2034,25 @@ resource alertAcaJobMissingRun 'Microsoft.Insights/scheduledQueryRules@2023-03-1
           // so the alert fires immediately — silence is indistinguishable from
           // a broken job.
           query: '''let expectedJobs = datatable(JobName_s: string, MaxGapH: long) [
-    'pinwiz-job-linker', 25L,
-    'pinwiz-job-stern-manuals', 25L,
-    'pinwiz-job-stern-games', 25L,
-    'pinwiz-job-stern-bulletins', 25L,
-    'pinwiz-job-jjp', 25L,
-    'pinwiz-job-ap', 25L,
-    'pinwiz-job-opdb', 192L,
-    'pinwiz-job-stern-refresh', 192L,
-    'pinwiz-job-kineticist-sync', 192L,
-    'pinwiz-job-twip', 192L,
-    'pinwiz-job-multimorphic', 192L,
-    'pinwiz-job-cgc', 192L,
-    'pinwiz-job-jjp-support', 192L,
-    'pinwiz-job-ap-bulletins', 192L,
-    'pinwiz-job-spooky', 192L,
-    'pinwiz-job-spooky-support', 192L,
-    'pinwiz-job-pb', 192L,
-    'pinwiz-job-pb-docs', 192L,
-    'pinwiz-job-pb-freshdesk', 192L
+    'pinwiz-job-linker', 25,
+    'pinwiz-job-stern-manuals', 25,
+    'pinwiz-job-stern-games', 25,
+    'pinwiz-job-stern-bulletins', 25,
+    'pinwiz-job-jjp', 25,
+    'pinwiz-job-ap', 25,
+    'pinwiz-job-opdb', 192,
+    'pinwiz-job-stern-refresh', 192,
+    'pinwiz-job-kineticist-sync', 192,
+    'pinwiz-job-twip', 192,
+    'pinwiz-job-multimorphic', 192,
+    'pinwiz-job-cgc', 192,
+    'pinwiz-job-jjp-support', 192,
+    'pinwiz-job-ap-bulletins', 192,
+    'pinwiz-job-spooky', 192,
+    'pinwiz-job-spooky-support', 192,
+    'pinwiz-job-pb', 192,
+    'pinwiz-job-pb-docs', 192,
+    'pinwiz-job-pb-freshdesk', 192
 ];
 let recentRuns = ContainerAppSystemLogs_CL
 | where JobName_s startswith 'pinwiz-job-'
@@ -2051,7 +2061,7 @@ let recentRuns = ContainerAppSystemLogs_CL
 | summarize lastSuccessTime = max(TimeGenerated) by JobName_s;
 expectedJobs
 | join kind=leftouter (recentRuns) on JobName_s
-| extend elapsedH = iif(isnull(lastSuccessTime), MaxGapH + 1L, datetime_diff('Hour', now(), lastSuccessTime))
+| extend elapsedH = iif(isnull(lastSuccessTime), MaxGapH + 1, datetime_diff('Hour', now(), lastSuccessTime))
 | where elapsedH > MaxGapH
 | summarize overdueRunCount = count() by JobName_s'''
           timeAggregation: 'Total'
