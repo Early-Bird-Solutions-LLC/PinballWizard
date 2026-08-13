@@ -70,7 +70,7 @@ If the tag is missing: the next stack deploy will repoint the job. Check `deploy
 
 ### 3b. Job disabled or removed by a `deployAiSearch` toggle
 
-Some jobs (`stern-refresh`, `kineticist-sync`, `twip`, `kineticist-sync`) are gated on `deployPhase2 && deployAiSearch`. If `deployAiSearch = false` in the last deploy, those jobs are absent from the stack and will never run:
+Three jobs (`stern-refresh`, `kineticist-sync`, `twip`) are gated on `deployPhase2 && deployAiSearch`. If `deployAiSearch = false` in the last deploy, those jobs are absent from the stack and will never run:
 
 ```powershell
 az stack group show `
@@ -151,15 +151,27 @@ Expected final status: `Succeeded`.
 
 Confirm the alert will self-resolve at the next evaluation:
 
+> **Use the BARE name here, not the full deployment name.** Steps 3b and 4 take
+> `pinwiz-job-<fullname>` (with the 5-char suffix, e.g. `pinwiz-job-jjp-buutj`)
+> because those address the Azure *resource*. These completion log lines carry the
+> bare name (`pinwiz-job-jjp`), which is also what the alert's `JobName_s` dimension
+> shows. Substituting the suffixed name here matches nothing and returns zero rows
+> for a perfectly healthy job — measured 2026-08-13: `startswith 'pinwiz-job-jjp-buutj'`
+> returned 0 over 7 days, `== 'pinwiz-job-jjp'` returned 7.
+
 ```kql
 // Log Analytics — ContainerAppSystemLogs_CL
 ContainerAppSystemLogs_CL
-| where JobName_s startswith 'pinwiz-job-<fullname>'
+| where JobName_s == 'pinwiz-job-<type>'   // bare name, e.g. pinwiz-job-jjp
 | where Log_s startswith 'Saw completed job'
 | where Log_s !contains 'condition: Failed'
 | order by TimeGenerated desc
 | take 5
 ```
+
+Note this only ever shows **scheduled** runs. A job started by hand (Step 4) emits no
+`Saw completed job` line at all, so it will not appear here and will not clear the
+alert — by design; the alert asks whether the *schedule* fired.
 
 If a row appears with a recent `TimeGenerated`, the alert will clear at the next P1D evaluation.
 
