@@ -742,6 +742,26 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Documents skipped during --download-documents because their size exceeds MaxFileSizeBytes. A non-zero steady-state rate is expected for multi-GB manufacturer images (e.g. Spooky S3 software). Tagged with source_type. A spike in a new source_type indicates a new category of oversized files. These are permanent skips (not transient failures) and do NOT increment pinwiz.download.failed_total.");
 
+    // ── Permanent-rejection skip counter (invariant #17 / #839) ─────────────
+    //
+    // Incremented by DocumentDownloadService when the downloader returns
+    // DownloadStatus.PermanentRejection (HTTP 403/404/410) — either on first
+    // encounter (which also stamps a download_skip record) or on subsequent runs
+    // reading that stored record. A non-zero steady-state rate is expected for
+    // URLs that have become access-controlled or permanently removed (e.g. Spooky
+    // S3 pkg files whose bucket 403s all access). A spike in a new source_type
+    // means a previously-healthy origin is now rejecting our requests.
+    //
+    // Tags:
+    //   source_type — the scraper source type (e.g. spooky_support_page)
+    //   http_status — the rejection status code: 403 | 404 | 410 (set only on
+    //                 first encounter; subsequent runs read the stored record and
+    //                 do not know the original status code)
+    public static readonly Counter<long> DownloadPermanentRejectionSkipsTotal = Meter.CreateCounter<long>(
+        "pinwiz.download.permanent_rejection_skip_total",
+        unit: "{document}",
+        description: "Documents permanently skipped during --download-documents because the origin returned HTTP 403 Forbidden, 404 Not Found, or 410 Gone. A non-zero steady-state rate is expected for access-controlled or removed files (e.g. Spooky S3 pkg files, #839); a spike in a new source_type means a previously-healthy origin is now rejecting requests. These are terminal skips — reported as skipped_permanent_rejection and excluded from the failed count, so they do NOT set a non-zero exit code. Pair with the 'Permanently rejected' log line to identify specific documents.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

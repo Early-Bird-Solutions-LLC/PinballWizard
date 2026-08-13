@@ -264,18 +264,49 @@ public sealed class FileDownloaderTests : IDisposable
         Assert.Equal("https://sternpinball.com/foo.pdf", result.FileUrl);
     }
 
-    [Fact]
-    public async Task DownloadAsync_NonSuccessStatus_ReturnsFailed()
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Gone)]
+    public async Task DownloadAsync_PermanentRejectionStatus_ReturnsPermanentRejection(HttpStatusCode statusCode)
     {
+        // 403/404/410 are permanent client-side rejections — retrying will not change
+        // the outcome. FileDownloader must return PermanentRejection (not Failed) so the
+        // Application layer can stamp a terminal skip record and keep the nightly job
+        // green (#839, mirrors TooLarge #819).
         var (downloader, _, _, _) = CreateDownloader((_, response) =>
         {
-            response.StatusCode = HttpStatusCode.NotFound;
-            response.Content = new StringContent("not found");
+            response.StatusCode = statusCode;
+            response.Content = new StringContent("rejected");
         });
 
         var result = await downloader.DownloadAsync(
-            "https://sternpinball.com/missing.pdf",
-            "manuals/missing.pdf");
+            "https://spookypinball.s3.amazonaws.com/code_UM.pkg",
+            "spookysupportpage/code_UM.pkg");
+
+        Assert.Equal(DownloadStatus.PermanentRejection, result.Status);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Contains(((int)statusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), result.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task DownloadAsync_TransientServerError_ReturnsFailed_NotPermanentRejection(HttpStatusCode statusCode)
+    {
+        // 5xx errors are transient — a retry or a future run may succeed. These must
+        // continue to produce DownloadStatus.Failed (exit-code-1 for the nightly job),
+        // never PermanentRejection (which would suppress the failure silently).
+        var (downloader, _, _, _) = CreateDownloader((_, response) =>
+        {
+            response.StatusCode = statusCode;
+            response.Content = new StringContent("server error");
+        });
+
+        var result = await downloader.DownloadAsync(
+            "https://sternpinball.com/flaky.pdf",
+            "manuals/flaky.pdf");
 
         Assert.Equal(DownloadStatus.Failed, result.Status);
     }
