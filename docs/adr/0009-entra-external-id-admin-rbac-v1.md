@@ -119,7 +119,7 @@ work; no v2-specific architecture changes needed.
 
 - [`docs/infra_analysis.md`](../infra_analysis.md) §1 — Entra External
   ID listed as the identity provider.
-- [`project_phase2_architecture_decisions.md`](../../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
+- `project_phase2_architecture_decisions.md` (private project memory, not in this repo)
   — full auth strategy, tiers, and rationale.
 - ADR 0007 — IngestionSources as Cosmos data; the surface that
   motivates Tier 2.

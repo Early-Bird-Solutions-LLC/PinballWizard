@@ -48,7 +48,7 @@
 
 - **Skill:** `~/.claude/skills/earlybirdsolutions-outreach/` — global personal skill. SKILL.md + `templates/community-operator-outreach.md` + `signature.md`. Voice / posture guidance, per-recipient checklist, Gmail-MCP draft creation workflow (drafts only, never auto-send).
 - **4 outreach emails sent 2026-05-08** from `jim@earlybirdsolutions.com` to PinballPrice, PinballPrices (Doc Finlay), Pinpedia, PinballValue. Each asks for API access OR once-daily polite scraping with attribution + purpose-bound use ("router signal only — Wizard never facilitates transactions"). Compliance verified before sending: none have ToS prohibiting scraping; 3 of 4 robots.txt explicitly allow; the 4th has no robots.txt; Pinpedia privacy policy verified silent on automated access.
-- **Project memory:** [`memory/project_pricing_outreach_2026_05_08.md`](../../../Users/JimKeeley/.claude/projects/C--projects-PinballWizard/memory/project_pricing_outreach_2026_05_08.md) — full record + how-to-handle-responses (yes / no / counter-offer / no-response).
+- **Project memory:** `project_pricing_outreach_2026_05_08.md` (private project memory, not in this repo) — full record + how-to-handle-responses (yes / no / counter-offer / no-response).
 
 ### Memory entries (5 created or updated this branch)
 

@@ -27,6 +27,16 @@ Anything intentionally NOT addressed by this PR, so reviewers don't ask
 for it. If everything is in scope, write "nothing intentionally deferred."
 -->
 
+## Self-audit outcome
+
+<!--
+Required by `.claude/PR-AUDIT.md` Steps 0–1. Record the RESULT, not the intent —
+"ran it" is not an outcome. If a gate was skipped, say which and why.
+-->
+
+- `/local-review`: 🔴 _N_ found / _N_ fixed · ⚠️ _N_ fixed / _N_ deferred (deferred items justified below)
+- `/standards-audit`: <!-- verdict line, e.g. "DLV + TEST checks clean" -->
+
 ## Checklist
 
 - [ ] CI is green (build + test + coverage + CodeQL + sanitization)

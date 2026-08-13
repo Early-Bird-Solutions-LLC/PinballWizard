@@ -60,10 +60,10 @@ cp .claude/settings.local.json .worktrees/<branch-name>/.claude/ 2>/dev/null || 
 Inform the user the worktree is ready:
 
 ```
-Worktree created at: c:\earlybird\PinballWizard\.worktrees\<branch-name>
+Worktree created at: <repo-root>/.worktrees/<branch-name>
 
 To implement the plan, open a new Claude Code session pointed at that worktree:
-  cd c:\earlybird\PinballWizard\.worktrees\<branch-name>
+  cd <repo-root>/.worktrees/<branch-name>
   claude
 
 Then run:

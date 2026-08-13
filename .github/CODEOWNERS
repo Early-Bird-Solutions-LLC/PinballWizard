@@ -5,21 +5,28 @@
 # This is a single-maintainer project. CODEOWNERS is in place so that as
 # the project grows, ownership is codified rather than tribal — and so the
 # repo signals "code review is the norm" to outside contributors.
+#
+# Every handle below MUST be a user with write access to this repository.
+# GitHub silently ignores CODEOWNERS entries naming anyone else — no error,
+# no warning, the rule simply never fires. This file previously named
+# @JimKeeley, which is a real GitHub account but not a collaborator here,
+# so every rule in it was inert. Verify with:
+#   gh api repos/{owner}/{repo}/collaborators --jq '.[].login'
 
-* @JimKeeley
+* @jkeeley2073
 
 # Architecture decision records require maintainer approval; ADRs are
 # immutable once accepted, so changes need extra care.
-/docs/adr/                  @JimKeeley
+/docs/adr/                  @jkeeley2073
 
 # Engineering standards, quality bar, and the parallel execution plan
 # are foundational documents. Changes must be deliberate.
-/docs/ENGINEERING_STANDARDS.md   @JimKeeley
-/docs/quality-bar.md             @JimKeeley
-/docs/parallel_execution_plan.md @JimKeeley
+/docs/ENGINEERING_STANDARDS.md   @jkeeley2073
+/docs/quality-bar.md             @jkeeley2073
+/docs/parallel_execution_plan.md @jkeeley2073
 
 # Build configuration and CI workflows.
-/.github/                   @JimKeeley
-/Directory.Build.props      @JimKeeley
-/Directory.Packages.props   @JimKeeley
-/global.json                @JimKeeley
+/.github/                   @jkeeley2073
+/Directory.Build.props      @jkeeley2073
+/Directory.Packages.props   @jkeeley2073
+/global.json                @jkeeley2073
