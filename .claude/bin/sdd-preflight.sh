@@ -33,6 +33,25 @@
 #   * VERIFY, DON'T ASSUME — assert the brief's first heading is the task we asked for, and
 #     that exactly one task heading is present (no boundary leak).
 #
+# PLUGIN VERSION RESOLUTION
+# -------------------------
+# The superpowers plugin cache is searched for the highest installed semver directory
+# under $HOME/.claude/plugins/cache/claude-plugins-official/superpowers/. The resolved
+# version drives calling-convention selection (see below). Set SDD_SKILL_SCRIPTS to an
+# explicit directory to bypass resolution entirely (useful for shims or local overrides;
+# version is then detected from script content).
+#
+# SIGNER-CHANGE DETECTION
+# -----------------------
+# From plugin version 6.2.0 the sdd-workspace script requires a PLAN_FILE argument;
+# earlier versions took no arguments and returned a flat .superpowers/sdd/ directory.
+# Version 6.2.0+ uses per-plan subdirectories (.superpowers/sdd/<plan-slug>/).
+#
+# We prefer explicit version comparison (>= 6.2.0) over content-sniffing so that a
+# future breaking change fails loudly rather than silently picking the wrong form.
+# Content-sniffing is reserved for the SDD_SKILL_SCRIPTS override path where no
+# version number is available.
+#
 # USAGE
 #   sdd-preflight.sh brief   <worktree-dir> <plan-file-relative-to-worktree> <task-number>
 #   sdd-preflight.sh report  <worktree-dir> <task-number>
@@ -45,12 +64,71 @@
 #
 set -euo pipefail
 
-SKILL_SCRIPTS="${SDD_SKILL_SCRIPTS:-$HOME/.claude/plugins/cache/claude-plugins-official/superpowers/6.1.1/skills/subagent-driven-development/scripts}"
+# ---- Plugin resolution -------------------------------------------------------
+
+_PLUGINS_BASE="$HOME/.claude/plugins/cache/claude-plugins-official/superpowers"
+_PLUGIN_VER=""   # resolved version; empty when SDD_SKILL_SCRIPTS override is active
+
+if [ -n "${SDD_SKILL_SCRIPTS:-}" ]; then
+  SKILL_SCRIPTS="$SDD_SKILL_SCRIPTS"
+  # Version unknown for the override path — signature will be detected from script content.
+else
+  if [ ! -d "$_PLUGINS_BASE" ]; then
+    echo "sdd-preflight: superpowers plugin cache not found: $_PLUGINS_BASE" >&2
+    exit 1
+  fi
+  # `|| true` guards the whole pipeline: under `set -euo pipefail` a no-match grep
+  # exits 1 and would kill the script HERE, before the friendly empty-check below
+  # ever runs. The empty-check is the intended failure path.
+  _PLUGIN_VER=$(ls "$_PLUGINS_BASE" \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V \
+    | tail -1 || true)
+  if [ -z "$_PLUGIN_VER" ]; then
+    echo "sdd-preflight: no versioned plugin dirs found under $_PLUGINS_BASE" >&2
+    exit 1
+  fi
+  SKILL_SCRIPTS="$_PLUGINS_BASE/$_PLUGIN_VER/skills/subagent-driven-development/scripts"
+fi
 
 die() { echo "sdd-preflight: $*" >&2; exit 1; }
 
+# ---- Signature detection -----------------------------------------------------
+
+# Returns 0 (true) if semver $1 >= $2.
+# Uses GNU sort -V (available in Git Bash on Windows).
+_semver_ge() {
+  local top
+  top=$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)
+  [ "$top" = "$1" ]
+}
+
+# Returns 0 (true) when the installed sdd-workspace uses the 6.2.0+ signature
+# (requires a PLAN_FILE argument; workspace is per-plan-scoped).
+#
+# When the resolved plugin version is known, we compare it against 6.2.0 explicitly.
+# NOTE: a future 7.x release also satisfies >= 6.2.0, so a NEW signature change would
+# select the 6.2.0+ form and fail at the call site (wrong args / missing script), not
+# here — loud, but diagnosed at the call, with the resolved version in this variable
+# making the mismatch easy to pin down. This anchor only distinguishes the two KNOWN
+# conventions; revisit it when the plugin next changes calling conventions.
+#
+# When SDD_SKILL_SCRIPTS overrides the scripts dir (version unknown), we detect the
+# new signature by checking for the PLAN_FILE string in the script.
+_new_workspace_sig() {
+  if [ -n "$_PLUGIN_VER" ]; then
+    _semver_ge "$_PLUGIN_VER" "6.2.0"
+  else
+    # Override path: inspect script content. Fail closed (return false) if absent.
+    grep -q 'PLAN_FILE' "$SKILL_SCRIPTS/sdd-workspace" 2>/dev/null
+  fi
+}
+
+# ---- Commands ----------------------------------------------------------------
+
 cmd_brief() {
   local wt=$1 plan=$2 n=$3
+  local ws brief report slug root_top base
 
   [ -d "$wt" ] || die "worktree not found: $wt"
   # Everything below runs INSIDE the worktree so sdd-workspace resolves to the
@@ -60,8 +138,26 @@ cmd_brief() {
   [ -x "$SKILL_SCRIPTS/task-brief" ] || [ -f "$SKILL_SCRIPTS/task-brief" ] \
     || die "task-brief not found at $SKILL_SCRIPTS (set SDD_SKILL_SCRIPTS)"
 
-  local ws brief report
-  ws=$(bash "$SKILL_SCRIPTS/sdd-workspace")
+  # Compute workspace directory BEFORE checking plan existence, so we can honour
+  # DELETE BEFORE GENERATE unconditionally.
+  #
+  # For 6.2.0+ sdd-workspace requires the plan file to exist, but we need to
+  # delete stale artifacts before that check. We derive the path ourselves (same
+  # logic: <repo-root>/.superpowers/sdd/<plan-basename-without-.md>/) and create
+  # the directory ourselves after the plan check.
+  #
+  # For pre-6.2.0 the no-arg sdd-workspace does not read the plan, so we call it
+  # directly; it also creates the flat .superpowers/sdd/ directory.
+  if _new_workspace_sig; then
+    slug=$(basename "$plan" .md)
+    root_top=$(git rev-parse --show-toplevel 2>/dev/null) \
+      || die "cannot determine git root from worktree: $wt"
+    base="$root_top/.superpowers/sdd"
+    ws="$base/$slug"
+  else
+    ws=$(bash "$SKILL_SCRIPTS/sdd-workspace")
+  fi
+
   brief="$ws/task-${n}-brief.md"
   report="$ws/task-${n}-report.md"
 
@@ -73,8 +169,20 @@ cmd_brief() {
 
   [ -f "$plan" ] || die "plan not found inside worktree: $wt/$plan (stale artifacts removed)"
 
-  bash "$SKILL_SCRIPTS/task-brief" "$plan" "$n" "$brief" >/dev/null \
-    || die "task-brief failed for task $n (exit $?) — no brief written, nothing stale left behind"
+  # For 6.2.0+ ensure the plan-scoped workspace dir exists (task-brief uses the
+  # explicit OUTFILE path and does not call sdd-workspace itself when given 3 args).
+  if _new_workspace_sig; then
+    mkdir -p "$ws"
+    printf '*\n' > "$base/.gitignore" 2>/dev/null || true
+  fi
+
+  # task-brief creates the output file via awk redirect before checking whether the
+  # task heading was found, so a not-found exit still leaves an empty file on disk.
+  # Remove it immediately so the "nothing stale left behind" invariant is exact.
+  if ! bash "$SKILL_SCRIPTS/task-brief" "$plan" "$n" "$brief" >/dev/null; then
+    rm -f "$brief"
+    die "task-brief failed for task $n — no brief written, nothing stale left behind"
+  fi
 
   [ -s "$brief" ] || die "brief is empty: $brief"
 
@@ -107,8 +215,31 @@ cmd_report() {
   [ -d "$wt" ] || die "worktree not found: $wt"
   cd "$wt" || die "cannot enter worktree: $wt"
 
+  # Locate the workspace directory.
+  #
+  # For 6.2.0+ workspaces are per-plan-scoped; cmd_report does not know which plan
+  # was used. We find the workspace by searching for the brief that cmd_brief wrote.
+  # Zero or multiple matches are both errors — fail closed in both cases.
+  #
+  # For pre-6.2.0 (flat workspace), call sdd-workspace with no arguments.
   local ws brief report
-  ws=$(bash "$SKILL_SCRIPTS/sdd-workspace")
+  if _new_workspace_sig; then
+    # We have already cd'd into the worktree, so glob RELATIVE to the cwd — using
+    # "$wt/..." here breaks when the caller passed a relative worktree path (the
+    # documented invocation form), because it would resolve relative to the new cwd.
+    local matches=()
+    for f in .superpowers/sdd/*/task-${n}-brief.md; do
+      [ -f "$f" ] && matches+=("$f")
+    done
+    case ${#matches[@]} in
+      0) die "no brief for task ${n} found under $wt/.superpowers/sdd — run 'brief' first (brief locates the plan-scoped workspace)" ;;
+      1) ws=$(dirname "${matches[0]}") ;;
+      *) die "ambiguous: found ${#matches[@]} briefs for task ${n} under $wt/.superpowers/sdd — cannot determine which plan-scoped workspace to verify; re-run 'brief' for the correct plan to disambiguate" ;;
+    esac
+  else
+    ws=$(bash "$SKILL_SCRIPTS/sdd-workspace")
+  fi
+
   brief="$ws/task-${n}-brief.md"
   report="$ws/task-${n}-report.md"
 
