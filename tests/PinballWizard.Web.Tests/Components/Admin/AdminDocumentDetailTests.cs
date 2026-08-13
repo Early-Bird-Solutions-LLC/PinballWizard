@@ -21,6 +21,7 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 public sealed class AdminDocumentDetailTests : AsyncBunitContext
 {
     private readonly IRawDocumentRepository _repo = Substitute.For<IRawDocumentRepository>();
+    private readonly IScrapedDocumentRepository _scrapedRepo = Substitute.For<IScrapedDocumentRepository>();
     private const string FakeDocId = "doc_abc123";
 
     public AdminDocumentDetailTests()
@@ -29,9 +30,15 @@ public sealed class AdminDocumentDetailTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization().SetAuthorized("test@example.com");
         Services.AddSingleton(_repo);
+        Services.AddSingleton(_scrapedRepo);
         Services.AddSingleton<ILogger<PinballWizard.Web.Components.Shared.DocumentDetail>>(
             NullLogger<PinballWizard.Web.Components.Shared.DocumentDetail>.Instance);
         _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        // Default: fan-out returns a machine ID so the linked-machine panel renders
+        // with content for the standard "linked document" scenario.
+        _scrapedRepo.StreamByDocumentIdAsync(FakeDocId, Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable("G4do5-MkPnV"));
     }
 
     private static DocumentDetailRecord MakeDetail() =>
@@ -51,8 +58,7 @@ public sealed class AdminDocumentDetailTests : AsyncBunitContext
             LastDownloadedAt: DateTimeOffset.UtcNow,
             LinkStatus: "linked",
             LinkFailureReason: null,
-            ResolutionStrategy: "title match",
-            LinkedMachineIds: ["G4do5-MkPnV"])
+            ResolutionStrategy: "title match")
         { ManufacturerKey = "stern" };
 
     // MudBlazor 9 + bUnit: MudPopoverProvider sibling required.
@@ -97,5 +103,16 @@ public sealed class AdminDocumentDetailTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         cut.Find("[data-testid='doc-detail-not-found']");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static async IAsyncEnumerable<string> ToAsyncEnumerable(params string[] items)
+    {
+        foreach (var item in items)
+        {
+            await Task.CompletedTask;
+            yield return item;
+        }
     }
 }

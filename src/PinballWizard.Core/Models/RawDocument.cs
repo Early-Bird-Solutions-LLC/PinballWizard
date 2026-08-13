@@ -83,10 +83,6 @@ public sealed class RawDocumentRecord
 
     public string? OverrideId { get; set; }
 
-    // Machine IDs this document was linked to. Set by the linker after resolution.
-    // Mirrors the scraped_documents records written for audit/display purposes.
-    public List<string> LinkedMachineIds { get; set; } = [];
-
     // Present only when LinkStatus == NeedsReview. Written by the linker (Wave 2)
     // when it cannot resolve ambiguity; cleared when the admin assigns a machine
     // (the doc is reset to Pending for re-processing with the override in place).

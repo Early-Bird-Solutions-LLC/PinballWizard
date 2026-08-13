@@ -19,7 +19,7 @@ namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 //   scraper-owned      Source, Game, Classification, DocumentType, Manufacturer,
 //                      timeline.last_checked_at, cross_references
 //                      -> REFRESHED from the current run, every time.
-//   linker/admin-owned LinkedMachineIds, LinkStatus, ResolutionStrategy,
+//   linker/admin-owned LinkStatus, ResolutionStrategy,
 //                      OverrideId, write-once RunId, timeline.first_discovered_at,
 //                      File (blob path), Http (cache metadata)
 //                      -> PRESERVED untouched.
@@ -69,8 +69,9 @@ internal sealed class CosmosRawDocumentRepository
             if ((slugChanged || typeChanged) && !isManuallyLinked)
             {
                 // Binding is invalidated — reset link state so the linker re-runs.
+                // Fan-out rows for the old binding will be pruned by DocumentLinker.FanOutAndUpdateAsync
+                // when the linker re-processes this document.
                 existing.LinkStatus = ToWireStatus(LinkStatus.Pending);
-                existing.LinkedMachineIds.Clear();
             }
 
             // ── Refresh scraper-owned fields ──────────────────────────────────────
@@ -124,9 +125,11 @@ internal sealed class CosmosRawDocumentRepository
             //
             // Everything below this line is owned by the linker or admin and must
             // survive a re-scrape unchanged:
-            //   LinkedMachineIds, LinkStatus, ResolutionStrategy, OverrideId,
+            //   LinkStatus, ResolutionStrategy, OverrideId,
             //   RunId (write-once), Timeline.FirstDiscoveredAt,
             //   File (blob download path), Http (HTTP cache metadata).
+            // The authoritative document→machine binding lives in the scraped_documents
+            // fan-out rows (IScrapedDocumentRepository), not on this raw record.
             //
             // run_id is write-once: the original value on `existing` is kept;
             // record.RunId (from the current run) is intentionally NOT copied here.
@@ -606,11 +609,9 @@ internal sealed class CosmosRawDocumentRepository
             Manufacturer: raw.Manufacturer ?? "",
             FirstDiscoveredAt: raw.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
             LastDownloadedAt: raw.Timeline?.LastDownloadedAt,
-            MachineId: raw.LinkedMachineIds?.FirstOrDefault(),
             LinkStatus: includeAdminFields ? raw.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? raw.LinkFailureReason : null,
-            ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null,
-            LinkedMachineIds: includeAdminFields ? raw.LinkedMachineIds?.AsReadOnly() : null
+            ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null
         )
         {
             ManufacturerKey = DeriveManufacturerKey(raw.Manufacturer),
@@ -636,7 +637,6 @@ internal sealed class CosmosRawDocumentRepository
             PageCount: r.File?.PageCount,
             SizeBytes: r.File?.SizeBytes,
             FirstDiscoveredAt: r.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
-            MachineId: r.LinkedMachineIds?.FirstOrDefault(),
             LinkStatus: includeAdminFields ? r.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? r.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? r.ResolutionStrategy : null
@@ -768,7 +768,6 @@ internal sealed class CosmosRawDocumentRepository
             LinkedBy = cosmos.LinkedBy,
             LinkedAt = cosmos.LinkedAt,
             OverrideId = cosmos.OverrideId,
-            LinkedMachineIds = cosmos.LinkedMachineIds,
             Source = cosmos.Source is { } src
                 ? new SourceInfo
                 {

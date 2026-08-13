@@ -1431,7 +1431,10 @@ public class DocumentLinkerTests
         var raw = MakeRaw(fileUrl: "https://example.com/files/stranger-things_manual.pdf");
         raw.LinkStatus = LinkStatus.ManuallyLinked;
         raw.ResolutionStrategy = "override";
-        raw.LinkedMachineIds = [machine.Id];
+        // LinkedMachineIds was removed from RawDocument in #800; the binding lives in
+        // scraped_documents fan-out rows. The fast-path reads them from the fan-out.
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(new[] { machine.Id }.ToAsyncEnumerable());
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
 
@@ -1440,7 +1443,9 @@ public class DocumentLinkerTests
 
         Assert.Equal(LinkStatus.ManuallyLinked, result.FinalStatus);
         Assert.Equal("override", result.ResolutionStrategy);
+        // Fast-path reads LinkedMachineIds from the fan-out via StreamByDocumentIdAsync (#800).
         Assert.Single(result.LinkedMachineIds);
+        Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
 
         // No repo writes should occur — the document is already in terminal state.
         await rawRepo.DidNotReceive().UpdateLinkStatusAsync(
