@@ -282,7 +282,8 @@ public sealed class ScraperOrchestrator
 
     // Fold the second (duplicate) sighting's provenance into the first record.
     // The first sighting's Source wins (DiscoveryUrl, Context, etc.); the duplicate's
-    // DiscoveryUrl is added as a CrossReference so no discovery evidence is lost.
+    // DiscoveryUrl is added as a CrossReference, and a game reference the primary lacks
+    // is promoted, so no discovery evidence is lost.
     // This mirrors the cross-reference merge in CosmosRawDocumentRepository.UpsertRawAsync,
     // making intra-run dedup consistent with the existing inter-run merge behaviour.
     private static void MergeInRunDuplicate(DocumentRecord primary, DocumentRecord duplicate)
@@ -317,6 +318,15 @@ public sealed class ScraperOrchestrator
                 primary.CrossReferences.Add(xref);
             }
         }
+
+        // Promote a game reference the primary lacks. The same file is often linked
+        // both from a flat listing (no slug -> Game null) and from a game-specific
+        // anchor (Game populated). Whichever sighting arrives first wins the Source,
+        // so without this the game binding is lost whenever the flat listing came
+        // first — and the cross-reference above cannot recover it when both sightings
+        // share a discovery URL. Game is scraper-owned evidence, so losing it costs
+        // the linker its Tier 1 slug match (PROV-01).
+        primary.Game ??= duplicate.Game;
     }
 
     private static DocumentRecord BuildDocumentRecord(ScrapedItem item)

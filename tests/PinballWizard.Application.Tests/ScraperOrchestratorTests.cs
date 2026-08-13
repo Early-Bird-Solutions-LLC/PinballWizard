@@ -409,6 +409,51 @@ public sealed class ScraperOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ScrapeAsync_DuplicateFileUrl_PromotesGameReferenceFromLaterSighting()
+    {
+        // The same PDF is commonly linked twice: once from a flat manuals listing (no
+        // slug, so Game is null) and once from a game-specific anchor (Game populated).
+        // The flat listing arrives FIRST here, so it wins the Source — and both sightings
+        // share a discovery URL, so the cross-reference path cannot carry the game either.
+        // Without promotion the game binding is silently lost and the linker drops to a
+        // weaker tier (PROV-01).
+        const string duplicateUrl = "https://sternpinball.com/pdf/avengers-manual.pdf";
+        const string sharedDiscoveryUrl = "https://sternpinball.com/manuals/";
+
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var capturedRecords = new List<DocumentRecord>();
+        rawRepo.UpsertRawAsync(
+                Arg.Do<DocumentRecord>(r => capturedRecords.Add(r)),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => new RawDocumentUpsertResult(MapDomain(ci.Arg<DocumentRecord>()), UpsertOutcome.Updated));
+
+        var withoutGame = MakeLinkItem(
+            fileUrl: duplicateUrl,
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            discoveryUrl: sharedDiscoveryUrl);
+
+        var withGame = MakeLinkItem(
+            fileUrl: duplicateUrl,
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            gameSlug: "avengers",
+            discoveryUrl: sharedDiscoveryUrl);
+
+        var scraper = new StubScraper("Manuals", [withoutGame, withGame]);
+        var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
+
+        var result = await orch.ScrapeAsync();
+
+        Assert.Empty(result.Errors);
+        await rawRepo.Received(1).UpsertRawAsync(Arg.Any<DocumentRecord>(), Arg.Any<CancellationToken>());
+
+        var upserted = Assert.Single(capturedRecords);
+        Assert.NotNull(upserted.Game);
+        Assert.Equal("avengers", upserted.Game!.Slug);
+    }
+
+    [Fact]
     public async Task ScrapeAsync_DistinctFileUrls_UpsertsEachDocumentIndependently()
     {
         // Fixture: two DIFFERENT file URLs → two different DocumentIds.
