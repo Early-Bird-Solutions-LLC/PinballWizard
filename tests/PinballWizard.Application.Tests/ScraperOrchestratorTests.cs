@@ -262,6 +262,25 @@ public sealed class ScraperOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task YieldGuard_ZeroYield_SourceRecordMarkedFailed()
+    {
+        // Every other yield-guard test runs with dryRun: true, which skips run-history
+        // entirely — so nothing covered the guard's `sourceFailed = true` reaching the
+        // ScrapeRunRecord. The run history is what an operator reads after the fact;
+        // a guard that fails the exit code but reports the run as succeeded would send
+        // them looking in the wrong place.
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var empty = new StubScraper("Manuals", [], sourceId: "stern");   // default minimum = 1
+        var orch = CreateOrchestrator([empty], scrapeRuns: scrapeRuns);
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(
+            Arg.Is<ScrapeRunRecord>(r => r.SourceId == "stern" && !r.Succeeded && r.ErrorMessage != null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ScrapeAsync_DryRun_WritesNoRunHistory()
     {
         var scrapeRuns = Substitute.For<IScrapeRunRepository>();
