@@ -77,10 +77,13 @@ else
     echo "sdd-preflight: superpowers plugin cache not found: $_PLUGINS_BASE" >&2
     exit 1
   fi
+  # `|| true` guards the whole pipeline: under `set -euo pipefail` a no-match grep
+  # exits 1 and would kill the script HERE, before the friendly empty-check below
+  # ever runs. The empty-check is the intended failure path.
   _PLUGIN_VER=$(ls "$_PLUGINS_BASE" \
     | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
     | sort -V \
-    | tail -1)
+    | tail -1 || true)
   if [ -z "$_PLUGIN_VER" ]; then
     echo "sdd-preflight: no versioned plugin dirs found under $_PLUGINS_BASE" >&2
     exit 1
@@ -103,9 +106,12 @@ _semver_ge() {
 # Returns 0 (true) when the installed sdd-workspace uses the 6.2.0+ signature
 # (requires a PLAN_FILE argument; workspace is per-plan-scoped).
 #
-# When the resolved plugin version is known, we compare it against 6.2.0 explicitly —
-# so a future breaking change in a 7.x release will not silently fall through to the
-# wrong form; it will produce a version-mismatch error that is easy to diagnose.
+# When the resolved plugin version is known, we compare it against 6.2.0 explicitly.
+# NOTE: a future 7.x release also satisfies >= 6.2.0, so a NEW signature change would
+# select the 6.2.0+ form and fail at the call site (wrong args / missing script), not
+# here — loud, but diagnosed at the call, with the resolved version in this variable
+# making the mismatch easy to pin down. This anchor only distinguishes the two KNOWN
+# conventions; revisit it when the plugin next changes calling conventions.
 #
 # When SDD_SKILL_SCRIPTS overrides the scripts dir (version unknown), we detect the
 # new signature by checking for the PLAN_FILE string in the script.
@@ -218,8 +224,11 @@ cmd_report() {
   # For pre-6.2.0 (flat workspace), call sdd-workspace with no arguments.
   local ws brief report
   if _new_workspace_sig; then
+    # We have already cd'd into the worktree, so glob RELATIVE to the cwd — using
+    # "$wt/..." here breaks when the caller passed a relative worktree path (the
+    # documented invocation form), because it would resolve relative to the new cwd.
     local matches=()
-    for f in "$wt/.superpowers/sdd"/*/task-${n}-brief.md; do
+    for f in .superpowers/sdd/*/task-${n}-brief.md; do
       [ -f "$f" ] && matches+=("$f")
     done
     case ${#matches[@]} in
