@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using NSubstitute;
 using PinballWizard.Core.Configuration;
@@ -128,6 +129,58 @@ public sealed class PolitePlaywrightScraperBaseTests
     }
 
     // --------------- Context recycling tests ---------------
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_NonPositiveRecycleInterval_ThrowsArgumentOutOfRange(int interval)
+    {
+        // An interval of 0 would recycle on every single page (pathological churn);
+        // a negative one would never recycle, silently restoring the #855 OOM. The
+        // guard is the only thing standing between a config typo and either outcome,
+        // so it needs its own coverage.
+        var contextLog = new ContextLog();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => BuildTrackingScraper(interval, contextLog));
+
+        Assert.Equal("contextRecycleInterval", ex.ParamName);
+    }
+
+    [Fact]
+    public void ResolveRecycleInterval_NullSettings_ThrowsArgumentNullException()
+    {
+        // Derived scrapers pass the interval up via this helper precisely because a
+        // guard in their own constructor body would be unreachable — base-initializer
+        // arguments are evaluated first. If this guard regressed, a misconfigured DI
+        // container would surface as a bare NullReferenceException naming nothing.
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => TrackingPlaywrightScraper.ResolveIntervalForTest(null!));
+
+        Assert.Equal("settings", ex.ParamName);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_WithLiveContext_DisposesIt()
+    {
+        // The recycle path is covered elsewhere, but the FINAL context is released
+        // only by DisposeAsyncCore. Without this, a scraper could leak its last
+        // context per run and no test would notice.
+        const int recycleInterval = 5;
+        var contextLog = new ContextLog();
+
+        var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+        await using (var _ = await scraper.OpenPageAsync("https://example.com/"))
+        {
+        }
+
+        Assert.Equal(1, contextLog.CreatedCount);
+        Assert.Equal(0, contextLog.DisposedCount);
+
+        await scraper.DisposeAsync();
+
+        Assert.Equal(1, contextLog.DisposedCount);
+    }
 
     [Fact]
     public async Task NewPolitePageAsync_WithinRecycleInterval_ReusesContext()
@@ -380,5 +433,10 @@ public sealed class PolitePlaywrightScraperBaseTests
 
         public Task<PolitePage> OpenPageAsync(string url, CancellationToken ct = default)
             => NewPolitePageAsync(url, ct);
+
+        // ResolveRecycleInterval is protected static on the base; this exposes it so the
+        // null-settings guard can be asserted without a live scraper instance.
+        public static int ResolveIntervalForTest(IOptions<ScraperSettings> settings)
+            => ResolveRecycleInterval(settings);
     }
 }

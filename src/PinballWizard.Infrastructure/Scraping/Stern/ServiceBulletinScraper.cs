@@ -42,7 +42,7 @@ public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourc
         IOptions<ScraperSettings> settings,
         ILogger<ServiceBulletinScraper> logger)
         : base(playwrightFactory, politeness, politenessOptions.Value, logger,
-               settings.Value.PlaywrightContextRecycleInterval)
+               ResolveRecycleInterval(settings))
     {
         ArgumentNullException.ThrowIfNull(settings);
         _settings = settings.Value;

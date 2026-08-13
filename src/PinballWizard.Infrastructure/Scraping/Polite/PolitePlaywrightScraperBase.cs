@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -79,6 +80,20 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
 
         _playwrightFactory = playwrightFactory;
         _contextRecycleInterval = contextRecycleInterval;
+    }
+
+    // Resolves the recycle interval for a derived scraper's base-constructor call.
+    //
+    // Derived scrapers cannot guard `settings` themselves before passing the interval
+    // up: arguments to the base initializer are evaluated BEFORE the derived
+    // constructor body runs, so an `ArgumentNullException.ThrowIfNull(settings)` in
+    // that body is unreachable for a null `settings` — the dereference has already
+    // thrown a bare NullReferenceException naming nothing. Routing through this helper
+    // keeps the guard on the path that actually executes first.
+    protected static int ResolveRecycleInterval(IOptions<ScraperSettings> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return settings.Value.PlaywrightContextRecycleInterval;
     }
 
     /// <summary>
