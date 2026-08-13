@@ -1,3 +1,4 @@
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
@@ -145,6 +146,33 @@ public static class Extensions
         if (useOtlpExporter)
         {
             builder.Services.AddOpenTelemetry().UseOtlpExporter();
+        }
+
+        // Azure Monitor exporter — metrics, traces, and logs — when the App Insights
+        // connection string is present (#840). Applies to ALL host types (CLI/ACA
+        // scheduled jobs, API, Web, RagIngestionWorker) because every service that calls
+        // AddServiceDefaults() goes through this path. In local dev (Aspire), the OTLP
+        // exporter above handles export; this block is a no-op when the variable is absent.
+        // The Bicep env blocks in infra/modules/shared.bicep supply the connection string
+        // for all ACA resources (container apps + every scheduled-cli-job caller).
+        // Note: Bicep env changes take effect only after a stack run
+        // (Deploy-SharedResources.ps1) — image-only merges do not apply Bicep (#651).
+        var appInsightsConnectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+        if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
+        {
+            // Pass the connection string explicitly rather than relying on the SDK's
+            // env-var autodiscovery. The SDK reads AzureMonitorExporterOptions.ConnectionString
+            // at registration time; if it is empty the SDK falls back to the process
+            // environment variable, which is correct on ACA but fails under test because
+            // IConfiguration.AddInMemoryCollection does not set process environment variables.
+            // Explicit wiring is more testable and equally correct in production.
+            builder.Services.AddOpenTelemetry()
+                .WithMetrics(metrics => metrics.AddAzureMonitorMetricExporter(
+                    o => o.ConnectionString = appInsightsConnectionString))
+                .WithTracing(tracing => tracing.AddAzureMonitorTraceExporter(
+                    o => o.ConnectionString = appInsightsConnectionString));
+            builder.Logging.AddOpenTelemetry(logging =>
+                logging.AddAzureMonitorLogExporter(o => o.ConnectionString = appInsightsConnectionString));
         }
 
         return builder;
