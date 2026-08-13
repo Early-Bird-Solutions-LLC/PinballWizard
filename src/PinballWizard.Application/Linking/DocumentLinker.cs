@@ -243,11 +243,22 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
         if (raw.LinkStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.PlatformGeneric
             or LinkStatus.NeedsReview)
         {
+            // Already in a terminal state — skip all tiers. The authoritative binding
+            // is in scraped_documents fan-out rows (linked_machine_ids on the raw record
+            // was a dead field, removed in #800). Re-read the fan-out to populate
+            // LinkedMachineIds so LinkingResult's contract invariant is satisfied.
+            var existingIds = new List<string>();
+            await foreach (var id in _docWriter.StreamByDocumentIdAsync(raw.DocumentId, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                existingIds.Add(id);
+            }
+
             return new LinkingResult(
                 raw.DocumentId,
                 raw.LinkStatus,
                 raw.ResolutionStrategy,
-                raw.LinkedMachineIds,
+                LinkedMachineIds: existingIds,
                 FailureReason: null);
         }
 

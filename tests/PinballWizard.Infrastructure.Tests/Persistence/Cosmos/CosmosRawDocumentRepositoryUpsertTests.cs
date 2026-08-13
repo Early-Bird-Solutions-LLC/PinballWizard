@@ -109,7 +109,9 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         const string docId = "doc_preserve_linker";
         var firstDiscovered = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc);
 
-        var existing = MakeCosmosRecord(docId, linkedMachineIds: ["mch_777"]);
+        // Note: LinkedMachineIds was removed from the wire model in #800.
+        // The authoritative document→machine binding lives in scraped_documents fan-out rows.
+        var existing = MakeCosmosRecord(docId);
         existing.RunId = "run_original";
         existing.Timeline = new RawTimelineInfo { FirstDiscoveredAt = firstDiscovered };
         existing.File = new RawFileInfo { LocalPath = "data/manuals/houdini.pdf", Filename = "houdini.pdf" };
@@ -133,7 +135,6 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         await _repository.UpsertRawAsync(incoming, CancellationToken.None);
 
         Assert.NotNull(captured);
-        Assert.Contains("mch_777", captured!.LinkedMachineIds);
         Assert.Equal("run_original", captured.RunId);
         Assert.Equal(firstDiscovered, captured.Timeline?.FirstDiscoveredAt);
         Assert.Equal("data/manuals/houdini.pdf", captured.File?.LocalPath);
@@ -151,7 +152,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     {
         const string docId = "doc_manual_link";
         var existing = MakeCosmosRecord(docId, linkStatus: "manually_linked",
-            linkedMachineIds: ["mch_999"], documentType: "ServiceBulletin");
+            documentType: "ServiceBulletin");
         existing.Game = new RawGameInfo { Title = "Old Game", Slug = "old-slug", GamePageUrl = "https://example.com/old" };
         existing.Classification = new RawClassificationInfo { DocumentType = "ServiceBulletin", FileFormat = "pdf" };
         SetupGetByIdFound(docId, existing);
@@ -192,9 +193,10 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         await _repository.UpsertRawAsync(incoming, CancellationToken.None);
 
         Assert.NotNull(captured);
-        // Admin override wins — link_status stays manually_linked, machine preserved
+        // Admin override wins — link_status stays manually_linked.
+        // The document→machine binding lives in scraped_documents fan-out rows,
+        // not on the raw record (LinkedMachineIds removed in #800).
         Assert.Equal("manually_linked", captured!.LinkStatus);
-        Assert.Contains("mch_999", captured.LinkedMachineIds);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -206,8 +208,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     public async Task UpsertRaw_ChangedSlugOrDocType_FlipsToPending()
     {
         const string docId = "doc_slug_changed";
-        var existing = MakeCosmosRecord(docId, linkStatus: "linked",
-            linkedMachineIds: ["mch_111"], documentType: "Manual");
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked", documentType: "Manual");
         existing.Game = new RawGameInfo { Title = "Old", Slug = "old-slug", GamePageUrl = "https://example.com/old" };
         SetupGetByIdFound(docId, existing);
 
@@ -247,9 +248,9 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         await _repository.UpsertRawAsync(incoming, CancellationToken.None);
 
         Assert.NotNull(captured);
-        // Slug changed → link_status resets to pending, machine cleared
+        // Slug changed → link_status resets to pending so the linker re-runs.
+        // Fan-out rows for the stale binding are pruned by DocumentLinker.FanOutAndUpdateAsync.
         Assert.Equal("pending", captured!.LinkStatus);
-        Assert.Empty(captured.LinkedMachineIds);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -261,8 +262,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     public async Task UpsertRaw_UnchangedScraperFields_DoesNotFlipLinkStatus()
     {
         const string docId = "doc_no_change";
-        var existing = MakeCosmosRecord(docId, linkStatus: "linked",
-            linkedMachineIds: ["mch_222"], documentType: "Manual");
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked", documentType: "Manual");
         existing.Game = new RawGameInfo { Title = "Same Game", Slug = "same-slug", GamePageUrl = "https://example.com/game" };
         SetupGetByIdFound(docId, existing);
 
@@ -302,9 +302,9 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         await _repository.UpsertRawAsync(incoming, CancellationToken.None);
 
         Assert.NotNull(captured);
-        // Unchanged slug/type: linked stays linked, machine preserved
+        // Unchanged slug/type: linked stays linked.
+        // Document→machine binding is preserved in scraped_documents fan-out rows.
         Assert.Equal("linked", captured!.LinkStatus);
-        Assert.Contains("mch_222", captured.LinkedMachineIds);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         const string docId = "doc_etag_conflict";
         const string storedETag = "\"etag-conflict-xyz\"";
 
-        var existing = MakeCosmosRecord(docId, linkStatus: "linked", linkedMachineIds: ["mch_abc"]);
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked");
         // Set ETag as populated from the Cosmos _etag system property on read.
         existing.ETag = storedETag;
         SetupGetByIdFound(docId, existing);
@@ -398,7 +398,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     {
         const string docId = "doc_doctype_changed";
         var existing = MakeCosmosRecord(docId, linkStatus: "linked",
-            linkedMachineIds: ["mch_111"], documentType: "Other");
+            documentType: "Other");
         existing.Game = new RawGameInfo { Title = "Same", Slug = "same-slug", GamePageUrl = "https://example.com/g" };
         SetupGetByIdFound(docId, existing);
 
@@ -416,7 +416,9 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
 
         Assert.NotNull(captured);
         Assert.Equal("pending", captured!.LinkStatus);
-        Assert.Empty(captured.LinkedMachineIds);
+        // Fan-out rows for the old binding will be pruned by DocumentLinker.FanOutAndUpdateAsync
+        // when the linker re-processes this document. The raw record no longer carries
+        // LinkedMachineIds — the authoritative binding lives in scraped_documents (#800).
     }
 
     // The manually_linked override must beat EACH trigger independently.
@@ -427,7 +429,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     {
         const string docId = "doc_manual_doctype";
         var existing = MakeCosmosRecord(docId, linkStatus: "manually_linked",
-            linkedMachineIds: ["mch_admin"], documentType: "Other");
+            documentType: "Other");
         existing.Game = new RawGameInfo { Title = "Same", Slug = "same-slug", GamePageUrl = "https://example.com/g" };
         SetupGetByIdFound(docId, existing);
 
@@ -444,7 +446,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
 
         Assert.NotNull(captured);
         Assert.Equal("manually_linked", captured!.LinkStatus);
-        Assert.Equal(["mch_admin"], captured.LinkedMachineIds);
+        // The binding lives in scraped_documents fan-out rows, not on the raw record (#800).
     }
 
     // Roll-out safety: documents stored before the ETag field existed carry a
@@ -455,7 +457,7 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     public async Task UpsertRaw_NullETag_WritesUnconditionally()
     {
         const string docId = "doc_null_etag";
-        var existing = MakeCosmosRecord(docId, linkStatus: "linked", linkedMachineIds: ["mch_1"]);
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked");
         existing.ETag = null;
         SetupGetByIdFound(docId, existing);
 
@@ -477,7 +479,6 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     private static RawDocumentCosmosRecord MakeCosmosRecord(
         string documentId = "doc_test",
         string linkStatus = "pending",
-        List<string>? linkedMachineIds = null,
         string documentType = "Manual")
     {
         return new RawDocumentCosmosRecord
@@ -487,7 +488,6 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
             DocumentUrl = "https://example.com/file.pdf",
             DocumentType = documentType,
             LinkStatus = linkStatus,
-            LinkedMachineIds = linkedMachineIds ?? [],
             Source = new RawSourceInfo
             {
                 DiscoveryUrl = "https://example.com/discover",

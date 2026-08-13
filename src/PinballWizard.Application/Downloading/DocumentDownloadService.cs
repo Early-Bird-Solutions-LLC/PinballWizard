@@ -58,7 +58,7 @@ public sealed class DocumentDownloadService
     /// </param>
     public async Task<DownloadSummary> RunAsync(bool force, CancellationToken cancellationToken)
     {
-        int downloaded = 0, skipped = 0, failed = 0, backfilled = 0, skippedTooLarge = 0;
+        int downloaded = 0, skipped = 0, failed = 0, backfilled = 0, skippedTooLarge = 0, skippedPermanentRejection = 0;
 
         // Origins the politeness gate has told us to stop asking (robots disallow or
         // 429 streak). Once an origin is poisoned we skip its remaining documents but
@@ -211,6 +211,21 @@ public sealed class DocumentDownloadService
                     }
                     // Cap was raised — fall through to re-attempt the download.
                 }
+
+                // Terminal PermanentRejection skip: a prior run confirmed the origin
+                // returned 403/404/410 — a client-side rejection that will not resolve
+                // by retrying. Unlike TooLarge there is no operator-configurable cap to
+                // raise, so there is no automatic re-attempt condition. Use
+                // --force-redownload for an operator-driven re-check (e.g. after the
+                // source domain has restored access or corrected the URL).
+                if (raw.DownloadSkip?.Reason == DownloadSkipInfo.Reasons.PermanentRejection)
+                {
+                    PinballWizardTelemetry.DownloadPermanentRejectionSkipsTotal.Add(1,
+                        new KeyValuePair<string, object?>(
+                            "source_type", raw.Source.SourceType.ToString().ToLowerInvariant()));
+                    skippedPermanentRejection++;
+                    continue;
+                }
             }
 
             var host = TryGetHost(fileUrl);
@@ -294,6 +309,29 @@ public sealed class DocumentDownloadService
                         "source_type", raw.Source.SourceType.ToString().ToLowerInvariant()));
                 skippedTooLarge++;
             }
+            else if (result.Status is DownloadStatus.PermanentRejection)
+            {
+                // Permanent skip: the origin returned a client-side rejection (403/404/410)
+                // that will not resolve by retrying — the resource is access-controlled,
+                // absent, or explicitly removed at the URL. Stamp a terminal skip marker so
+                // future runs bypass the download attempt without re-hitting the downloader
+                // or contributing to the failure count. Use --force-redownload to re-check
+                // after the origin is expected to have restored access (#839).
+                await _repo.MarkDownloadSkipAsync(raw.DocumentId, new DownloadSkipInfo
+                {
+                    Reason = DownloadSkipInfo.Reasons.PermanentRejection,
+                    ObservedSizeBytes = null,   // no bytes were received; size is N/A
+                    CapBytesAtSkip = 0,          // size cap is not the reason for the skip
+                    SkippedAt = DateTime.UtcNow,
+                }, cancellationToken).ConfigureAwait(false);
+                _logger.LogWarning(
+                    "DocumentDownload: {DocId} permanently rejected — {Err}. Stamped as terminal skip; use --force-redownload to re-check.",
+                    raw.DocumentId, result.ErrorMessage);
+                PinballWizardTelemetry.DownloadPermanentRejectionSkipsTotal.Add(1,
+                    new KeyValuePair<string, object?>(
+                        "source_type", raw.Source.SourceType.ToString().ToLowerInvariant()));
+                skippedPermanentRejection++;
+            }
             else
             {
                 _logger.LogWarning("DocumentDownload: {DocId} failed ({Status}): {Err}",
@@ -303,9 +341,11 @@ public sealed class DocumentDownloadService
         }
 
         _logger.LogInformation(
-            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} skippedTooLarge={SkippedTooLarge} backfilled={Backfilled} poisonedOrigins={Poisoned}",
-            downloaded, skipped, failed, skippedTooLarge, backfilled, poisonedHosts.Count);
-        return new DownloadSummary(downloaded, skipped, failed, backfilled, skippedTooLarge);
+            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} " +
+            "skippedTooLarge={SkippedTooLarge} skippedPermanentRejection={SkippedPermanentRejection} " +
+            "backfilled={Backfilled} poisonedOrigins={Poisoned}",
+            downloaded, skipped, failed, skippedTooLarge, skippedPermanentRejection, backfilled, poisonedHosts.Count);
+        return new DownloadSummary(downloaded, skipped, failed, backfilled, skippedTooLarge, skippedPermanentRejection);
     }
 
     private static string? TryGetHost(string url) =>
@@ -332,10 +372,15 @@ public sealed class DocumentDownloadService
 /// exceeds the configured cap — expected at steady state for multi-GB manufacturer
 /// images; these are terminal skips, not failures, and do NOT contribute to
 /// <paramref name="Failed"/> or trigger a non-zero exit code.
+/// <paramref name="SkippedPermanentRejection"/> counts documents whose origin
+/// returned HTTP 403/404/410 — permanently unavailable at the current URL; these
+/// are terminal skips, not failures, and do NOT contribute to <paramref name="Failed"/>
+/// or trigger a non-zero exit code (#839).
 /// </summary>
 public sealed record DownloadSummary(
     int Downloaded,
     int Skipped,
     int Failed,
     int Backfilled = 0,
-    int SkippedTooLarge = 0);
+    int SkippedTooLarge = 0,
+    int SkippedPermanentRejection = 0);

@@ -165,7 +165,7 @@ public sealed class CosmosRawDocumentRepositoryTests
     {
         const string docId = "doc_existing";
         var existing = MakeCosmosRecord(docId, linkStatus: "linked",
-            resolutionStrategy: "filename_slug", linkedMachineIds: ["mch_123"]);
+            resolutionStrategy: "filename_slug");
         existing.LinkFailureReason = null;
         existing.OverrideId = "ovr_1";
 
@@ -177,7 +177,8 @@ public sealed class CosmosRawDocumentRepositoryTests
 
         Assert.Equal(LinkStatus.Linked, result.Record.LinkStatus);
         Assert.Equal("filename_slug", result.Record.ResolutionStrategy);
-        Assert.Contains("mch_123", result.Record.LinkedMachineIds);
+        // Authoritative document→machine binding lives in the scraped_documents fan-out
+        // rows, not on this raw record — LinkedMachineIds was removed in #800.
         Assert.Equal("ovr_1", result.Record.OverrideId);
     }
 
@@ -1206,20 +1207,11 @@ public sealed class CosmosRawDocumentRepositoryTests
         Assert.Null(result?.Http);
     }
 
-    [Fact]
-    public async Task GetAsync_WithLinkedMachineIds_MapsToLinkedMachineIds()
-    {
-        const string docId = "doc_machines";
-        var cosmosRecord = MakeCosmosRecord(docId, linkedMachineIds: ["mch_aaa", "mch_bbb"]);
-        SetupGetByIdFound(docId, cosmosRecord);
-
-        var result = await _repository.GetAsync(docId, CancellationToken.None);
-
-        Assert.NotNull(result);
-        Assert.Equal(2, result!.LinkedMachineIds.Count);
-        Assert.Contains("mch_aaa", result.LinkedMachineIds);
-        Assert.Contains("mch_bbb", result.LinkedMachineIds);
-    }
+    // GetAsync_WithLinkedMachineIds_MapsToLinkedMachineIds was removed in #800.
+    // linked_machine_ids on scraped_documents_raw is a dead field — the linker
+    // never writes it. The authoritative document→machine binding lives in the
+    // scraped_documents fan-out rows (IScrapedDocumentRepository), and
+    // LinkedMachineIds was removed from RawDocumentRecord / RawDocumentCosmosRecord.
 
     // The scraper stamps every discovered document with the game-page it was
     // found on (RawGameInfo), so the linker can trust that provenance instead
@@ -1298,7 +1290,6 @@ public sealed class CosmosRawDocumentRepositoryTests
         string documentId = "doc_test",
         string linkStatus = "pending",
         string? resolutionStrategy = null,
-        List<string>? linkedMachineIds = null,
         string documentType = "Manual",
         string documentUrl = "https://example.com/file.pdf",
         string? manufacturer = null,
@@ -1312,7 +1303,6 @@ public sealed class CosmosRawDocumentRepositoryTests
             DocumentType = documentType,
             LinkStatus = linkStatus,
             ResolutionStrategy = resolutionStrategy,
-            LinkedMachineIds = linkedMachineIds ?? [],
             Manufacturer = manufacturer,
             Game = game,
             Source = new RawSourceInfo

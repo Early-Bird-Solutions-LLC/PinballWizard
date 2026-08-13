@@ -22,12 +22,10 @@ public sealed record DocumentDetailRecord(
     string Manufacturer,
     DateTimeOffset FirstDiscoveredAt,
     DateTimeOffset? LastDownloadedAt,
-    string? MachineId = null,
     // Admin-only — null on public projection:
     string? LinkStatus = null,
     string? LinkFailureReason = null,
-    string? ResolutionStrategy = null,
-    IReadOnlyList<string>? LinkedMachineIds = null
+    string? ResolutionStrategy = null
 )
 {
     // Manufacturer partition key (e.g. "stern") derived from Manufacturer at

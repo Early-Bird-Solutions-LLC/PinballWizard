@@ -35,11 +35,23 @@ this project's context:
   the skills.
 - **Agents** (`codebase-analyzer`, `web-search-researcher`, `thoughts-analyzer`,
   `modernization-analyst`) cover the research and analysis tasks this project uses.
-- **Path-scoped APS suppression (Half B):** a corresponding change in
-  `APS.JimClaudeCodeConfig` adds path-scope guards so the APS standards corpus
-  suppresses itself when the working directory is inside `c:\earlybird\`. That
-  change ships in a separate PR against the global config repo and is not part of
-  this ADR's scope.
+- **Repo-scoped APS suppression (Half B — shipped 2026-08-13):** a corresponding
+  change in `APS.JimClaudeCodeConfig` scopes each APS rule with `paths:`
+  frontmatter so the standards corpus only loads for files inside an APS repo
+  directory (`**/APS.*/**` and `**/APS-*/**`). That change ships in a separate PR
+  against the global config repo and is not part of this ADR's scope.
+
+  > **Correction (2026-08-13, issue #835).** This section previously described the
+  > guard as suppressing itself "when the working directory is inside
+  > `c:\earlybird\`". **No such path-prefix mechanism ever existed** — the guard has
+  > always been Claude Code's `paths:` frontmatter, which matches the *files in the
+  > conversation*, not the shell's working directory. Half B's original commit added
+  > `paths: "**/APS.*/**"` only to the 22 rules that had **no** `paths:` key at all;
+  > 14 others already carried bare file-type globs (`**/*.cs`, `**/*.razor`, …) that
+  > match any repo, so those kept firing here. That is why the corpus still loaded
+  > after the repo moved off `c:\earlybird\` — the move was a coincidence, not the
+  > cause. Fixed in config-repo PRs #275 and #277, which key every pattern on the
+  > repo directory name so a future relocation cannot silently disable it again.
 
 Every file vendored from the global config carries a `vendored-from:` header
 comment pinning the upstream SHA. Two scripts (`scripts/check_claude_config_drift.py`
@@ -76,9 +88,10 @@ current and that APS-internal artifacts never leak in.
   `vendored-from:` headers and the drift-check script.
 - APS skills that are genuinely useful here (e.g., `local-review`) must be kept in
   sync manually. The drift-check script surfaces this.
-- Half B (path-scoping the global config) is a separate PR against a separate repo
-  and must ship before the suppression is fully effective. Until it does, APS
-  artifacts still load but the in-repo config provides the override layer.
+- Half B (repo-scoping the global config) is a separate PR against a separate repo
+  and must ship before the suppression is fully effective. **Shipped 2026-08-13**
+  (config-repo PRs #275, #277); before that, APS artifacts still loaded here and the
+  in-repo config was the only override layer.
 
 ## References
 
@@ -86,4 +99,4 @@ current and that APS-internal artifacts never leak in.
 - [`scripts/check_claude_config_drift.py`](../../scripts/check_claude_config_drift.py) — compares each vendored file against its upstream SHA and reports staleness
 - [`scripts/assert_no_excluded_aps_skills.py`](../../scripts/assert_no_excluded_aps_skills.py) — asserts that no APS-internal skills are present under `.claude/`
 - [`.claude/README.md`](../../.claude/README.md) — index of the in-repo config structure
-- **Half B** ships against the `APS.JimClaudeCodeConfig` repo (global config), not this repo — it adds path-scope guards so the APS standards corpus suppresses itself when the working directory is inside `c:\earlybird\`
+- **Half B** ships against the `APS.JimClaudeCodeConfig` repo (global config), not this repo — it scopes every APS rule's `paths:` frontmatter to `**/APS.*/**` + `**/APS-*/**` so the standards corpus loads only for files inside an APS repo directory (shipped 2026-08-13; see the correction note above — the earlier `c:\earlybird\` description was never accurate)

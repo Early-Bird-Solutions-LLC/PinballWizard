@@ -24,10 +24,17 @@ public sealed record LinkingResult
         IReadOnlyList<string> LinkedMachineIds,
         string? FailureReason = null)
     {
-        // Guard against programmer errors where a Linked/ManuallyLinked result
-        // is created without any machine IDs. ResolutionStrategy == null indicates
-        // the idempotency re-emit path (passing through whatever Cosmos stored),
-        // so we only validate when a fresh strategy is applied.
+        // Guard against programmer errors where a Linked/ManuallyLinked result is
+        // created without any machine IDs.
+        //
+        // The strategy!=null condition does NOT exempt the idempotency re-emit path,
+        // despite what this comment claimed before #800: that path passes the stored
+        // ResolutionStrategy, which is non-null precisely for the Linked documents it
+        // re-emits. Combined with the dead LinkedMachineIds field (always empty), the
+        // guard would therefore throw on every already-linked document it saw. It stayed
+        // latent only because RunBatchAsync streams Pending/Failed/NotInCatalog and never
+        // reaches this path. The re-emit path now reads real machine IDs from the
+        // scraped_documents fan-out, so it satisfies the guard honestly.
         if (FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked
             && ResolutionStrategy is not null
             && (LinkedMachineIds is null || LinkedMachineIds.Count == 0))

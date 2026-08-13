@@ -55,9 +55,6 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     [JsonPropertyName("override_id")]
     public string? OverrideId { get; set; }
 
-    [JsonPropertyName("linked_machine_ids")]
-    public List<string> LinkedMachineIds { get; set; } = [];
-
     [JsonPropertyName("source")]
     public RawSourceInfo? Source { get; set; }
 

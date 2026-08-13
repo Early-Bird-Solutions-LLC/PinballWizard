@@ -70,19 +70,14 @@ public sealed class CaptureGoldenSetCommandTests : IDisposable
         }
     }
 
-    // The production write path never populates RawDocumentRecord.LinkedMachineIds —
-    // nothing in src/ assigns it on the Cosmos wire model, and a live sample of
-    // link_status="linked" documents carries "linked_machine_ids": []. The authoritative
-    // document→machine binding is the scraped_documents fan-out row the linker writes.
-    // Capturing from LinkedMachineIds therefore yields an empty fixture from a corpus
-    // with hundreds of real links, which would leave the Wave-2 gate unarmed. The dead
-    // field itself is tracked in #800.
+    // The authoritative document→machine binding is the scraped_documents fan-out row the
+    // linker writes — not RawDocument, which never carried this binding (the dead
+    // linked_machine_ids field on scraped_documents_raw was removed in #800). Capturing
+    // from the fan-out is the only correct path; this test exercises that path directly.
     [Fact]
     public async Task RunGoldenLinkSet_CapturesEntries_FromFanOutRows_NotRawLinkedMachineIds()
     {
         var raw = MakeRaw("doc-1", "https://sternpinball.com/godzilla-manual.pdf", "godzilla", "stern");
-        // Explicitly empty — this mirrors live data exactly.
-        raw.LinkedMachineIds = [];
 
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         rawRepo.StreamByStatusAsync(Arg.Any<IReadOnlyCollection<LinkStatus>>(), Arg.Any<CancellationToken>())
