@@ -318,15 +318,18 @@ public sealed class AdminSettingsLoadingStateTests : AsyncBunitContext
         // Indicator present while gate is held.
         cut.Find("[data-testid='settings-loading']");
 
-        // Release — data arrives, StateHasChanged fires, tabs appear.
+        // Release the gate, then drain the renderer dispatcher deterministically:
+        // SetResult posts the load continuation (which sets _loading = false and calls
+        // StateHasChanged) onto the dispatcher. Two InvokeAsync flushes run that
+        // continuation and then the resulting re-render, so the assertion never races
+        // thread-pool scheduling. WaitForAssertion's wall-clock poll is what flaked
+        // under CI load (#822).
         _dataGate.SetResult([]);
-        cut.WaitForAssertion(() =>
-        {
-            Assert.Empty(cut.FindAll("[data-testid='settings-loading']"));
-            cut.Find("[data-testid='settings-tabs']");
-        });
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => Task.CompletedTask);
 
-        await Task.CompletedTask;
+        Assert.Empty(cut.FindAll("[data-testid='settings-loading']"));
+        cut.Find("[data-testid='settings-tabs']");
     }
 }
 
