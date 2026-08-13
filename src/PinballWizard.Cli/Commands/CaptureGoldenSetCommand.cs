@@ -508,6 +508,14 @@ internal sealed class PageTextLinkEntry
     public string ExpectedMachineManufacturer { get; init; } = string.Empty;
     public string? ExpectedMachineGroupId { get; init; }
     public List<string> PageTexts { get; init; } = [];       // index 0 = page 1
+    // true  = the excerpt stored in PageTexts is a budget-trimmed excerpt (or the full text
+    //         was already within budget). Either way the resolver outcome was stable under
+    //         truncation — both full text and excerpt resolved to the same machine or family.
+    // false = truncating would have changed the resolver's outcome; the full page text is
+    //         stored so the golden-set fixture encodes exactly what production sees.
+    //
+    // NOTE: this property name is fixed — it is serialized into JSON fixture files, and
+    // renaming it would silently invalidate any existing fixture that contains this field.
     public bool Truncated { get; init; }
 }
 

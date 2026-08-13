@@ -23,6 +23,28 @@ public sealed class CapturePageTextCommandTests
         ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["stern"] = "godzilla" },
     };
 
+    // Two editions that share a GroupId — resolving text with both in the catalog
+    // produces ResolvedFamily, exercising the "family:{GroupId}" branch of Outcome().
+    private static Machine GodzillaPro => new()
+    {
+        Id = "GZ-FAM-PRO-01",
+        PartitionKey = "stern",
+        ManufacturerDisplayName = "stern",
+        Title = "Godzilla",
+        GroupId = "GweeP",
+        ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["stern"] = "godzilla" },
+    };
+
+    private static Machine GodzillaLE => new()
+    {
+        Id = "GZ-FAM-LE-01",
+        PartitionKey = "stern",
+        ManufacturerDisplayName = "stern",
+        Title = "Godzilla",
+        GroupId = "GweeP",
+        ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["stern"] = "godzilla" },
+    };
+
     [Fact]
     public void Truncate_TitleInsideBudget_TruncatesAndPreservesResolution()
     {
@@ -61,5 +83,21 @@ public sealed class CapturePageTextCommandTests
             fullText, manufacturerKey: "stern", resolver, budget: 1000);
 
         Assert.Same(fullText, excerpt);
+    }
+
+    [Fact]
+    public void Truncate_SameGroupId_TruncatesWhenFamilyOutcomeStable()
+    {
+        // Two machines sharing GroupId "GweeP" both resolve to ResolvedFamily for
+        // both the full text and the excerpt — exercises the "family:{GroupId}" branch
+        // of Outcome() and confirms truncation is applied when the family outcome is stable.
+        var resolver = BuildResolver(GodzillaPro, GodzillaLE);
+        var fullText = "Godzilla Service Manual. " + new string('x', 5000);
+
+        var excerpt = CaptureGoldenSetCommand.TruncateWithResolutionParity(
+            fullText, manufacturerKey: "stern", resolver, budget: 1000);
+
+        // Both full text and excerpt resolve to family:GweeP → excerpt is returned.
+        Assert.Equal(1000, excerpt.Length);
     }
 }

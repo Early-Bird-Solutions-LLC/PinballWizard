@@ -73,7 +73,7 @@ param ragIndexerImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('CLI ACA Job container image. Powers BOTH the nightly linker job and the weekly OPDB sync job (the CLI is a command-line entrypoint, not an app). Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy stays smoke-testable before the CLI image is built; Deploy-SharedResources.ps1 auto-discovers the running job image so a manual redeploy never reverts it.')
 param cliImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
-@description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak, prod: 2 am). Has no effect when deployPhase2=false.')
+@description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak, prod: 2 am). Has no effect when deployPhase2=false. NOTE: on Sundays the linker fires at 02:00 UTC, one hour BEFORE the weekly OPDB sync at 03:00 UTC (#840). Documents that fail to link because a new machine is not yet in the catalog (NotInCatalog) are retried on the next daily run — maximum ~24 h delay on Sundays — which is acceptable because newly-added OPDB machines only become linkable after the sync completes anyway.')
 param linkerCronExpression string = '0 2 * * *'
 
 @description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. OPDB changes slowly so weekly is the steady-state cadence; on-demand syncs run via `az containerapp job start` or the local CLI. Has no effect when deployPhase2=false.')
@@ -2401,6 +2401,7 @@ module linkerJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (
         name: 'Storage__BlobEndpoint'
         value: storage.?properties.primaryEndpoints.blob ?? ''
       }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -2483,6 +2484,7 @@ module opdbSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
         name: 'Scraper__DataPath'
         value: '/tmp/pinwiz'
       }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
     // OPDB API token: Key Vault secret resolved at run time by the UAMI.
     // Same construction as the Wizard app's AzureAd-ClientSecret reference.
@@ -2555,6 +2557,7 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -2663,6 +2666,7 @@ module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
       }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
     // Kineticist API key: Key Vault secret resolved at run time by the UAMI.
     // Same construction as the OPDB sync job's Opdb-ApiToken reference. The secret
@@ -2762,6 +2766,7 @@ module twipNewsletterJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
         name: 'AiFoundry__EmbeddingDeploymentName'
         value: foundryEmbeddingDeploymentName
       }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
     ]
@@ -2828,6 +2833,7 @@ module multimorphicScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -2863,6 +2869,7 @@ module cgcScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = i
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -2898,6 +2905,7 @@ module barrelsOfFunScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -2941,6 +2949,7 @@ module sternManualsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -2973,6 +2982,7 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3005,6 +3015,7 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3040,6 +3051,7 @@ module jjpScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = i
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3075,6 +3087,7 @@ module jjpSupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3110,6 +3123,7 @@ module apScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3145,6 +3159,7 @@ module apBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bi
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3180,6 +3195,7 @@ module spookyScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3215,6 +3231,7 @@ module spookySupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3250,6 +3267,7 @@ module pbScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3285,6 +3303,7 @@ module pbDocsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }
@@ -3320,6 +3339,7 @@ module pbFreshdeskScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bi
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
     ]
   }
 }

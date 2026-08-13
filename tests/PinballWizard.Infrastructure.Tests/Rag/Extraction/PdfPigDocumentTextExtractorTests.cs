@@ -291,7 +291,6 @@ public sealed class PdfPigDocumentTextExtractorTests
         var result = await extractor.ExtractPreviewAsync(stream, pageCount: 2, CancellationToken.None);
 
         Assert.Equal(ExtractionStatus.Success, result.Status);
-        Assert.NotEqual(ExtractionStatus.OcrRequired, result.Status);
     }
 
     [Fact]
