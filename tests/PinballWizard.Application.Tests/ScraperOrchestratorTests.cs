@@ -357,6 +357,83 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Timeline = record.Timeline,
     };
 
+    // -------- Intra-run deduplication (issue #854) --------
+
+    [Fact]
+    public async Task ScrapeAsync_DuplicateFileUrl_UpsertsOnceAndPreservesProvenance()
+    {
+        // Fixture: one scraper yields the SAME file URL from two different discovery pages.
+        // This is the exact pattern that caused nightly 412 PreconditionFailed failures for
+        // pinwiz-job-stern-manuals — the second concurrent UpsertRawAsync read a stale ETag.
+        const string duplicateUrl = "https://sternpinball.com/pdf/stern-manual.pdf";
+
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var capturedRecords = new List<DocumentRecord>();
+        rawRepo.UpsertRawAsync(
+                Arg.Do<DocumentRecord>(r => capturedRecords.Add(r)),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => new RawDocumentUpsertResult(MapDomain(ci.Arg<DocumentRecord>()), UpsertOutcome.Updated));
+
+        // Two items with the SAME FileUrl (→ same DocumentId) but DIFFERENT DiscoveryUrls.
+        var firstSighting = MakeLinkItem(
+            fileUrl: duplicateUrl,
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            discoveryUrl: "https://sternpinball.com/manuals/");
+
+        var secondSighting = MakeLinkItem(
+            fileUrl: duplicateUrl,
+            discoveryContext: "Game Page",
+            sourceType: SourceType.ManualsPage,
+            discoveryUrl: "https://sternpinball.com/game/avengers/");
+
+        var scraper = new StubScraper("Manuals", [firstSighting, secondSighting]);
+        var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
+
+        var result = await orch.ScrapeAsync();
+
+        // Exactly one upsert must have fired — the 412 self-collision is eliminated.
+        Assert.Equal(2, result.TotalLinks);   // both links counted as discovered
+        Assert.Empty(result.Errors);
+        await rawRepo.Received(1).UpsertRawAsync(Arg.Any<DocumentRecord>(), Arg.Any<CancellationToken>());
+
+        // The upserted record must carry a CrossReference for the second discovery URL
+        // so provenance is preserved (INVARIANT #1).
+        Assert.Single(capturedRecords);
+        var upserted = capturedRecords[0];
+        Assert.Equal("https://sternpinball.com/manuals/", upserted.Source.DiscoveryUrl,
+            StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(upserted.CrossReferences,
+            xref => string.Equals(xref.AlsoFoundAt, "https://sternpinball.com/game/avengers/",
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_DistinctFileUrls_UpsertsEachDocumentIndependently()
+    {
+        // Fixture: two DIFFERENT file URLs → two different DocumentIds.
+        // Dedup must not suppress distinct documents; each must reach Cosmos.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var capturedIds = new List<string>();
+        rawRepo.UpsertRawAsync(
+                Arg.Do<DocumentRecord>(r => capturedIds.Add(r.DocumentId)),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => new RawDocumentUpsertResult(MapDomain(ci.Arg<DocumentRecord>()), UpsertOutcome.Created));
+
+        var scraper = new StubScraper("Manuals", [
+            MakeLinkItem("https://sternpinball.com/pdf/a.pdf", "Manuals Page", SourceType.ManualsPage),
+            MakeLinkItem("https://sternpinball.com/pdf/b.pdf", "Manuals Page", SourceType.ManualsPage),
+        ]);
+
+        var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
+        var result = await orch.ScrapeAsync();
+
+        Assert.Equal(2, result.TotalLinks);
+        Assert.Empty(result.Errors);
+        await rawRepo.Received(2).UpsertRawAsync(Arg.Any<DocumentRecord>(), Arg.Any<CancellationToken>());
+        Assert.Equal(2, capturedIds.Distinct().Count()); // both are distinct DocumentIds
+    }
+
     // -------- Helpers --------
 
     private static ScrapedItem LinkItem() => new()
@@ -372,7 +449,8 @@ public sealed class ScraperOrchestratorTests : IDisposable
         string discoveryContext,
         SourceType sourceType,
         string? gameSlug = null,
-        string? linkText = null) =>
+        string? linkText = null,
+        string? discoveryUrl = null) =>
         new()
         {
             Link = new DiscoveredLink
@@ -383,7 +461,7 @@ public sealed class ScraperOrchestratorTests : IDisposable
                 GameSlug = gameSlug
             },
             SourceType = sourceType,
-            DiscoveryUrl = "https://sternpinball.com/page/",
+            DiscoveryUrl = discoveryUrl ?? "https://sternpinball.com/page/",
             DiscoveryContext = discoveryContext
         };
 

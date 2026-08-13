@@ -76,8 +76,21 @@ public sealed class ScraperOrchestrator
 
                 var pending = new List<Task>();
 
+                // Per-scraper dedup: accumulate unique DocumentIds before dispatching
+                // Cosmos writes. The same file URL can appear multiple times in one
+                // scraper's output (e.g. Stern manuals page links the same PDF from
+                // both a flat listing and a game-specific anchor). Without dedup, two
+                // concurrent UpsertRawAsync calls for the same DocumentId both read the
+                // same ETag, the first write rotates it, and the second gets a 412
+                // PreconditionFailed — which counts as a job error and exits 1.
+                // Scope is per-scraper: cross-scraper duplicates within the same source
+                // group are safe because the source-group loop drains all pending tasks
+                // in the finally block before the next scraper starts (sequential ETags).
+                var seenDocuments = new Dictionary<string, DocumentRecord>(StringComparer.Ordinal);
+
                 try
                 {
+                    // Phase 1: discover and accumulate (single-threaded; dedup by DocumentId).
                     await foreach (var item in scraper.ScrapeAsync(cancellationToken))
                     {
                         if (item.Game is not null)
@@ -87,20 +100,44 @@ public sealed class ScraperOrchestrator
 
                         if (item.Link is null) continue;
 
-                        var record = BuildDocumentRecord(item);
-                        record.RunId = ScrapeRunId.For(sourceId, runStartedAt);
-                        record.Manufacturer = scraper.Manufacturer;
                         result.TotalLinks++;
                         sourceDocCount++;
 
                         if (dryRun) continue;
 
+                        var record = BuildDocumentRecord(item);
+                        record.RunId = ScrapeRunId.For(sourceId, runStartedAt);
+                        record.Manufacturer = scraper.Manufacturer;
+
+                        if (seenDocuments.TryGetValue(record.DocumentId, out var existingRecord))
+                        {
+                            // Duplicate within this scraper run: merge the second sighting's
+                            // discovery provenance into the first record so it survives to
+                            // Cosmos. Provenance is sacred (INVARIANT #1): no discovery URL
+                            // or context is silently discarded.
+                            MergeInRunDuplicate(existingRecord, record);
+                            _logger.LogDebug(
+                                "Dedup: {DocumentId} seen twice in {ScraperName}; merging provenance, skipping second upsert.",
+                                record.DocumentId, scraper.Name);
+                        }
+                        else
+                        {
+                            seenDocuments[record.DocumentId] = record;
+                        }
+                    }
+
+                    // Phase 2: dispatch one upsert per unique DocumentId (concurrent, under semaphore).
+                    // Because Phase 1 is fully complete, each capturedRecord is stable — no
+                    // concurrent mutation of its CrossReferences list is possible.
+                    foreach (var uniqueRecord in seenDocuments.Values)
+                    {
                         await semaphore.WaitAsync(cancellationToken);
+                        var capturedRecord = uniqueRecord;
                         pending.Add(Task.Run(async () =>
                         {
                             try
                             {
-                                var upsert = await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                                var upsert = await _rawDocRepo.UpsertRawAsync(capturedRecord, cancellationToken);
                                 if (upsert.Outcome == UpsertOutcome.Created)
                                 {
                                     System.Threading.Interlocked.Increment(ref sourceNewCount);
@@ -108,8 +145,8 @@ public sealed class ScraperOrchestrator
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException)
                             {
-                                _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", record.DocumentId);
-                                result.Errors.Add($"{record.DocumentId}: {ex.Message}");
+                                _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", capturedRecord.DocumentId);
+                                result.Errors.Add($"{capturedRecord.DocumentId}: {ex.Message}");
                             }
                             finally
                             {
@@ -240,6 +277,45 @@ public sealed class ScraperOrchestrator
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record run-result accumulator for source '{SourceId}'; the scrape outcome is unaffected.", sourceId);
+        }
+    }
+
+    // Fold the second (duplicate) sighting's provenance into the first record.
+    // The first sighting's Source wins (DiscoveryUrl, Context, etc.); the duplicate's
+    // DiscoveryUrl is added as a CrossReference so no discovery evidence is lost.
+    // This mirrors the cross-reference merge in CosmosRawDocumentRepository.UpsertRawAsync,
+    // making intra-run dedup consistent with the existing inter-run merge behaviour.
+    private static void MergeInRunDuplicate(DocumentRecord primary, DocumentRecord duplicate)
+    {
+        // Seed the known-URL set from the primary's own source URL + any existing XRefs.
+        var knownUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            primary.Source.DiscoveryUrl
+        };
+        foreach (var xref in primary.CrossReferences)
+            knownUrls.Add(xref.AlsoFoundAt);
+
+        // If the duplicate was found at a distinct page, record that page as a cross-reference.
+        if (!string.IsNullOrEmpty(duplicate.Source.DiscoveryUrl) &&
+            knownUrls.Add(duplicate.Source.DiscoveryUrl))
+        {
+            primary.CrossReferences.Add(new CrossReference
+            {
+                AlsoFoundAt = duplicate.Source.DiscoveryUrl,
+                DiscoveryContext = duplicate.Source.DiscoveryContext,
+                LinkText = duplicate.Source.LinkText,
+                DiscoveredAt = DateTime.UtcNow,
+            });
+        }
+
+        // Also fold in any cross-references the duplicate itself carried (e.g. GameSlug
+        // was set, so BuildDocumentRecord added a cross-reference for its GamePageUrl).
+        foreach (var xref in duplicate.CrossReferences)
+        {
+            if (knownUrls.Add(xref.AlsoFoundAt))
+            {
+                primary.CrossReferences.Add(xref);
+            }
         }
     }
 
