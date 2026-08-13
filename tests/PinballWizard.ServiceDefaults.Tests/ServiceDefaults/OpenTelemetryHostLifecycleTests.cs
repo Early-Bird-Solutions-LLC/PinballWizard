@@ -70,8 +70,12 @@ public sealed class OpenTelemetryHostLifecycleTests
         {
             // Assert: an activity started on the PinballWizard source must be non-null.
             // A null return here means no listener is subscribed — the #840 failure mode.
-            using var activity = new ActivitySource(PinballWizardActivitySourceName)
-                .StartActivity("test.span");
+            // ActivitySource is IDisposable and registers itself globally on
+            // construction — hold it in its own `using` so it is deregistered
+            // deterministically rather than lingering for the test-host lifetime.
+            // Declared before `activity` so disposal runs activity-then-source.
+            using var source = new ActivitySource(PinballWizardActivitySourceName);
+            using var activity = source.StartActivity("test.span");
 
             Assert.NotNull(activity);
         }
@@ -103,8 +107,10 @@ public sealed class OpenTelemetryHostLifecycleTests
         // Act: attempt to start an activity WITHOUT calling host.StartAsync().
         // Pre-fix: this is exactly what the CLI did — built the host, resolved
         // services directly, and ran the command, all with providers inert.
-        using var activity = new ActivitySource(PinballWizardActivitySourceName)
-            .StartActivity("test.span.no.start");
+        // Same disposal discipline as the started-host test above: the source owns a
+        // global registration, so it gets its own `using` declared before `activity`.
+        using var source = new ActivitySource(PinballWizardActivitySourceName);
+        using var activity = source.StartActivity("test.span.no.start");
 
         // Assert: null — the SDK returns null when no listener is subscribed.
         // If this assertion ever fails, the OTel SDK no longer uses lazy-init
