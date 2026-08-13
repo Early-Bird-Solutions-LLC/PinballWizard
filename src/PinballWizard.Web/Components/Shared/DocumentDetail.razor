@@ -2,6 +2,7 @@
 @using PinballWizard.Application.Documents
 @using PinballWizard.Application.Persistence
 @inject IRawDocumentRepository Repo
+@inject IScrapedDocumentRepository ScrapedRepo
 @inject NavigationManager Nav
 @inject ILogger<DocumentDetail> Logger
 
@@ -41,10 +42,13 @@ else
                     @if (_doc.GameTitle is not null)
                     {
                         <MudText Typo="Typo.body1" Class="mb-1" data-testid="doc-detail-game">
-                            @if (!string.IsNullOrWhiteSpace(_doc.MachineId) && !string.IsNullOrWhiteSpace(_doc.ManufacturerKey))
+                            @{
+                                var primaryMachineId = _machineIds.FirstOrDefault();
+                            }
+                            @if (!string.IsNullOrWhiteSpace(primaryMachineId) && !string.IsNullOrWhiteSpace(_doc.ManufacturerKey))
                             {
-                                <MachineLink MachineId="@_doc.MachineId" 
-                                             ManufacturerKey="@_doc.ManufacturerKey" 
+                                <MachineLink MachineId="@primaryMachineId"
+                                             ManufacturerKey="@_doc.ManufacturerKey"
                                              Title="@($"{_doc.GameTitle}{(_doc.Edition is not null ? $" {_doc.Edition}" : "")}")" />
                             }
                             else
@@ -162,15 +166,19 @@ else
                             @_doc.DocumentId
                         </MudText>
 
-                        @if (_doc.LinkedMachineIds?.Count > 0)
+                        @if (_machineIds.Count > 0)
                         {
                             <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Linked Machines</MudText>
-                            <MudStack Row="true" Wrap="Wrap.Wrap">
-                                @foreach (var id in _doc.LinkedMachineIds)
+                            <MudStack Row="true" Wrap="Wrap.Wrap" data-testid="doc-detail-machine-list">
+                                @foreach (var id in _machineIds)
                                 {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@id</MudChip>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" data-testid="doc-detail-machine-chip">@id</MudChip>
                                 }
                             </MudStack>
+                        }
+                        else
+                        {
+                            <AppEmptyState Heading="No machines linked" data-testid="doc-detail-machines-empty" />
                         }
                     </MudCardContent>
                 </MudCard>
@@ -184,6 +192,10 @@ else
     [Parameter] public bool IsAdmin { get; set; }
 
     private DocumentDetailRecord? _doc;
+    // Machine IDs sourced from scraped_documents fan-out rows — the authoritative
+    // document→machine binding written by DocumentLinker.WriteFanOutAsync.
+    // Replaces the former DocumentDetailRecord.LinkedMachineIds dead field (#800).
+    private List<string> _machineIds = [];
     private bool _loading = true;
     private bool _loadError;
     private CancellationTokenSource _cts = new();
@@ -200,10 +212,19 @@ else
         _loading = true;
         _loadError = false;
         _doc = null;
+        _machineIds = [];
 
         try
         {
             _doc = await Repo.GetDocumentDetailAsync(DocumentId, IsAdmin, token);
+            if (_doc is not null)
+            {
+                await foreach (var machineId in ScrapedRepo.StreamByDocumentIdAsync(DocumentId, token)
+                    .ConfigureAwait(false))
+                {
+                    _machineIds.Add(machineId);
+                }
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)

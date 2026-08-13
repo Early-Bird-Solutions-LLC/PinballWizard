@@ -23,6 +23,7 @@ namespace PinballWizard.Web.Tests.Components.SharedComponents;
 public sealed class DocumentDetailTests : AsyncBunitContext
 {
     private readonly IRawDocumentRepository _repo = Substitute.For<IRawDocumentRepository>();
+    private readonly IScrapedDocumentRepository _scrapedRepo = Substitute.For<IScrapedDocumentRepository>();
     private const string FakeDocId = "doc_abc123";
 
     public DocumentDetailTests()
@@ -30,10 +31,15 @@ public sealed class DocumentDetailTests : AsyncBunitContext
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton(_repo);
+        Services.AddSingleton(_scrapedRepo);
         Services.AddSingleton<ILogger<PinballWizard.Web.Components.Shared.DocumentDetail>>(
             NullLogger<PinballWizard.Web.Components.Shared.DocumentDetail>.Instance);
         this.AddAuthorization().SetAuthorized("test@example.com");
         _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        // Default: fan-out returns no machine IDs (unlinked document baseline).
+        _scrapedRepo.StreamByDocumentIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<string>());
     }
 
     private static DocumentDetailRecord MakeDetail(string? linkStatus = null, string? mfrKey = "stern") =>
@@ -53,8 +59,7 @@ public sealed class DocumentDetailTests : AsyncBunitContext
             LastDownloadedAt: DateTimeOffset.UtcNow,
             LinkStatus: linkStatus,
             LinkFailureReason: linkStatus is "failed" ? "No match found" : null,
-            ResolutionStrategy: linkStatus is "linked" ? "title match" : null,
-            LinkedMachineIds: linkStatus is "linked" ? ["G4do5-MkPnV"] : null)
+            ResolutionStrategy: linkStatus is "linked" ? "title match" : null)
         { ManufacturerKey = mfrKey };
 
     private IRenderedComponent<PinballWizard.Web.Components.Shared.DocumentDetail> RenderDetail(
@@ -176,5 +181,67 @@ public sealed class DocumentDetailTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         cut.Find("[data-testid='doc-detail-load-error']");
+    }
+
+    // ── Machine list — the canonical behavior tests for #800 ──────────────────
+    //
+    // The linked-machine panel was permanently empty before #800 because
+    // DocumentDetailRecord.LinkedMachineIds was sourced from a field
+    // (linked_machine_ids on scraped_documents_raw) that the linker never writes.
+    // The panel now reads from the scraped_documents fan-out container via
+    // IScrapedDocumentRepository.StreamByDocumentIdAsync.
+
+    [Fact]
+    public async Task AdminPanel_LinkedDocument_ShowsMachineChips_WhenFanOutReturnsIds()
+    {
+        // Arrange: a linked document with two fan-out rows.
+        _repo.GetDocumentDetailAsync(FakeDocId, true, Arg.Any<CancellationToken>())
+             .Returns(MakeDetail("linked"));
+        _scrapedRepo.StreamByDocumentIdAsync(FakeDocId, Arg.Any<CancellationToken>())
+             .Returns(ToAsyncEnumerable("GweeP-MW95j", "GweeP-Ml9pZ"));
+
+        // Act
+        var cut = RenderDetail(FakeDocId, isAdmin: true);
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Assert: both machine ID chips are rendered.
+        var chips = cut.FindAll("[data-testid='doc-detail-machine-chip']");
+        Assert.Equal(2, chips.Count);
+        var texts = chips.Select(c => c.TextContent.Trim()).ToList();
+        Assert.Contains("GweeP-MW95j", texts);
+        Assert.Contains("GweeP-Ml9pZ", texts);
+        // The empty-state sentinel must not appear when machines are present.
+        Assert.Empty(cut.FindAll("[data-testid='doc-detail-machines-empty']"));
+    }
+
+    [Fact]
+    public async Task AdminPanel_LinkedDocument_ShowsEmptyState_WhenFanOutReturnsNoIds()
+    {
+        // Arrange: a linked document but no fan-out rows (e.g. linker race,
+        // or the document was reset to pending mid-view).
+        _repo.GetDocumentDetailAsync(FakeDocId, true, Arg.Any<CancellationToken>())
+             .Returns(MakeDetail("linked"));
+        // Default setup already returns empty; restated here for clarity.
+        _scrapedRepo.StreamByDocumentIdAsync(FakeDocId, Arg.Any<CancellationToken>())
+             .Returns(AsyncEnumerable.Empty<string>());
+
+        // Act
+        var cut = RenderDetail(FakeDocId, isAdmin: true);
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Assert: no machine chips, empty-state sentinel present.
+        Assert.Empty(cut.FindAll("[data-testid='doc-detail-machine-chip']"));
+        cut.Find("[data-testid='doc-detail-machines-empty']");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static async IAsyncEnumerable<string> ToAsyncEnumerable(params string[] items)
+    {
+        foreach (var item in items)
+        {
+            await Task.CompletedTask;
+            yield return item;
+        }
     }
 }
