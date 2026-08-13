@@ -83,8 +83,12 @@ public sealed class FileDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadAsync_200_BuffersContentComputesHashAndPopulatesHttp()
+    public async Task DownloadAsync_200_StreamsToTempFile_ComputesHashAndPopulatesHttp()
     {
+        // Verifies the full happy-path contract: bytes are transferred, SHA-256 is
+        // computed in the streaming pass, HTTP metadata is captured, and the Content
+        // stream returned to the caller is readable. The backing is now a
+        // DeleteOnClose temp FileStream rather than a MemoryStream (#836).
         const string body = "hello pinball";
         var bodyBytes = Encoding.UTF8.GetBytes(body);
 
@@ -193,6 +197,32 @@ public sealed class FileDownloaderTests : IDisposable
         Assert.Equal(DownloadStatus.TooLarge, result.Status);
         var absolute = Path.Combine(settings.DownloadsPath, "manuals/huge.zip");
         Assert.False(File.Exists(absolute));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_TransferExceedsMax_WhenNoContentLength_ReturnsTooLarge()
+    {
+        // "Lying server" path: no Content-Length header, but the response body
+        // exceeds the cap mid-transfer. The streaming size guard must detect this
+        // and return TooLarge (not a partial Downloaded result). The caller (#839
+        // terminal-skip path) must receive TooLarge so it stamps a skip record
+        // rather than silently counting this as a failure.
+        var largeBody = new byte[2048];
+        var (downloader, _, _, _) = CreateDownloader((_, response) =>
+        {
+            response.StatusCode = HttpStatusCode.OK;
+            // Deliberately no ContentLength header — the pre-check passes.
+            response.Content = new ByteArrayContent(largeBody);
+        }, maxFileSize: 1024);
+
+        var result = await downloader.DownloadAsync(
+            "https://sternpinball.com/undeclared-large.zip",
+            "manuals/undeclared-large.zip");
+
+        Assert.Equal(DownloadStatus.TooLarge, result.Status);
+        Assert.Null(result.Content);  // no partial content on TooLarge
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Contains("exceeds MaxFileSizeBytes", result.ErrorMessage);
     }
 
     [Fact]

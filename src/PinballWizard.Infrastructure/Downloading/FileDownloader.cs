@@ -159,79 +159,109 @@ public sealed class FileDownloader : IFileDownloader
                 };
             }
 
-            // Buffer into a MemoryStream so SHA-256, size, and content are all
-            // captured in a single streaming pass. The caller (DocumentDownloadService)
-            // disposes the stream after writing it to the durable blob store.
-            // Largest known document in scope is ~80 MB (Stern Godzilla service manual),
-            // which fits safely inside the ACA container's 1 GiB memory limit —
-            // same headroom analysis as BlobDocumentStore.OpenReadAsync.
+            // Stream to a DeleteOnClose temp file so SHA-256, size, and content are
+            // all captured in a single pass without materializing the whole document
+            // on the heap. The previous MemoryStream approach reasoned about ONE
+            // document fitting comfortably in memory, but never accounted for
+            // MaxConcurrentDownloads(3) simultaneous downloads, MemoryStream's
+            // doubling growth transiently costing old+new buffers on the LOH, or
+            // documents up to MaxFileSizeBytes(500 MB) — same analysis that drove
+            // BlobDocumentStore to temp-file backing in #832. The caller
+            // (DocumentDownloadService) disposes the returned stream after uploading
+            // it to blob storage; DeleteOnClose ensures the temp file is removed at
+            // that point (#836).
+            //
+            // DeleteOnClose on Linux unlinks at DISPOSE (SafeFileHandle.ReleaseHandle
+            // "mimics" the flag), not at open — so a SIGKILL leaves the file. That is
+            // acceptable by construction: ACA container-scoped ephemeral storage
+            // disappears when the container shuts down or restarts, so an orphan can
+            // never outlive the failed execution (mirrors the BlobDocumentStore comment).
             using var hash = SHA256.Create();
             long bytesWritten = 0;
             var buffer = new byte[81920];
-            var contentBuffer = new MemoryStream();
-            bool exceededDuringTransfer = false;
 
-            await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            var contentBuffer = new FileStream(
+                tempPath,
+                FileMode.CreateNew,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+            try
             {
-                int bytesRead;
-                while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
-                {
-                    await contentBuffer.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                    hash.TransformBlock(buffer, 0, bytesRead, null, 0);
-                    bytesWritten += bytesRead;
+                bool exceededDuringTransfer = false;
 
-                    if (bytesWritten > _settings.MaxFileSizeBytes)
+                await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                {
+                    int bytesRead;
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
                     {
-                        exceededDuringTransfer = true;
-                        break;
+                        await contentBuffer.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                        hash.TransformBlock(buffer, 0, bytesRead, null, 0);
+                        bytesWritten += bytesRead;
+
+                        if (bytesWritten > _settings.MaxFileSizeBytes)
+                        {
+                            exceededDuringTransfer = true;
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (exceededDuringTransfer)
-            {
-                await contentBuffer.DisposeAsync();
-                // Server omitted Content-Length so the pre-check above passed;
-                // discovered the cap breach mid-transfer. Same TooLarge semantics
-                // as the Content-Length path — permanent under the current cap.
-                var detail = $"{bytesWritten:N0} bytes exceeds MaxFileSizeBytes={_settings.MaxFileSizeBytes:N0}";
-                _logger.LogWarning("File exceeded cap during transfer (no Content-Length): {Url} — {Detail}", fileUrl, detail);
+                if (exceededDuringTransfer)
+                {
+                    await contentBuffer.DisposeAsync();  // DeleteOnClose removes the temp file
+                    // Server omitted Content-Length so the pre-check above passed;
+                    // discovered the cap breach mid-transfer. Same TooLarge semantics
+                    // as the Content-Length path — permanent under the current cap.
+                    var detail = $"{bytesWritten:N0} bytes exceeds MaxFileSizeBytes={_settings.MaxFileSizeBytes:N0}";
+                    _logger.LogWarning("File exceeded cap during transfer (no Content-Length): {Url} — {Detail}", fileUrl, detail);
+                    return new DownloadResult
+                    {
+                        Status = DownloadStatus.TooLarge,
+                        FileUrl = fileUrl,
+                        LocalPath = localPath,
+                        SizeBytes = bytesWritten,
+                        ErrorMessage = detail,
+                    };
+                }
+
+                hash.TransformFinalBlock([], 0, 0);
+                var sha256 = Convert.ToHexString(hash.Hash!).ToLowerInvariant();
+
+                var httpMetadata = new HttpMetadata
+                {
+                    ETag = response.Headers.ETag?.Tag,
+                    LastModified = response.Content.Headers.LastModified?.UtcDateTime,
+                    ContentType = response.Content.Headers.ContentType?.MediaType,
+                    ContentLength = bytesWritten
+                };
+
+                _logger.LogInformation("Downloaded {Size:N0} bytes: {Url} → {BlobName}",
+                    bytesWritten, fileUrl, localPath);
+
+                contentBuffer.Position = 0;
                 return new DownloadResult
                 {
-                    Status = DownloadStatus.TooLarge,
+                    Status = DownloadStatus.Downloaded,
                     FileUrl = fileUrl,
                     LocalPath = localPath,
+                    Filename = Path.GetFileName(localPath),
                     SizeBytes = bytesWritten,
-                    ErrorMessage = detail,
+                    Sha256 = sha256,
+                    Http = httpMetadata,
+                    Content = contentBuffer  // temp FileStream; caller disposes → DeleteOnClose
                 };
             }
-
-            hash.TransformFinalBlock([], 0, 0);
-            var sha256 = Convert.ToHexString(hash.Hash!).ToLowerInvariant();
-
-            var httpMetadata = new HttpMetadata
+            catch
             {
-                ETag = response.Headers.ETag?.Tag,
-                LastModified = response.Content.Headers.LastModified?.UtcDateTime,
-                ContentType = response.Content.Headers.ContentType?.MediaType,
-                ContentLength = bytesWritten
-            };
-
-            _logger.LogInformation("Downloaded {Size:N0} bytes: {Url} → {BlobName}",
-                bytesWritten, fileUrl, localPath);
-
-            contentBuffer.Position = 0;
-            return new DownloadResult
-            {
-                Status = DownloadStatus.Downloaded,
-                FileUrl = fileUrl,
-                LocalPath = localPath,
-                Filename = Path.GetFileName(localPath),
-                SizeBytes = bytesWritten,
-                Sha256 = sha256,
-                Http = httpMetadata,
-                Content = contentBuffer
-            };
+                // Network error, disk full, or cancellation — dispose the temp file
+                // (DeleteOnClose removes it) and let the exception propagate to the
+                // outer handler, which converts it to the appropriate DownloadResult.
+                await contentBuffer.DisposeAsync();
+                throw;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
