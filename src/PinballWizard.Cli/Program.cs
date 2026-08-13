@@ -2171,7 +2171,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         // to Azure Monitor before the process terminates. Critical for a short-lived
         // CLI job — without this, all in-flight spans and metrics are discarded on
         // exit. This is paired with StartAsync() above; see #840 for the root cause.
-        await host.StopAsync(cancellationToken);
+        //
+        // CancellationToken.None is deliberate, NOT an oversight. StopAsync's token
+        // means "stop being graceful" — passing the run token would, on Ctrl+C or an
+        // ACA SIGTERM, hand StopAsync an ALREADY-CANCELLED token and abandon the
+        // flush at exactly the moment the telemetry matters most (a cancelled or
+        // timed-out run is when you most want its traces), and would throw from this
+        // finally block, masking the original outcome. The shutdown is still bounded
+        // — HostOptions.ShutdownTimeout caps StopAsync independently of this token.
+        await host.StopAsync(CancellationToken.None);
     }
 });
 
