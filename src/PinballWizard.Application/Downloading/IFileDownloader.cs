@@ -38,7 +38,17 @@ public enum DownloadStatus
     /// this origin" signal, distinct from a per-file <see cref="Failed"/>. The caller
     /// should stop downloading from this origin but may continue with other origins.
     /// </summary>
-    PolitenessAbort
+    PolitenessAbort,
+
+    /// <summary>
+    /// The server returned a permanent client-side rejection: 403 Forbidden, 404 Not
+    /// Found, or 410 Gone. These indicate the resource is structurally unavailable at
+    /// this URL — not a transient network error that retry would fix. The caller stamps
+    /// a terminal skip record so future runs bypass the download attempt rather than
+    /// re-hitting a known-dead URL every night (mirrors the <see cref="TooLarge"/>
+    /// pattern, #819/#839).
+    /// </summary>
+    PermanentRejection
 }
 
 public sealed class DownloadResult

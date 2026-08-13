@@ -112,6 +112,28 @@ public sealed class FileDownloader : IFileDownloader
             if (!response.IsSuccessStatusCode)
             {
                 var statusErr = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}".Trim();
+
+                // 403 Forbidden, 404 Not Found, and 410 Gone are permanent client-side
+                // rejections — the resource is access-controlled, absent, or explicitly
+                // removed at the origin. The resilience pipeline does not retry these
+                // (they are not transient), and re-running the nightly job will not change
+                // the outcome. Returning PermanentRejection signals the Application layer
+                // to stamp a terminal skip record, keeping the job green and avoiding a
+                // futile re-attempt on every subsequent run (#839, mirrors TooLarge #819).
+                if (response.StatusCode is HttpStatusCode.Forbidden
+                    or HttpStatusCode.NotFound
+                    or HttpStatusCode.Gone)
+                {
+                    _logger.LogWarning("Permanent rejection for {Url}: {Status}", fileUrl, statusErr);
+                    return new DownloadResult
+                    {
+                        Status = DownloadStatus.PermanentRejection,
+                        FileUrl = fileUrl,
+                        LocalPath = localPath,
+                        ErrorMessage = statusErr
+                    };
+                }
+
                 _logger.LogError("Download failed for {Url}: {Status}", fileUrl, statusErr);
                 return new DownloadResult
                 {

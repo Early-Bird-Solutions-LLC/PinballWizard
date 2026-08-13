@@ -26,12 +26,15 @@ internal static class DownloadDocumentsCommand
         Console.WriteLine();
         Console.WriteLine($"--download-documents complete: " +
             $"downloaded={summary.Downloaded} skipped={summary.Skipped} failed={summary.Failed} " +
-            $"skipped_too_large={summary.SkippedTooLarge} backfilled={summary.Backfilled}");
+            $"skipped_too_large={summary.SkippedTooLarge} " +
+            $"skipped_permanent_rejection={summary.SkippedPermanentRejection} " +
+            $"backfilled={summary.Backfilled}");
 
-        // Only UNEXPECTED failures drive the non-zero exit code. TooLarge docs are
-        // permanent terminal skips under the current cap — they are expected, visible,
-        // and metered (pinwiz.download.too_large_skip_total) but not operationally
-        // actionable until MaxFileSizeBytes is deliberately raised.
+        // Only UNEXPECTED failures drive the non-zero exit code.
+        // TooLarge and PermanentRejection docs are terminal skips — they are expected,
+        // visible, and metered, but not operationally actionable by the nightly job:
+        //   TooLarge:            re-attempted if MaxFileSizeBytes is raised
+        //   PermanentRejection:  re-checked via --force-redownload after origin is fixed
         if (summary.Failed > 0)
             Environment.ExitCode = 1;
     }

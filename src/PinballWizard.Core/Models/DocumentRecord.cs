@@ -153,6 +153,15 @@ public sealed class DownloadSkipInfo
         /// not a transient error — so the record is skipped until the cap is raised.
         /// </summary>
         public const string TooLarge = "too_large";
+
+        /// <summary>
+        /// The server returned a permanent client-side rejection: HTTP 403 Forbidden,
+        /// 404 Not Found, or 410 Gone. These are structurally undownloadable under the
+        /// current URL — the resource is gone or access-controlled at the origin level.
+        /// The record is skipped on every future run; <c>--force-redownload</c> bypasses
+        /// the skip for an operator-driven re-check.
+        /// </summary>
+        public const string PermanentRejection = "permanent_rejection";
     }
 }
 

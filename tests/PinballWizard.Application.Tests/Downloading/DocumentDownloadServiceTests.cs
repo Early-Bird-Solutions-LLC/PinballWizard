@@ -595,6 +595,148 @@ public sealed class DocumentDownloadServiceTests
             raw.Source.FileUrl!, Arg.Any<string>(), null, Arg.Any<CancellationToken>());
     }
 
+    // ── PermanentRejection terminal skip semantics (#839) ────────────────
+
+    [Fact]
+    public async Task PermanentRejection_FirstEncounter_StampsSkipRecord_CountsInNewBucket_NotFailed()
+    {
+        // A file whose download returns a permanent client-side rejection (403/404/410)
+        // on first attempt must be recorded as a terminal skip (not a failure), so
+        // future runs don't re-attempt it and it doesn't contribute to the nightly
+        // failure count / exit-code-1 alert (#839, mirrors TooLarge #819).
+        var raw = MakeRaw("doc_7d1e20", "https://spookypinball.s3.us-east-2.amazonaws.com/ultraman/software_versions/v1.08a/code_UM.pkg", file: null);
+        StubStream(raw);
+        _blobStore.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.PermanentRejection,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "spookysupportpage/code_UM.pkg",
+                ErrorMessage = "HTTP 403 Forbidden",
+            });
+
+        var svc = MakeSvc();
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
+
+        // Counted in the new SkippedPermanentRejection bucket — NOT as failed.
+        Assert.Equal(1, summary.SkippedPermanentRejection);
+        Assert.Equal(0, summary.Failed);
+        Assert.Equal(0, summary.Downloaded);
+        Assert.Equal(0, summary.SkippedTooLarge);
+
+        // Skip record must be stamped in Cosmos so future runs can bypass the downloader.
+        await _repo.Received(1).MarkDownloadSkipAsync(
+            "doc_7d1e20",
+            Arg.Is<DownloadSkipInfo>(s =>
+                s.Reason == DownloadSkipInfo.Reasons.PermanentRejection &&
+                s.ObservedSizeBytes == null),
+            Arg.Any<CancellationToken>());
+
+        // File record is NOT stamped — the document was never actually downloaded.
+        await _repo.DidNotReceive().UpdateFileAsync(
+            Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PermanentRejection_AlreadyStamped_SkipsWithoutCallingDownloader()
+    {
+        // A doc already stamped as PermanentRejection must be silently skipped on every
+        // subsequent run — the downloader must never be invoked. Unlike TooLarge there is
+        // no operator-configurable parameter that might allow a re-attempt; the only
+        // recovery path is --force-redownload.
+        var raw = MakeRaw("doc_pr_stamped", "https://spookypinball.s3.amazonaws.com/x.pkg", file: null,
+            downloadSkip: new DownloadSkipInfo
+            {
+                Reason = DownloadSkipInfo.Reasons.PermanentRejection,
+                ObservedSizeBytes = null,
+                CapBytesAtSkip = 0,
+                SkippedAt = DateTime.UtcNow.AddDays(-3),
+            });
+        StubStream(raw);
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.SkippedPermanentRejection);
+        Assert.Equal(0, summary.Failed);
+        Assert.Equal(0, summary.Downloaded);
+
+        // Downloader must NOT be called — the point is to avoid a futile round-trip.
+        await _downloader.DidNotReceive().DownloadAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+        // No new skip record stamp needed (already stamped in a prior run).
+        await _repo.DidNotReceive().MarkDownloadSkipAsync(
+            Arg.Any<string>(), Arg.Any<DownloadSkipInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Force_BypassesPermanentRejectionTerminalSkip_AndReAttempts()
+    {
+        // --force-redownload must bypass ALL skip checks including the PermanentRejection
+        // terminal skip so the operator can force a re-check (e.g. after the S3 bucket
+        // policy or URL has been corrected) without waiting for the stale skip to be cleared.
+        var raw = MakeRaw("doc_pr_force", "https://spookypinball.s3.amazonaws.com/y.pkg", file: null,
+            downloadSkip: new DownloadSkipInfo
+            {
+                Reason = DownloadSkipInfo.Reasons.PermanentRejection,
+                ObservedSizeBytes = null,
+                CapBytesAtSkip = 0,
+                SkippedAt = DateTime.UtcNow.AddDays(-1),
+            });
+        StubStream(raw);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Downloaded,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "spookysupportpage/y.pkg",
+                Filename = "y.pkg",
+                Content = new MemoryStream(),
+            });
+
+        var summary = await MakeSvc().RunAsync(force: true, CancellationToken.None);
+
+        Assert.Equal(1, summary.Downloaded);
+        Assert.Equal(0, summary.SkippedPermanentRejection);
+
+        // Force must invoke the downloader even though DownloadSkip is stamped.
+        await _downloader.Received(1).DownloadAsync(
+            raw.Source.FileUrl!, Arg.Any<string>(), null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TransientFailure_StillCountsFailed_AndDoesNotStampSkipRecord()
+    {
+        // A genuinely unexpected failure (e.g. HTTP 500 Internal Server Error) must
+        // NOT be classified as a terminal skip — it still counts as Failed and drives
+        // exit code 1. Only the specific permanent client-side rejection codes
+        // (403/404/410) receive terminal-skip treatment (#839).
+        var raw = MakeRaw("doc_transient", "https://sternpinball.com/broken.pdf", file: null);
+        StubStream(raw);
+        _blobStore.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Failed,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "manualspage/broken.pdf",
+                ErrorMessage = "HTTP 500 Internal Server Error",
+            });
+
+        var svc = MakeSvc();
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
+
+        // Transient failure: Failed=1, exit-code-driving bucket populated.
+        Assert.Equal(1, summary.Failed);
+        Assert.Equal(0, summary.SkippedPermanentRejection);
+        Assert.Equal(0, summary.SkippedTooLarge);
+        Assert.Equal(0, summary.Downloaded);
+
+        // No terminal skip record stamped — a 500 may succeed on the next run.
+        await _repo.DidNotReceive().MarkDownloadSkipAsync(
+            Arg.Any<string>(), Arg.Any<DownloadSkipInfo>(), Arg.Any<CancellationToken>());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private DocumentDownloadService MakeSvc() =>
