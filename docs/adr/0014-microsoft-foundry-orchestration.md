@@ -182,7 +182,13 @@ project. SDK pins (Wave 2 PR 4):
 - `Microsoft.Agents.AI.Foundry` (preview; latest at PR-build time)
 - `Azure.Identity` (latest GA)
 - `Azure.Monitor.OpenTelemetry.AspNetCore` (for App Insights export
-  post-deployPhase2)
+  post-deployPhase2) — **superseded on this point by
+  [ADR-0055](0055-azure-monitor-exporter-explicit-connection-string.md).** The
+  shipped App Insights transport is `Azure.Monitor.OpenTelemetry.Exporter`, wired
+  directly in `ServiceDefaults`: the AspNetCore distro attaches to the ASP.NET Core
+  request pipeline and so would not cover the CLI/job and worker hosts, which are
+  exactly the ones whose telemetry was missing (#840). The rest of this pin list
+  stands.
 
 ### Foundry resource shape (Bicep)
 
