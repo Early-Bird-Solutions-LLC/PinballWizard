@@ -17,13 +17,18 @@ directory is the authoritative source. It provides four layers of behavior:
 | `.claude/commands/` | 14 slash-command definitions (`/ship`, `/debug`, `/spec`, `/plan`, `/pr`, …) | Short-form entry points into the skills |
 | `.claude/agents/` | `codebase-analyzer`, `web-search-researcher`, `thoughts-analyzer`, `modernization-analyst` | Specialized sub-agents dispatched for targeted research tasks |
 
-Global rules from `~/.claude/` (the APS standards corpus) largely don't apply here:
-their trigger conditions reference APS repo names, resource types, and package IDs
-that are absent from this codebase, so they are silent in practice. Full upstream
-suppression — path-scoped so the APS corpus never loads in `c:\earlybird\` sessions
-— ships as a separate change against `APS.JimClaudeCodeConfig` (ADR-0040 Half B) and
-is not yet merged. Until that lands, the in-repo config is the operative override
-layer.
+Global rules from `~/.claude/` (the APS standards corpus) do not apply here. Upstream
+suppression (ADR-0040 Half B) **merged 2026-08-13**: every APS rule's `paths:`
+frontmatter is now scoped to `**/APS.*/**` + `**/APS-*/**`, so a rule loads only when
+the conversation touches files inside an APS repo directory — which no path in this
+repo is. The in-repo `.claude/` config remains the operative layer for this project's
+own conventions.
+
+> Until that shipped, the corpus **did** load here, contrary to what this section
+> previously claimed. The earlier description — suppression "path-scoped so the APS
+> corpus never loads in `c:\earlybird\` sessions" — described a working-directory
+> mechanism that never existed; the guard has always matched on the files in the
+> conversation. See issue #835 and the correction note in ADR-0040.
 
 ## How the pieces compose
 
