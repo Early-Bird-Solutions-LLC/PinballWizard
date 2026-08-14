@@ -30,11 +30,17 @@ public sealed class DocumentRecord
     public string? Manufacturer { get; set; }
 
     /// <summary>
-    /// Generates a deterministic document ID from a canonical file URL.
+    /// Generates a deterministic document ID from a file URL.
+    ///
+    /// Known host aliases are resolved to their canonical host before hashing
+    /// (see <see cref="UrlCanonicalizer"/>), so the same physical file served
+    /// under two hostnames maps to one document id. The original URL is always
+    /// stored in <see cref="Source"/> — only the hash input is normalized.
     /// </summary>
     public static string GenerateId(string fileUrl)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(fileUrl.ToLowerInvariant()));
+        var canonical = UrlCanonicalizer.Canonicalize(fileUrl);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToLowerInvariant()));
         return $"doc_{Convert.ToHexString(hash)[..16].ToLowerInvariant()}";
     }
 }
