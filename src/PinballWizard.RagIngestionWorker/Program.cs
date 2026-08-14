@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Infrastructure.Catalog;
+using PinballWizard.Infrastructure.Credentials;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -30,7 +31,11 @@ using PinballWizard.ServiceDefaults;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddServiceDefaults();
+// Credential: the process-wide UAMI (SharedAzureCredential.Instance) authenticates
+// the Azure Monitor exporters against pinwiz-ai-dev, which has DisableLocalAuth=true
+// and rejects key-based ingestion. One process-wide credential avoids the token-cache
+// contention that caused the 2026-06-11 eval outage (issue #362).
+builder.AddServiceDefaults(credential: SharedAzureCredential.Instance);
 
 // Cosmos persistence — required for the worker to function at all.
 // Both the source (`scraped_documents`) + lease + state + dead-letter

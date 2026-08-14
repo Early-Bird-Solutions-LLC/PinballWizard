@@ -29,6 +29,7 @@ using MudBlazor.Services;
 using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Catalog;
+using PinballWizard.Infrastructure.Credentials;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
@@ -51,7 +52,11 @@ var builder = WebApplication.CreateBuilder(args);
 // ── Aspire shared defaults ─────────────────────────────────────────────────
 // OTel (logs / metrics / traces + OTLP exporter when env var present),
 // service discovery, standard HTTP resilience, /healthz + /alive.
-builder.AddServiceDefaults();
+// Credential: the process-wide UAMI (SharedAzureCredential.Instance) authenticates
+// the Azure Monitor exporters against pinwiz-ai-dev, which has DisableLocalAuth=true
+// and rejects key-based ingestion. One process-wide credential avoids the token-cache
+// contention that caused the 2026-06-11 eval outage (issue #362).
+builder.AddServiceDefaults(credential: SharedAzureCredential.Instance);
 
 // ── Razor components (Blazor Web App, auto-render mode per ADR-0026 § 1) ──
 builder.Services.AddRazorComponents()

@@ -333,14 +333,22 @@ resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01'
 }
 
 // -----------------------------------------------------------------------------
-// Runtime data-plane RBAC for the user-assigned acaIdentity (the Wizard API +
-// Web container apps run as this MI). The serving path is READ-ONLY — it queries
-// the AI Search index, reads Cosmos machine records, and calls Foundry chat +
-// embedding. It never writes the index or mutates Cosmos. Roles are therefore
-// the least-privilege READER tier, in contrast to the ragIndexerApp's CONTRIBUTOR
-// roles (it upserts the index). Gated on deployPhase2 && deployAiSearch to match
-// the resources they scope to (foundry/search exist only in Phase 2). Without
-// these, the configured Api still 403s under DefaultAzureCredential.
+// Runtime data-plane RBAC for the user-assigned acaIdentity (all ACA hosts: Api,
+// Web, RagIngestionWorker, and all scheduled CLI jobs). AZURE_CLIENT_ID is set on
+// every ACA resource so DefaultAzureCredential selects this UAMI unambiguously.
+//
+// Role tiers by host:
+//   Api + Web (serving path): READ-ONLY — query AI Search, read Cosmos, call Foundry.
+//   RagIngestionWorker: inherited from the host's own DI wiring (no direct data access).
+//   ragIndexerApp: CONTRIBUTOR — writes (upserts) the AI Search index, calls Foundry
+//     inference, reads/writes Document Intelligence. Roles were previously on the
+//     ragIndexerApp's system-assigned MI; they are now also on the UAMI so that
+//     AZURE_CLIENT_ID (added in #840) does not break existing access (#840 follow-through).
+//   CLI scheduled jobs: Cosmos data contributor + Storage Blob Data Contributor
+//     (see acaIdentityCosmosData + acaIdentityStorageAccountBlobContributor).
+//
+// Gated on deployPhase2 && deployAiSearch where the scoped resource requires it.
+// Without these, the configured hosts 403 under DefaultAzureCredential.
 //
 // guid() keys on the MI name string (not acaIdentity.id) to avoid a circular
 // dependency on the MI's runtime properties — same convention as acaIdentityAcrPull.
@@ -348,7 +356,14 @@ resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01'
 // Cosmos data-plane (Built-in Data Contributor 00000000-...-002 — the only
 // built-in data role; reads suffice but this is the project-standard data role
 // used for runtime item access, see the developer assignment + ragIndexer above).
-resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+// Gated on deployPhase2 ONLY — deliberately NOT `&& deployAiSearch`. The 20 scheduled
+// CLI jobs are gated on deployPhase2 and now carry AZURE_CLIENT_ID, which pins every
+// DefaultAzureCredential call in those hosts to this UAMI. Cosmos is a Phase 1 resource,
+// so under a `deployAiSearch = false` override (a documented option in
+// main-shared.dev.local.bicepparam) the jobs would still exist, still authenticate as the
+// UAMI, and — with an AI-Search-gated grant — 403 on every Cosmos call. The grant must
+// therefore be at least as available as the hosts that depend on it.
+resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, '${namePrefix}-aca-id-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -530,6 +545,80 @@ resource acaIdentityLogAnalyticsReader 'Microsoft.Authorization/roleAssignments@
   name: guid(logAnalytics.id, '${namePrefix}-aca-id-${environment}', '73c42c96-874c-492b-b04d-ab87d138a893')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '73c42c96-874c-492b-b04d-ab87d138a893')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// App Insights: Monitoring Metrics Publisher (3913510d-...) for the UAMI so the
+// Azure Monitor OTel exporters (metrics, traces, logs) can authenticate via Entra
+// when DisableLocalAuth=true is set on the App Insights resource (#840 fix).
+//
+// Root cause: pinwiz-ai-dev has DisableLocalAuth=true, which rejects instrumentation-
+// key-based ingestion. The OTel exporters in ServiceDefaults/Extensions.cs previously
+// had no Credential, so every export attempt was silently rejected and all four ACA
+// hosts (Api, Web, RagIngestionWorker, CLI/jobs) produced zero AppMetrics/AppTraces
+// despite correct APPLICATIONINSIGHTS_CONNECTION_STRING and healthy replicas.
+//
+// This grant + the AZURE_CLIENT_ID env var (added to ragIndexerApp and all CLI jobs
+// below) + the Credential parameter added to AddServiceDefaults() constitute the full
+// #840 fix. Three-part change: code + RBAC + env must all land together.
+// RBAC takes effect only after a stack run (Deploy-SharedResources.ps1) — image-only
+// merges do not apply Bicep (#859).
+//
+// Scoped to appInsights (not the resource group) — least-privilege Metrics Publisher.
+// Role: Monitoring Metrics Publisher — guid sourced from:
+//   az role definition list --name "Monitoring Metrics Publisher" --query "[0].name" -o tsv
+//   → 3913510d-42f4-4e42-8a64-420c390055eb
+resource acaIdentityMonitoringMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: appInsights
+  name: guid(appInsights.id, '${namePrefix}-aca-id-${environment}', '3913510d-42f4-4e42-8a64-420c390055eb')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// AI Search: Search Index Data Contributor (8ebe5a00-...) for the UAMI so the
+// ragIndexerApp can write (upsert) to the AI Search index when AZURE_CLIENT_ID pins
+// DefaultAzureCredential to the UAMI (#840 env change).
+//
+// Context: ragIndexerApp previously used its system-assigned MI for all Azure SDK
+// calls (Cosmos, AI Search writes, Document Intelligence). Adding AZURE_CLIENT_ID
+// to ragIndexerApp's env block switches DefaultAzureCredential to the UAMI for all
+// calls — so the UAMI must carry the write-capable role too. The existing
+// acaIdentitySearchReader (Reader tier, line ~364) covers the query-only serving
+// path (Api + Web); this Contributor grant extends the UAMI to cover the index-write
+// path as well. Having both Reader and Contributor is redundant but not harmful.
+//
+// Gated on deployPhase2 && deployAiSearch to match searchService and ragIndexerApp.
+resource acaIdentitySearchIndexContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, '${namePrefix}-aca-id-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Document Intelligence: Cognitive Services User (a97b65f3-...) for the UAMI so the
+// ragIndexerApp can call the OCR fallback extractor (AzureDocumentIntelligenceExtractor)
+// when AZURE_CLIENT_ID pins DefaultAzureCredential to the UAMI (#840 env change).
+//
+// Context: same rationale as acaIdentitySearchIndexContributor above — ragIndexerApp
+// previously used its system-assigned MI for Document Intelligence access; the UAMI
+// did not carry this role because the serving path (Api + Web) never calls Doc Int.
+// Adding AZURE_CLIENT_ID to ragIndexerApp requires the UAMI to cover all roles the
+// indexer needs, including this one.
+//
+// Gated on deployPhase2 && deployAiSearch to match documentIntelligence and ragIndexerApp.
+resource acaIdentityDocIntUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: documentIntelligence
+  name: guid(documentIntelligence.id, '${namePrefix}-aca-id-${environment}', 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
     principalId: acaIdentity.?properties.principalId ?? ''
     principalType: 'ServicePrincipal'
   }
@@ -1165,11 +1254,24 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
               value: appInsights.?properties.ConnectionString ?? ''
             }
             {
+              // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so all
+              // Azure SDK calls — Cosmos, AI Search, Document Intelligence, Foundry,
+              // AND the Azure Monitor OTel exporters — authenticate via the UAMI.
+              // Required after #840 added AZURE_CLIENT_ID consistency: with both a
+              // system-assigned MI and the UAMI attached, DefaultAzureCredential picks
+              // system-assigned by default; this env var selects the UAMI explicitly.
+              // The UAMI carries acaIdentitySearchIndexContributor (write) and
+              // acaIdentityDocIntUser — roles added in #840 so the indexer continues
+              // to function after this change.
+              name: 'AZURE_CLIENT_ID'
+              value: acaIdentity.?properties.clientId ?? ''
+            }
+            {
               // Blob storage endpoint for BlobDocumentStoreRegistration (Task 5).
               // Maps to the Bicep output storageBlobEndpoint. The RAG indexer reads
-              // source PDFs from the pinwiz-raw container via DefaultAzureCredential;
-              // the ragIndexerStorageBlobReader role assignment (below) grants the
-              // system-assigned MI the Storage Blob Data Reader role on this account.
+              // source PDFs from the pinwiz-raw container via DefaultAzureCredential
+              // (UAMI = acaIdentity, which carries Storage Blob Data Contributor on
+              // the full storage account via acaIdentityStorageAccountBlobContributor).
               // Double-underscore maps Storage:BlobEndpoint in IConfiguration.
               name: 'Storage__BlobEndpoint'
               value: storage.?properties.primaryEndpoints.blob ?? ''
@@ -1530,10 +1632,14 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
             // endpoint shape (services.ai.azure.com/api/projects/<proj>) per
             // AiFoundryOptions, NOT the account-level cognitiveservices.azure.com URL.
             {
-              // CRITICAL: the Api runs under the USER-ASSIGNED acaIdentity, so
-              // DefaultAzureCredential must be told which MI to use. The ragIndexerApp
-              // uses a system-assigned identity and so does NOT need this — do not
-              // "simplify" by removing it here.
+              // Pins DefaultAzureCredential to the shared UAMI (acaIdentity). Both
+              // system-assigned and user-assigned identities are attached to this
+              // Container App; without this env var DefaultAzureCredential picks the
+              // system-assigned MI, which lacks the roles the Api needs (Cosmos data,
+              // AI Search, Foundry, Monitoring Metrics Publisher for OTel #840).
+              // NOTE: ragIndexerApp also carries AZURE_CLIENT_ID since #840 — all ACA
+              // hosts now use the UAMI consistently. See acaIdentitySearchIndexContributor
+              // and acaIdentityDocIntUser for the additional UAMI grants that required.
               name: 'AZURE_CLIENT_ID'
               value: acaIdentity.?properties.clientId ?? ''
             }
@@ -2402,6 +2508,9 @@ module linkerJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (
         value: storage.?properties.primaryEndpoints.blob ?? ''
       }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -2485,6 +2594,9 @@ module opdbSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
         value: '/tmp/pinwiz'
       }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
     // OPDB API token: Key Vault secret resolved at run time by the UAMI.
     // Same construction as the Wizard app's AzureAd-ClientSecret reference.
@@ -2558,6 +2670,9 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -2667,6 +2782,9 @@ module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
     // Kineticist API key: Key Vault secret resolved at run time by the UAMI.
     // Same construction as the OPDB sync job's Opdb-ApiToken reference. The secret
@@ -2767,6 +2885,9 @@ module twipNewsletterJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
         value: foundryEmbeddingDeploymentName
       }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
     ]
@@ -2834,6 +2955,9 @@ module multimorphicScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -2870,6 +2994,9 @@ module cgcScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = i
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -2906,6 +3033,9 @@ module barrelsOfFunScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -2950,6 +3080,9 @@ module sternManualsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -2983,6 +3116,9 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3016,6 +3152,9 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3052,6 +3191,9 @@ module jjpScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = i
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3088,6 +3230,9 @@ module jjpSupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3124,6 +3269,9 @@ module apScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3160,6 +3308,9 @@ module apBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bi
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3196,6 +3347,9 @@ module spookyScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3232,6 +3386,9 @@ module spookySupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3268,6 +3425,9 @@ module pbScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3304,6 +3464,9 @@ module pbDocsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
@@ -3340,6 +3503,9 @@ module pbFreshdeskScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bi
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
+      // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
   }
 }
