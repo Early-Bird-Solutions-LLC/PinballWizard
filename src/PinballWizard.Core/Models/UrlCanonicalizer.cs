@@ -50,7 +50,31 @@ public static class UrlCanonicalizer
         if (!HostAliases.TryGetValue(uri.Host, out var canonicalHost))
             return url;
 
-        var builder = new UriBuilder(uri) { Host = canonicalHost };
-        return builder.Uri.ToString();
+        // Replace ONLY the host span in the original string, leaving every other byte
+        // untouched.
+        //
+        // A UriBuilder round-trip (`new UriBuilder(uri) { Host = ... }.Uri.ToString()`)
+        // looks equivalent and is not: it re-encodes the path, turning
+        // ".../My%20Manual.pdf" into ".../My Manual.pdf". The plain-host URL takes the
+        // early return above and is NOT re-encoded, so the two forms would produce
+        // different strings — and therefore different ids — and this whole fix would
+        // silently do nothing for any percent-encoded URL. Byte-identity with the
+        // plain-host form is the property the fix rests on.
+        // Pinned by UrlCanonicalizerTests.Canonicalize_AwkwardUrlShapes_MatchThePlainHostFormExactly.
+        var schemeEnd = url.IndexOf("://", StringComparison.Ordinal);
+        if (schemeEnd < 0)
+            return url;
+
+        // Search from the start of the authority so a host-shaped substring later in the
+        // path cannot be rewritten; the host is the first authority component (after any
+        // userinfo@, which these scraped file URLs never carry).
+        var hostIndex = url.IndexOf(uri.Host, schemeEnd + 3, StringComparison.OrdinalIgnoreCase);
+        if (hostIndex < 0)
+            return url;
+
+        return string.Concat(
+            url.AsSpan(0, hostIndex),
+            canonicalHost,
+            url.AsSpan(hostIndex + uri.Host.Length));
     }
 }

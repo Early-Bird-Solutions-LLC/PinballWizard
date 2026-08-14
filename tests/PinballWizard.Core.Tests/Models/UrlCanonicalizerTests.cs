@@ -24,6 +24,29 @@ public sealed class UrlCanonicalizerTests
         Assert.Equal(canonical, UrlCanonicalizer.Canonicalize(aliased));
     }
 
+    // The whole fix rests on BYTE-IDENTITY: an aliased URL must canonicalize to exactly
+    // the string a plain-host scrape would supply, because the plain host is returned
+    // untouched. Any normalization applied to one path and not the other (percent-encoding,
+    // default port, trailing slash) silently re-splits the pair into two ids and the fix
+    // looks applied while doing nothing. These cases pin the awkward shapes.
+    [Theory]
+    [InlineData("https://wp.sternpinball.com/wp-content/uploads/My%20Manual.pdf",
+                "https://sternpinball.com/wp-content/uploads/My%20Manual.pdf")]
+    [InlineData("https://wp.sternpinball.com/wp-content/uploads/a.pdf?v=2#part",
+                "https://sternpinball.com/wp-content/uploads/a.pdf?v=2#part")]
+    [InlineData("https://wp.sternpinball.com/wp-content/uploads/re-issue_(2024).pdf",
+                "https://sternpinball.com/wp-content/uploads/re-issue_(2024).pdf")]
+    public void Canonicalize_AwkwardUrlShapes_MatchThePlainHostFormExactly(
+        string aliased, string expected)
+    {
+        Assert.Equal(expected, UrlCanonicalizer.Canonicalize(aliased));
+
+        // And the identity that actually matters: both forms hash to one id.
+        Assert.Equal(
+            DocumentRecord.GenerateId(expected),
+            DocumentRecord.GenerateId(aliased));
+    }
+
     [Fact]
     public void Canonicalize_AlreadyCanonicalSternHost_ReturnedUnchanged()
     {
