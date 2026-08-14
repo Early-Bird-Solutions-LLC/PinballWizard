@@ -44,8 +44,17 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
     // DocumentLinker is a singleton — the semaphore lives for the process.
     private readonly SemaphoreSlim _extractionGate;
 
-    private static readonly Meter LinkerMeter =
-        new("PinballWizard.Linking", "1.0");
+    // Instruments hang off the SHARED PinballWizardTelemetry.Meter, not a private one.
+    //
+    // This class previously owned `new Meter("PinballWizard.Linking")`. ServiceDefaults
+    // subscribes the MeterProvider with AddMeter("PinballWizard") — an exact name match —
+    // so that meter was never subscribed and every pinwiz.linker.* measurement was
+    // discarded before reaching any exporter. It cost nothing at runtime and produced no
+    // error; the counters simply did not exist as far as App Insights was concerned (#840).
+    //
+    // Instrument names are unchanged (pinwiz.linker.*) — only the meter scope moves — so
+    // existing queries and docs/observability.md remain accurate.
+    private static readonly Meter LinkerMeter = PinballWizardTelemetry.Meter;
 
     private static readonly Counter<long> DocumentsProcessedCounter =
         LinkerMeter.CreateCounter<long>(
