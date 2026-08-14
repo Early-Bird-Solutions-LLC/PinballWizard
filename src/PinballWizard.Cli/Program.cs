@@ -24,6 +24,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Infrastructure.Credentials;
 using PinballWizard.Infrastructure.Documents;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
@@ -2222,7 +2223,11 @@ static IHost CreateHost(string[] args)
     // service discovery, standard HTTP resilience, and health checks. When the CLI
     // is launched standalone (no AppHost), these registrations are still safe — the
     // OTLP exporter only activates when the env var is present.
-    builder.AddServiceDefaults();
+    // Credential: the process-wide UAMI (SharedAzureCredential.Instance) authenticates
+    // the Azure Monitor exporters against pinwiz-ai-dev, which has DisableLocalAuth=true
+    // and rejects key-based ingestion. One process-wide credential avoids the token-cache
+    // contention that caused the 2026-06-11 eval outage (issue #362).
+    builder.AddServiceDefaults(credential: SharedAzureCredential.Instance);
 
     // Configuration
     builder.Services.Configure<ScraperSettings>(
