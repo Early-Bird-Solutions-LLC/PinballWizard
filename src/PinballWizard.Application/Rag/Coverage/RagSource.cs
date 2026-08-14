@@ -33,4 +33,37 @@ public sealed record RagSource(
 
         return true;
     }
+
+    // True when a retrieved chunk is retrievable from the perspective of a user
+    // query — used at retrieval-check time in CorpusCoverageProber only.
+    //
+    // For manufacturer-backed sources the doc_ prefix is an index-scoping aid
+    // for SampleAsync/CountAsync (native scraped documents only), not a
+    // user-visible boundary.  TiltForums and Kineticist chunks carry the game's
+    // manufacturer value, so a user querying "Elton John rules" WILL receive
+    // those chunks — the probe should not report a gap just because the top-10
+    // results happen to be tiltforums_*/kineticist_* rather than doc_*.
+    //
+    // Prefix-only (synthesized) sources have no manufacturer value and must
+    // still be identified by their document_id prefix.
+    public bool MatchesRetrieval(string documentId, string manufacturer)
+    {
+        if (ManufacturerValues.Count > 0)
+        {
+            // Manufacturer-backed: the manufacturer value alone is the
+            // user-visible boundary.  Skip the DocumentIdPrefix requirement.
+            return ManufacturerValues.Contains(manufacturer, StringComparer.Ordinal);
+        }
+
+        // Prefix-only (synthesized: Kineticist, TiltForums, TWIP, …): the
+        // document_id prefix is the only reliable identifier.
+        if (DocumentIdPrefix is not null)
+        {
+            return documentId.StartsWith(DocumentIdPrefix, StringComparison.Ordinal);
+        }
+
+        // Neither prefix nor manufacturer set — fail open rather than produce
+        // an unconditional miss (should not occur in a well-formed catalog).
+        return true;
+    }
 }

@@ -88,7 +88,7 @@ public sealed class CorpusCoverageProber : ICorpusCoverageProber
                 .RetrieveAsync(query, options, ct)
                 .ConfigureAwait(false);
             var retrievable = hits.Any(h =>
-                source.Matches(h.DocumentId, h.Manufacturer) &&
+                source.MatchesRetrieval(h.DocumentId, h.Manufacturer) &&
                 string.Equals(h.DocumentType, dt.DocumentType, StringComparison.Ordinal));
             return new CoverageCell(source.SourceId, dt.DocumentType, dt.ChunkCount,
                 retrievable, sample.DocumentId, query, Error: null);

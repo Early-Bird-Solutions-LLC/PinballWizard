@@ -114,6 +114,107 @@ public sealed class CorpusCoverageProberTests
         Assert.NotNull(cell.Error);
     }
 
+    // ── MatchesRetrieval / Option-A fix (Issue #842) ───────────────────────
+
+    /// <summary>
+    /// Regression guard for #842: a manufacturer-backed source (JJP) whose
+    /// retrieval results are TiltForums/Kineticist chunks (non-doc_ prefix)
+    /// must still report Retrievable=true, because the Wizard returns those
+    /// chunks to users — the probe was producing a false-positive warning.
+    /// </summary>
+    [Fact]
+    public async Task ManufacturerBackedSource_RetrievableOnlyViaNonDocChunks_IsReportedRetrievable()
+    {
+        var index = Substitute.For<ICorpusIndexQuery>();
+        var jjp = RagSourceCatalog.All.Single(s => s.SourceId == "jjp");
+
+        // JJP has indexed content; sample returns a native doc_ chunk.
+        index.CountAsync(jjp, Arg.Any<CancellationToken>()).Returns(10L);
+        index.FacetDocumentTypesAsync(jjp, Arg.Any<CancellationToken>())
+             .Returns([new DocTypeCount("Rulesheet", 10)]);
+        index.SampleAsync(jjp, "Rulesheet", Arg.Any<CancellationToken>())
+             .Returns(new CorpusSample("doc_ca1982759f290833", "Jersey Jack Pinball",
+                 "Rulesheet", "Elton John", "Rules"));
+        // All other sources: empty + not expected, so no gaps.
+        index.CountAsync(Arg.Is<RagSource>(s => s != jjp), Arg.Any<CancellationToken>()).Returns(0L);
+
+        var retriever = Substitute.For<IRagRetriever>();
+        // Retrieval returns ONLY a non-doc_ chunk (TiltForums-style) with the
+        // correct manufacturer — this is the false-positive scenario from #842.
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+                 .Returns([Chunk("tiltforums_elton_john_abc123", "Jersey Jack Pinball", "Rulesheet")]);
+
+        var report = await BuildProber(index, retriever).RunAsync(CancellationToken.None);
+
+        var cell = report.Cells.Single(c => c.Source == "jjp" && c.DocumentType == "Rulesheet");
+        Assert.True(cell.Retrievable); // was false before the fix
+        Assert.Empty(report.Warnings);
+    }
+
+    /// <summary>
+    /// Genuine absence still fails: if retrieval returns chunks for a different
+    /// manufacturer, the cell must still be Retrievable=false so real gaps are
+    /// not hidden by the fix.
+    /// </summary>
+    [Fact]
+    public async Task ManufacturerBackedSource_WithNoMatchingManufacturerInRetrieval_IsStillNotRetrievable()
+    {
+        var index = Substitute.For<ICorpusIndexQuery>();
+        var jjp = RagSourceCatalog.All.Single(s => s.SourceId == "jjp");
+
+        index.CountAsync(jjp, Arg.Any<CancellationToken>()).Returns(10L);
+        index.FacetDocumentTypesAsync(jjp, Arg.Any<CancellationToken>())
+             .Returns([new DocTypeCount("Rulesheet", 10)]);
+        index.SampleAsync(jjp, "Rulesheet", Arg.Any<CancellationToken>())
+             .Returns(new CorpusSample("doc_ca1982759f290833", "Jersey Jack Pinball",
+                 "Rulesheet", "Elton John", "Rules"));
+        index.CountAsync(Arg.Is<RagSource>(s => s != jjp), Arg.Any<CancellationToken>()).Returns(0L);
+
+        var retriever = Substitute.For<IRagRetriever>();
+        // All top-10 results belong to a different manufacturer — genuine retrieval gap.
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+                 .Returns([Chunk("doc_stern_foo", "Stern", "Rulesheet")]);
+
+        var report = await BuildProber(index, retriever).RunAsync(CancellationToken.None);
+
+        var cell = report.Cells.Single(c => c.Source == "jjp" && c.DocumentType == "Rulesheet");
+        Assert.False(cell.Retrievable);
+        Assert.Contains(report.Warnings, c => c.Source == "jjp");
+    }
+
+    /// <summary>
+    /// The sampling path must still pass the source with its DocumentIdPrefix
+    /// to ICorpusIndexQuery — the index implementation uses that prefix to
+    /// scope SampleAsync/CountAsync to native scraped (doc_) documents only.
+    /// </summary>
+    [Fact]
+    public async Task SamplingPath_PassesSourceWithDocPrefix_ToIndexQuery()
+    {
+        var index = Substitute.For<ICorpusIndexQuery>();
+        var jjp = RagSourceCatalog.All.Single(s => s.SourceId == "jjp");
+
+        index.CountAsync(jjp, Arg.Any<CancellationToken>()).Returns(5L);
+        index.FacetDocumentTypesAsync(jjp, Arg.Any<CancellationToken>())
+             .Returns([new DocTypeCount("Rulesheet", 5)]);
+        index.SampleAsync(jjp, "Rulesheet", Arg.Any<CancellationToken>())
+             .Returns(new CorpusSample("doc_abc", "Jersey Jack Pinball",
+                 "Rulesheet", "Elton John", "Rules"));
+        index.CountAsync(Arg.Is<RagSource>(s => s != jjp), Arg.Any<CancellationToken>()).Returns(0L);
+
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+                 .Returns([Chunk("tiltforums_elton_john_abc", "Jersey Jack Pinball", "Rulesheet")]);
+
+        await BuildProber(index, retriever).RunAsync(CancellationToken.None);
+
+        // SampleAsync must be called with the unmodified RagSource that has
+        // DocumentIdPrefix = "doc_" so the index scopes to native scraped chunks.
+        await index.Received(1).SampleAsync(
+            Arg.Is<RagSource>(s => s.SourceId == "jjp" && s.DocumentIdPrefix == "doc_"),
+            "Rulesheet",
+            Arg.Any<CancellationToken>());
+    }
+
     private static CorpusCoverageProber BuildProber(ICorpusIndexQuery index, IRagRetriever retriever) =>
         new(index, retriever, NullLogger<CorpusCoverageProber>.Instance);
 }
