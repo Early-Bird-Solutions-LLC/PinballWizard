@@ -356,7 +356,14 @@ resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01'
 // Cosmos data-plane (Built-in Data Contributor 00000000-...-002 — the only
 // built-in data role; reads suffice but this is the project-standard data role
 // used for runtime item access, see the developer assignment + ragIndexer above).
-resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+// Gated on deployPhase2 ONLY — deliberately NOT `&& deployAiSearch`. The 20 scheduled
+// CLI jobs are gated on deployPhase2 and now carry AZURE_CLIENT_ID, which pins every
+// DefaultAzureCredential call in those hosts to this UAMI. Cosmos is a Phase 1 resource,
+// so under a `deployAiSearch = false` override (a documented option in
+// main-shared.dev.local.bicepparam) the jobs would still exist, still authenticate as the
+// UAMI, and — with an AI-Search-gated grant — 403 on every Cosmos call. The grant must
+// therefore be at least as available as the hosts that depend on it.
+resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, '${namePrefix}-aca-id-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
