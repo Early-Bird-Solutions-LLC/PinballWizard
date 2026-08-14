@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -6,45 +7,93 @@ using PinballWizard.Infrastructure.Scraping.Playwright;
 namespace PinballWizard.Infrastructure.Scraping.Polite;
 
 /// <summary>
-/// Base class for Playwright-driven scrapers. Adds a <em>shared</em>
-/// <see cref="IBrowserContext"/> that lives for the scraper instance's
-/// lifetime, replacing the per-page <c>NewContextAsync</c> pattern
-/// (which created a fresh, ephemeral context for every page load and
-/// wasted both browser RAM and politeness budget on context-bringup
-/// network requests).
+/// Base class for Playwright-driven scrapers. Manages a <em>shared</em>
+/// <see cref="IBrowserContext"/> that is automatically recycled every
+/// <see cref="ScraperSettings.PlaywrightContextRecycleInterval"/> pages.
 /// </summary>
 /// <remarks>
-/// Subclasses call <see cref="NewPolitePageAsync"/> for each
-/// to-be-scraped URL. The base method:
+/// <para>
+/// Recycling is the fix for GitHub issue #855: a single, never-recycled
+/// Chromium context accumulates V8/renderer state across sequential Vue-SPA
+/// page loads. That state is <em>not</em> released when a page is closed —
+/// it lives at context scope — so after ~40–50 game pages it grows large
+/// enough to trigger an OOMKill on the 0.5 vCPU / 1 GiB ACA job.
+/// <c>--disable-dev-shm-usage</c> (set in <see cref="PlaywrightFactory"/>)
+/// redirects Chromium's shared-memory usage into the process heap, which
+/// raises per-page footprint further.
+/// </para>
+/// <para>
+/// Subclasses call <see cref="NewPolitePageAsync(string,CancellationToken,WaitUntilState)"/>
+/// for each URL to be scraped. The base method:
 /// <list type="number">
 ///   <item>Acquires a politeness lease via the gate (robots.txt check + per-origin throttle + delay).</item>
+///   <item>Gets or creates the shared context, recycling it when the page count reaches the interval.</item>
 ///   <item>Opens a new <see cref="IPage"/> on the shared context.</item>
 ///   <item>Navigates to the URL with sensible defaults.</item>
 /// </list>
-/// The shared context is created lazily on first call and disposed
-/// when the scraper instance is disposed. The context applies the
-/// configured polite User-Agent (matching what the HTTP scrapers send)
-/// so source-site logs see one consistent identity.
+/// The context is created lazily on first call. Context creation is
+/// extracted into <see cref="CreateContextAsync"/>, which is
+/// <c>protected virtual</c> so tests can inject a mock context without
+/// launching a real Chromium instance.
+/// </para>
 /// </remarks>
 public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDisposable
 {
     private readonly PlaywrightFactory _playwrightFactory;
     private readonly SemaphoreSlim _contextInitLock = new(1, 1);
+    private readonly int _contextRecycleInterval;
     private IBrowserContext? _context;
+    private int _pageCount;
     private bool _disposed;
 
     /// <summary>
     /// Initializes a new <see cref="PolitePlaywrightScraperBase"/>.
     /// </summary>
+    /// <param name="playwrightFactory">Provides the shared <see cref="IBrowser"/> instance.</param>
+    /// <param name="politeness">Routes every page request through the project's politeness invariants.</param>
+    /// <param name="politenessOptions">Per-source politeness configuration (User-Agent, delays).</param>
+    /// <param name="logger">Logger for this scraper instance.</param>
+    /// <param name="contextRecycleInterval">
+    /// Number of pages to open on a single <see cref="IBrowserContext"/> before
+    /// closing it and creating a fresh one. Must be &gt; 0.
+    /// Defaults to <see cref="ScraperSettings.DefaultPlaywrightContextRecycleInterval"/>
+    /// when not supplied; callers should pass
+    /// <see cref="ScraperSettings.PlaywrightContextRecycleInterval"/> from the
+    /// configured <see cref="ScraperSettings"/> so the interval is tunable at runtime.
+    /// </param>
     protected PolitePlaywrightScraperBase(
         PlaywrightFactory playwrightFactory,
         IPolitenessGate politeness,
         PolitenessOptions politenessOptions,
-        ILogger logger)
+        ILogger logger,
+        int contextRecycleInterval = ScraperSettings.DefaultPlaywrightContextRecycleInterval)
         : base(politeness, politenessOptions, logger)
     {
         ArgumentNullException.ThrowIfNull(playwrightFactory);
+        if (contextRecycleInterval <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(contextRecycleInterval),
+                contextRecycleInterval,
+                "Context recycle interval must be greater than zero.");
+        }
+
         _playwrightFactory = playwrightFactory;
+        _contextRecycleInterval = contextRecycleInterval;
+    }
+
+    // Resolves the recycle interval for a derived scraper's base-constructor call.
+    //
+    // Derived scrapers cannot guard `settings` themselves before passing the interval
+    // up: arguments to the base initializer are evaluated BEFORE the derived
+    // constructor body runs, so an `ArgumentNullException.ThrowIfNull(settings)` in
+    // that body is unreachable for a null `settings` — the dereference has already
+    // thrown a bare NullReferenceException naming nothing. Routing through this helper
+    // keeps the guard on the path that actually executes first.
+    protected static int ResolveRecycleInterval(IOptions<ScraperSettings> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return settings.Value.PlaywrightContextRecycleInterval;
     }
 
     /// <summary>
@@ -115,35 +164,69 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         }
     }
 
+    /// <summary>
+    /// Creates a new <see cref="IBrowserContext"/> configured for polite scraping.
+    /// </summary>
+    /// <remarks>
+    /// <c>protected virtual</c> so tests can override this method to return a mock
+    /// context without launching a real Chromium instance — the testability seam for
+    /// context-recycling behavior. Production callers must not override this method.
+    /// </remarks>
+    protected virtual async Task<IBrowserContext> CreateContextAsync()
+    {
+        var browser = await _playwrightFactory.GetBrowserAsync().ConfigureAwait(false);
+        return await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            UserAgent = PolitenessOptions.UserAgent,
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+        }).ConfigureAwait(false);
+    }
+
     private async Task<IBrowserContext> GetOrCreateContextAsync()
     {
-        if (_context is not null)
-        {
-            return _context;
-        }
-
         await _contextInitLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            // Re-read after acquiring the lock (async DCL pattern) — local variable
-            // breaks the static-analysis alias that causes cs/constant-condition.
-            var ctx = _context;
-            if (ctx is not null)
+            // Recycle if a context exists and has reached the page-count threshold.
+            if (_context is not null && _pageCount >= _contextRecycleInterval)
             {
-                return ctx;
+                Logger.LogInformation(
+                    "Recycling Playwright browser context after {PageCount} pages (interval={Interval}).",
+                    _pageCount, _contextRecycleInterval);
+
+                await RecycleContextSafelyAsync(_context).ConfigureAwait(false);
+                _context = null;
+                _pageCount = 0;
             }
 
-            var browser = await _playwrightFactory.GetBrowserAsync().ConfigureAwait(false);
-            _context = await browser.NewContextAsync(new BrowserNewContextOptions
+            // Lazy-create on first call or after a recycle.
+            if (_context is null)
             {
-                UserAgent = PolitenessOptions.UserAgent,
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-            }).ConfigureAwait(false);
+                _context = await CreateContextAsync().ConfigureAwait(false);
+            }
+
+            _pageCount++;
             return _context;
         }
         finally
         {
             _contextInitLock.Release();
+        }
+    }
+
+    // Disposes the given context with the same exception suppression used by DisposeAsyncCore,
+    // so a crashed browser or already-closed context does not abort the in-progress run.
+    private async Task RecycleContextSafelyAsync(IBrowserContext context)
+    {
+        try
+        {
+            await context.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+        {
+            // Recycle-time Playwright errors (context already closed, browser crashed, disposed race)
+            // are suppressed — the resource is going away regardless.
+            Logger.LogDebug(ex, "Suppressed error recycling Playwright BrowserContext.");
         }
     }
 
