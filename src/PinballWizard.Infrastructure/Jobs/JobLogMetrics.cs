@@ -15,6 +15,7 @@ internal static class JobLogMetrics
     public static readonly Counter<long> QueryFailed =
         PinballWizardTelemetry.Meter.CreateCounter<long>(
             "pinwiz.job.log_query_failed",
+            unit: "{call}",
             description:
                 "Count of Log Analytics query failures in LogAnalyticsJobLogReader. " +
                 "Incremented whenever QueryWorkspaceAsync throws a non-cancellation exception. " +

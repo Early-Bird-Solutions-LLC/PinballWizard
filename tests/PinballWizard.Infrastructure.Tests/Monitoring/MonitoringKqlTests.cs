@@ -89,7 +89,18 @@ public sealed class MonitoringKqlTests
             ["AppMetrics", "AppRequests", "AppTraces", "AppDependencies", "AppExceptions"];
 
         var queries = AllQueries().ToList();
-        Assert.NotEmpty(queries); // reflection must actually find the queries
+
+        // NOT Assert.NotEmpty: AllQueries() always yields FivexxRate unconditionally, so
+        // a non-empty result proves only that FivexxRate still exists. If the reflection
+        // filter ever stopped matching (say the consts became `static readonly`, which is
+        // not IsLiteral), both schema guards would quietly shrink to checking one query
+        // and still pass — the same "test that stopped testing" failure this whole file
+        // exists to prevent. Assert the real count instead.
+        Assert.True(
+            queries.Count >= 9,
+            $"AllQueries() found only {queries.Count} queries. Either the reflection over " +
+            "MonitoringKql's const fields stopped matching, or a method-built query was " +
+            "added without registering it in AllQueries().");
 
         foreach (var (name, kql) in queries)
         {

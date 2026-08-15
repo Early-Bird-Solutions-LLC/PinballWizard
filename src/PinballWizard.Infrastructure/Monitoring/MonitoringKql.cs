@@ -46,19 +46,33 @@ internal static class MonitoringKql
 
     // NOTE: 'pinwiz.ai.duration_ms' is not currently emitted by any host — a 7-day
     // workspace sweep on 2026-08-15 found 24 distinct pinwiz.* metrics, and this was
-    // not among them (pinwiz.ai.first_token_ms and pinwiz.ai.refusals were). So these
-    // two queries are CORRECT but return no rows, and the tiles render "unavailable"
-    // rather than a fabricated 0 — which is the honest outcome per invariant #17.
-    // The missing instrument is tracked separately; fixing the schema here does not
-    // fix that, and the two defects were previously indistinguishable because the
-    // request failed before it could return anything.
+    // not among them (pinwiz.ai.first_token_ms and pinwiz.ai.refusals were). Both
+    // queries below are correct; they simply have nothing to read yet. The missing
+    // instrument is a separate defect, previously indistinguishable from this one
+    // because the request failed before it could return anything.
+    //
+    // Both therefore have to yield "unavailable", never a fabricated 0 (invariant #17).
+    // They reach that differently, and the difference is not cosmetic:
+    //   percentile() over an empty set returns NULL     -> unavailable, free.
+    //   sum()        over an empty set returns 0        -> would render "0 answered",
+    //                                                      which is a false statement
+    //                                                      while refusals are non-zero.
+    // Hence the `count()` guard on AnsweredCount: no source rows means no row out,
+    // which SafeScalarAsync maps to unavailable. Verified live 2026-08-15 — the guard
+    // returns no rows for the absent metric and a real total for a present one.
+    //
+    // The counters further down deliberately keep the bare sum(): an OTel counter that
+    // is never incremented is never exported, so "no rows" there genuinely means zero
+    // occurrences, and reporting 0 dead-letters is both true and more useful than
+    // reporting "unavailable".
     public const string LatencyP95 =
         "AppMetrics | where Name == 'pinwiz.ai.duration_ms' " +
         "| summarize p95 = percentile(Sum, 95)";
 
     public const string AnsweredCount =
         "AppMetrics | where Name == 'pinwiz.ai.duration_ms' " +
-        "| summarize answered = sum(ItemCount)";
+        "| summarize answered = sum(ItemCount), samples = count() " +
+        "| where samples > 0 | project answered";
 
     public const string RefusalTotal =
         "AppMetrics | where Name == 'pinwiz.ai.refusals' " +
