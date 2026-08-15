@@ -53,4 +53,46 @@ public sealed class RagSourceCatalogTests
         Assert.True(kin.Matches("kineticist_godzilla_GRBN", "Stern"));
         Assert.False(kin.Matches("doc_abc123", "Stern"));
     }
+
+    // MatchesRetrieval deliberately answers a different question than Matches: not
+    // "did this chunk come from this ingestion source" but "would a user querying
+    // this cell actually receive this chunk". The pair below pins that difference —
+    // the manufacturer-backed case is the #842 regression itself.
+
+    [Fact]
+    public void MatchesRetrieval_ManufacturerBackedSource_AcceptsSynthesizedChunkForSameManufacturer()
+    {
+        var jjp = RagSourceCatalog.All.Single(s => s.SourceId == IngestionSourceIds.Jjp);
+
+        // The #842 false positive: a user asking about a JJP game DOES receive this
+        // TiltForums chunk, so the probe must not report the cell as unretrievable.
+        Assert.True(jjp.MatchesRetrieval("tiltforums_elton_john_abc123", "Jersey Jack Pinball"));
+        Assert.True(jjp.MatchesRetrieval("doc_abc123", "Jersey Jack Pinball"));
+
+        // The relaxation is bounded by manufacturer — a Stern chunk is still a miss.
+        Assert.False(jjp.MatchesRetrieval("tiltforums_godzilla_xyz", "Stern"));
+        Assert.False(jjp.MatchesRetrieval("doc_abc123", "Stern"));
+    }
+
+    [Fact]
+    public void MatchesRetrieval_PrefixOnlySource_StillRequiresThePrefix()
+    {
+        var kin = RagSourceCatalog.All.Single(s => s.SourceId == IngestionSourceIds.Kineticist);
+
+        // Synthesized sources carry the game's manufacturer, so the prefix remains
+        // the only reliable identifier — the relaxation must NOT apply here.
+        Assert.True(kin.MatchesRetrieval("kineticist_godzilla_GRBN", "Stern"));
+        Assert.False(kin.MatchesRetrieval("doc_abc123", "Stern"));
+    }
+
+    [Fact]
+    public void MatchesRetrieval_SourceWithNeitherPrefixNorManufacturer_FailsOpen()
+    {
+        // Guards the fail-open branch, which no well-formed catalog entry reaches.
+        // Fail-open is the deliberate choice: a malformed entry should not manufacture
+        // an unconditional coverage miss that looks like a real corpus gap.
+        var malformed = new RagSource("malformed", [], DocumentIdPrefix: null, ExpectedNonEmpty: false);
+
+        Assert.True(malformed.MatchesRetrieval("anything_at_all", "Any Manufacturer"));
+    }
 }

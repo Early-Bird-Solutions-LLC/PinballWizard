@@ -87,8 +87,22 @@ public sealed class CorpusCoverageProber : ICorpusCoverageProber
             var hits = await _retriever
                 .RetrieveAsync(query, options, ct)
                 .ConfigureAwait(false);
+            // MatchesRetrieval, NOT Matches — and the difference narrows what this
+            // probe asserts, so it is worth being explicit. The question answered here
+            // is "does a user querying this cell receive relevant content?", not "does
+            // the natively scraped doc_ content specifically rank?". For a
+            // manufacturer-backed source, TiltForums/Kineticist chunks carry the game's
+            // manufacturer and ARE returned to the user, so counting them as a miss was
+            // a false positive (#842).
+            //
+            // The relaxation is bounded, not open-ended: CountAsync/SampleAsync above
+            // still filter on the doc_ prefix, so a source with zero native scraped
+            // documents is caught earlier as a hard source-floor gap and never reaches
+            // this line. What this no longer flags is the narrower case where native
+            // content exists but synthesized chunks outrank it — which is working as
+            // intended, not a coverage gap.
             var retrievable = hits.Any(h =>
-                source.Matches(h.DocumentId, h.Manufacturer) &&
+                source.MatchesRetrieval(h.DocumentId, h.Manufacturer) &&
                 string.Equals(h.DocumentType, dt.DocumentType, StringComparison.Ordinal));
             return new CoverageCell(source.SourceId, dt.DocumentType, dt.ChunkCount,
                 retrievable, sample.DocumentId, query, Error: null);
