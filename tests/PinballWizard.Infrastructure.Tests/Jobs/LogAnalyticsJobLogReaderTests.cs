@@ -1,5 +1,9 @@
+using Azure;
+using Azure.Monitor.Query;
+using Azure.Monitor.Query.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using PinballWizard.Application.Jobs;
 using PinballWizard.Infrastructure.Jobs;
 using PinballWizard.Infrastructure.Monitoring;
@@ -93,5 +97,50 @@ public sealed class LogAnalyticsJobLogReaderTests
     {
         var result = LogAnalyticsJobLogReader.NormalizeSearch(new string('x', 500));
         Assert.Equal(200, result!.Length);
+    }
+
+    [Fact]
+    public async Task GetExecutionLogsAsync_PassesQueryTimeRangeAll_NotAbsoluteDateTimeOffsetRange()
+    {
+        // Issue #851: combining QueryTimeRange(DateTimeOffset, DateTimeOffset) with a KQL
+        // between filter causes Azure.RequestFailedException "The request had some invalid
+        // properties" from the Log Analytics service. The fix is QueryTimeRange.All.
+        //
+        // Per Azure.Monitor.Query 1.7.1 XML docs (all four QueryWorkspaceAsync overloads):
+        //   "When the timeRange argument is QueryTimeRange.All and the query argument contains
+        //    a time range filter, the underlying service uses the time range specified in query."
+        //
+        // JobLogKql.BuildExecutionLogsQuery already embeds a between filter, so the reader
+        // MUST pass QueryTimeRange.All — not an absolute DateTimeOffset pair.
+        //
+        // Test mechanism: NSubstitute captures the QueryTimeRange via Arg.Do<T>. The stub
+        // returns a default (null) task result; the SUT's response.Value access then throws
+        // NullReferenceException, which the catch block converts to JobLogResult.Failed().
+
+        QueryTimeRange? captured = null;
+        var client = Substitute.For<LogsQueryClient>();
+        client.QueryWorkspaceAsync(
+                Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Do<QueryTimeRange>(r => captured = r),
+                Arg.Any<LogsQueryOptions?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromException<Response<LogsQueryResult>>(
+                new InvalidOperationException("test stub — capture only")));
+        // Stub throws so we avoid constructing a real Response<LogsQueryResult>.
+        // The catch block converts any non-cancellation exception to Failed().
+
+        var reader = new LogAnalyticsJobLogReader(
+            Options.Create(new MonitoringOptions { LogAnalyticsWorkspaceId = "ws-test-guid" }),
+            NullLogger<LogAnalyticsJobLogReader>.Instance,
+            client);
+
+        // Act — result is Failed (from NRE on null response.Value); we care about captured.
+        var result = await reader.GetExecutionLogsAsync(
+            "pinwiz-job-linker-buutj", "pinwiz-job-linker-buutj-29715960",
+            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddHours(1),
+            100, null, CancellationToken.None);
+
+        Assert.Equal(QueryTimeRange.All, captured);
+        Assert.Equal(JobLogAvailability.Failed, result.Availability); // expected from NRE on null response
     }
 }
