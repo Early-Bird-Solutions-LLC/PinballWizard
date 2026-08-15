@@ -62,7 +62,7 @@ public sealed class CorpusCoverageProberTests
 
         var retriever = Substitute.For<IRagRetriever>();
         // Retrieval returns a DIFFERENT source's chunk (same doc_type, wrong source prefix) so
-        // the miss is caused solely by the source-recognizer mismatch (source.Matches half),
+        // the miss is caused solely by the source-recognizer mismatch (source.MatchesRetrieval half),
         // not by a document_type difference — isolating the AND condition under test.
         retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
                  .Returns([Chunk("doc_other", "Stern", "Rulesheet")]);

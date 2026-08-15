@@ -13,8 +13,16 @@ public sealed record RagSource(
     string? DocumentIdPrefix,
     bool ExpectedNonEmpty)
 {
-    // True when a retrieved chunk belongs to this source. Used to verify a
-    // retrieval hit came from the cell under test.
+    // True when a chunk was PRODUCED BY this ingestion source — strict attribution,
+    // requiring both the manufacturer value and the document_id prefix to agree.
+    //
+    // Retained deliberately even though the coverage probe now calls MatchesRetrieval
+    // instead (#842): the two encode genuinely different questions, and this is the one
+    // that answers "which source produced this chunk?" — the attribution notion the
+    // record's header comment describes, and the one any future provenance or
+    // source-attribution caller needs. MatchesRetrieval answers the narrower
+    // user-visibility question and is NOT a drop-in substitute.
+    //
     // Precondition: at least one of DocumentIdPrefix or ManufacturerValues must be set,
     // or Matches returns true for every chunk (no filtering applied).
     public bool Matches(string documentId, string manufacturer)
