@@ -33,6 +33,7 @@ namespace PinballWizard.ServiceDefaults.Tests.ServiceDefaults;
 /// The warning-path test requires <c>StartAsync</c> to fire the hosted service that
 /// emits the log message (the warning is not emitted at build time).
 /// </summary>
+[Collection(OpenTelemetryGlobalStateDefinition.Name)]
 public sealed class OpenTelemetryExporterTests
 {
     // A structurally valid but non-functional App Insights connection string.
