@@ -147,7 +147,7 @@ AppMetrics
 | summarize Failures=sum(Sum) by bin(TimeGenerated, 1d)
 ```
 
-> **Table-name footnote:** the destination table depends on the OTLP ingestion path. Container Apps' direct Log Analytics workspace surfaces metrics under `AppMetrics`; Application Insights' classic OTel ingestion (Phase 6+ when AI is provisioned) surfaces them under `customMetrics`. If a query returns no rows, swap the table name and re-run; the column shapes are similar enough that the rest of the query lands.
+> **Table-name footnote:** the destination table depends on the query endpoint. The Log Analytics workspace endpoint (`api.loganalytics.io` — what `LogsQueryClient.QueryWorkspaceAsync` targets) exposes metrics as `AppMetrics` (`Name` / `Sum` / `ItemCount` / `Properties` / `TimeGenerated`) and requests as `AppRequests` (`Url` / `ResultCode`); the classic Application Insights endpoint (`api.applicationinsights.io`) exposes the same data as `customMetrics` / `requests` with lower-cased column names. The wrong table name for the endpoint does **not** return zero rows — the query is rejected outright (`SemanticError` SEM0100, "Failed to resolve table or column expression"), so an empty result means no data, never a schema mismatch (#851).
 
 ### Deployed (Application Insights — Phase 6+)
 
@@ -268,6 +268,12 @@ Two histograms emitted at the SDK boundary inside [`CosmosRepository<T>`](../src
 | `wizard.stream.fallback.attempted` | Counter | (none) | `WizardAnswerStream` attempts to recover from a stream error via the whole-response fallback path. Non-zero rate means streaming is degraded even if end-users receive an answer. Pair with the `wizard.stream.fallback.failed` Error log to compute fallback success rate (invariant #17). |
 | `pinwiz.web.landing_fallback_total` | Counter | (none) | Interactive-mode renders where `IWizardLandingClient` returned null (endpoint unreachable or non-2xx) and the landing page fell back to compiled-in static seed questions and featured machines. A sustained non-zero rate means the landing endpoint is unhealthy even though the page serves HTTP 200s. Alert on p5m sum > 0 in prod (invariant #17). |
 
+### Admin job-log read signals (invariant #17 / OBS-01)
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.job.log_query_failed` | Counter | (none) | `LogAnalyticsJobLogReader` calls where `QueryWorkspaceAsync` threw a non-cancellation exception; the admin job-execution log panel then shows an error alert instead of logs. A sustained non-zero rate means a query problem (e.g. an invalid table/column for the workspace schema) or a missing **Log Analytics Reader** role assignment on the workspace — check the paired Warning log for the exception detail (invariant #17 / OBS-01). |
+
 ### Evaluation harness instruments (Phase 3 — ADR-0016)
 
 Emitted by the `--eval` CLI verb. Counters carry no per-question attributes — per-question scores live in the committed JSON result files rather than as metrics (per-question-per-run metric cardinality would explode unhelpfully). Phase 6 dashboards aggregate these as a "metric trajectory" surface alongside the committed JSON.
@@ -381,6 +387,10 @@ shapes at runtime via `IMonitoringStatsReader` (`LogAnalyticsMonitoringStatsRead
 degrades visibly to an error state when its query fails rather than hiding the failure.
 
 Run these in the Application Insights → Logs blade, or copy them into the workbook editor.
+The runtime `/admin/monitoring` and job-log queries go through `QueryWorkspaceAsync`, so
+`MonitoringKql` / `JobLogKql` express the same shapes against the **workspace** schema
+(`AppMetrics` / `AppRequests`) rather than the classic `customMetrics` / `requests` names used
+below — see the table-name footnote above before copying a query between the two.
 
 Alert thresholds (from `docs/build-spec.md` § Phase 6 — Alert routing):
 
