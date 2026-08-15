@@ -1,3 +1,4 @@
+using System.Reflection;
 using Azure.Core;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.AspNetCore.Builder;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.ServiceDiscovery;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 namespace PinballWizard.ServiceDefaults;
@@ -140,7 +142,58 @@ public static class Extensions
         const string PinballWizardMeterName = "PinballWizard";
         const string PinballWizardSourceName = "PinballWizard";
 
+        // Derive the OTel service identity (#870). Without a ConfigureResource call
+        // the SDK falls back to "unknown_service:<processname>" — in production:
+        // "unknown_service:dotnet" for every host, making all four host types
+        // (API, Web, RAG indexer, 20 CLI jobs) collapse into one AppRoleName in
+        // Azure Monitor and rendering any tile scoped to a single host empty.
+        //
+        // PINWIZ_SERVICE_NAME is the per-job override hook. NOTE: as of this commit
+        // NOTHING SETS IT — verified against infra/modules/shared.bicep, which injects
+        // APPLICATIONINSIGHTS_CONNECTION_STRING, AZURE_CLIENT_ID, Cosmos__*,
+        // Scraper__DataPath and Storage__BlobEndpoint, but not this. Until the Bicep
+        // change lands (#875), all 20 scheduled CLI jobs share ApplicationName
+        // "PinballWizard.Cli" and remain mutually indistinguishable — still a strict
+        // improvement on "unknown_service:dotnet", but NOT yet per-job attribution.
+        //
+        // The Bicep change is one line per job, reusing the jobName each already
+        // computes: { name: 'PINWIZ_SERVICE_NAME', value: jobName }. Once deployed,
+        // each job reports its own name (e.g. "pinwiz-job-linker-buutj").
+        //
+        // Long-running hosts (API, Web, RagIngestionWorker) intentionally never need
+        // the override — their ApplicationName is already distinct per process.
+        // IsNullOrWhiteSpace, not ??. A `??` guards only null, and a variable that is
+        // SET BUT BLANK is a realistic operator typo with two distinct failure modes,
+        // both verified empirically against OTel 1.17.0:
+        //   ""    -> AddService throws ArgumentException while LoggerProviderSdk is
+        //            being constructed, which takes down host startup entirely.
+        //   "   " -> does NOT throw; service.name becomes "   ", so the host reports a
+        //            blank AppRoleName in the portal — the #870 symptom wearing a
+        //            different mask, and harder to spot than unknown_service:dotnet.
+        // Falling back is right for both: an unusable override should degrade to the
+        // process-derived name, never crash the host and never emit a blank identity.
+        var configuredServiceName = builder.Configuration["PINWIZ_SERVICE_NAME"];
+        var serviceName = string.IsNullOrWhiteSpace(configuredServiceName)
+            ? builder.Environment.ApplicationName
+            : configuredServiceName;
+
+        // Service version from the entry-point assembly. In CI builds the informational
+        // version carries the git SHA suffix (e.g. "1.0.0+abcdef"); in local dev it is
+        // whatever the assembly sets. Null is valid and omits the service.version
+        // attribute rather than forcing a placeholder.
+        var serviceVersion = Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
         builder.Services.AddOpenTelemetry()
+            // ConfigureResource applies to ALL signals (metrics, traces, logs) because
+            // it is chained on the shared OpenTelemetryBuilder, not on a per-signal
+            // builder. The Azure Monitor exporter reads service.name from this resource
+            // and maps it to AppRoleName, so this single call fixes the portal identity
+            // for every host type.
+            .ConfigureResource(r => r.AddService(
+                serviceName: serviceName,
+                serviceVersion: serviceVersion))
             .WithMetrics(metrics =>
             {
                 metrics.AddAspNetCoreInstrumentation()
