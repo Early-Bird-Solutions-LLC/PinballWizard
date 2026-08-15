@@ -162,8 +162,20 @@ public static class Extensions
         //
         // Long-running hosts (API, Web, RagIngestionWorker) intentionally never need
         // the override — their ApplicationName is already distinct per process.
-        var serviceName = builder.Configuration["PINWIZ_SERVICE_NAME"]
-            ?? builder.Environment.ApplicationName;
+        // IsNullOrWhiteSpace, not ??. A `??` guards only null, and a variable that is
+        // SET BUT BLANK is a realistic operator typo with two distinct failure modes,
+        // both verified empirically against OTel 1.17.0:
+        //   ""    -> AddService throws ArgumentException while LoggerProviderSdk is
+        //            being constructed, which takes down host startup entirely.
+        //   "   " -> does NOT throw; service.name becomes "   ", so the host reports a
+        //            blank AppRoleName in the portal — the #870 symptom wearing a
+        //            different mask, and harder to spot than unknown_service:dotnet.
+        // Falling back is right for both: an unusable override should degrade to the
+        // process-derived name, never crash the host and never emit a blank identity.
+        var configuredServiceName = builder.Configuration["PINWIZ_SERVICE_NAME"];
+        var serviceName = string.IsNullOrWhiteSpace(configuredServiceName)
+            ? builder.Environment.ApplicationName
+            : configuredServiceName;
 
         // Service version from the entry-point assembly. In CI builds the informational
         // version carries the git SHA suffix (e.g. "1.0.0+abcdef"); in local dev it is

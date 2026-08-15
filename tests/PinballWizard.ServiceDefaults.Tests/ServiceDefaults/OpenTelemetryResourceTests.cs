@@ -27,11 +27,17 @@ namespace PinballWizard.ServiceDefaults.Tests.ServiceDefaults;
 ///         serviceVersion: serviceVersion))
 /// </code>
 /// where <c>serviceName</c> comes from <c>PINWIZ_SERVICE_NAME</c> configuration when
-/// present (Bicep injects this per ACA job from the job's own resource name, e.g.
-/// <c>"pinwiz-job-linker-buutj"</c>), and falls back to
+/// present, and falls back to
 /// <c>builder.Environment.ApplicationName</c> for long-running hosts
 /// (API = "PinballWizard.Api", Web = "PinballWizard.Web",
 /// RAG indexer = "PinballWizard.RagIngestionWorker").
+///
+/// <b>NOTHING SETS <c>PINWIZ_SERVICE_NAME</c> TODAY.</b> The Bicep change that injects
+/// it per ACA job is tracked as #875 and is not in this change. Until it ships, all 20
+/// scheduled CLI jobs share ApplicationName "PinballWizard.Cli" and remain mutually
+/// indistinguishable — better than "unknown_service:dotnet", but NOT yet per-job
+/// attribution. The override tests below use in-memory configuration precisely because
+/// no deployed environment supplies the variable yet.
 ///
 /// <b>Verification approach:</b> The OTel SDK keeps the provider's <c>Resource</c>
 /// as an internal property on <c>TracerProviderSdk</c> / <c>MeterProviderSdk</c>
@@ -112,6 +118,41 @@ public sealed class OpenTelemetryResourceTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // An empty / whitespace override must fall back, not blow up startup.
+    // ?? only guards null, so a variable set-but-empty slips straight through
+    // to AddService. This code runs during startup for EVERY host, so an
+    // operator typo must not be able to take the process down.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ConfigureOpenTelemetry_WithBlankServiceNameConfig_FallsBackToApplicationName(string blank)
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PINWIZ_SERVICE_NAME"] = blank,
+        });
+        var expectedServiceName = builder.Environment.ApplicationName;
+
+        builder.AddServiceDefaults();
+
+        using var host = builder.Build();
+        await host.StartAsync();
+        try
+        {
+            var tracerProvider = host.Services.GetRequiredService<TracerProvider>();
+
+            Assert.Equal(expectedServiceName, GetServiceNameFromProvider(tracerProvider));
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // service.name must never be the OTel SDK default "unknown_service:<…>"
     // Direct regression guard for the #870 failure observable in the portal.
     // ─────────────────────────────────────────────────────────────────────
@@ -133,7 +174,7 @@ public sealed class OpenTelemetryResourceTests
             // call has been made. Any presence of this substring means #870 has regressed.
             Assert.DoesNotContain(
                 "unknown_service",
-                serviceName ?? string.Empty,
+                serviceName,
                 StringComparison.OrdinalIgnoreCase);
         }
         finally
@@ -191,13 +232,31 @@ public sealed class OpenTelemetryResourceTests
     /// coupling is documented in the class-level remarks; a future SDK version that
     /// makes this public needs only this method updated.
     /// </summary>
-    private static string? GetServiceNameFromProvider(object provider)
+    private static string GetServiceNameFromProvider(object provider)
     {
+        // Each step throws rather than returning null. This is deliberate: if a future
+        // OTel version renames or removes the internal Resource property, the reflection
+        // silently yields null — and a null flowing into
+        // Assert.DoesNotContain("unknown_service", ...) would PASS, turning the #870
+        // regression guard into a permanent no-op. A test that quietly stops testing is
+        // worse than no test, so the accessor fails loudly at the point the coupling
+        // breaks, naming what to fix.
         var resourceProp = provider.GetType()
-            .GetProperty("Resource", BindingFlags.Instance | BindingFlags.NonPublic);
-        var resource = resourceProp?.GetValue(provider) as Resource;
-        return resource?.Attributes
+            .GetProperty("Resource", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                $"OTel SDK coupling broken: no internal 'Resource' property on {provider.GetType().FullName}. " +
+                "The SDK version changed — update GetServiceNameFromProvider (see class remarks).");
+
+        var resource = resourceProp.GetValue(provider) as Resource
+            ?? throw new InvalidOperationException(
+                $"OTel SDK coupling broken: 'Resource' on {provider.GetType().FullName} was not a Resource.");
+
+        var serviceName = resource.Attributes
             .FirstOrDefault(kv => kv.Key == "service.name")
             .Value?.ToString();
+
+        return serviceName ?? throw new InvalidOperationException(
+            "No 'service.name' attribute on the provider resource. Either ConfigureResource " +
+            "was not applied (the #870 regression) or the attribute key changed.");
     }
 }
