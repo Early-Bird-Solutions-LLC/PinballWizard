@@ -40,6 +40,7 @@ namespace PinballWizard.ServiceDefaults.Tests.ServiceDefaults;
 /// <c>PinballWizardSourceName = "PinballWizard"</c> in Extensions.cs.
 /// Both must stay in sync; this string is the load-bearing bridge.
 /// </remarks>
+[Collection(OpenTelemetryGlobalStateDefinition.Name)]
 public sealed class OpenTelemetryHostLifecycleTests
 {
     // The exact ActivitySource name declared in PinballWizardTelemetry.ActivitySourceName

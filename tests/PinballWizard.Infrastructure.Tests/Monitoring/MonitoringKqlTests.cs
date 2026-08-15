@@ -1,3 +1,4 @@
+using System.Reflection;
 using PinballWizard.Application.Monitoring;
 using PinballWizard.Infrastructure.Monitoring;
 using Xunit;
@@ -42,7 +43,98 @@ public sealed class MonitoringKqlTests
     {
         var kql = MonitoringKql.FivexxRate("/api/wizard/");
         Assert.Contains("/api/wizard/", kql);
-        Assert.Contains("resultCode", kql);
+        Assert.Contains("ResultCode", kql);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Schema guard (#851).
+    //
+    // These queries run via QueryWorkspaceAsync against the Log Analytics WORKSPACE,
+    // which exposes AppMetrics/AppRequests — NOT the Application Insights resource
+    // endpoint, which exposes classic customMetrics/requests. Mixing them is not a
+    // soft failure that yields an empty tile: the service rejects the entire request
+    // with BadArgumentError / SemanticError SEM0100, surfacing as
+    // Azure.RequestFailedException "The request had some invalid properties".
+    //
+    // That was #851 — every /admin/monitoring tile failed on every page load for
+    // weeks. It survived because the tests here asserted fragments ("/api/wizard/",
+    // an escaped quote) and never asserted the schema, so the table names were free
+    // to be wrong while the suite stayed green. These two tests close that gap by
+    // pinning the thing that was actually broken.
+    //
+    // Both forms were executed against the live workspace on 2026-08-15: the
+    // workspace forms returned 200, the classic forms reproduced the production
+    // error exactly.
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Reflection over the const fields (rather than a hand-listed set) so a query
+    // added later is covered automatically instead of silently escaping the guard.
+    private static IEnumerable<(string Name, string Kql)> AllQueries()
+    {
+        foreach (var f in typeof(MonitoringKql)
+                     .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                     .Where(f => f.IsLiteral && f.FieldType == typeof(string)))
+        {
+            yield return (f.Name, (string)f.GetRawConstantValue()!);
+        }
+
+        // Built by a method, so it has no const field to reflect over.
+        yield return (nameof(MonitoringKql.FivexxRate), MonitoringKql.FivexxRate("/api/wizard/"));
+    }
+
+    [Fact]
+    public void EveryQuery_StartsWithAWorkspaceTable()
+    {
+        string[] workspaceTables =
+            ["AppMetrics", "AppRequests", "AppTraces", "AppDependencies", "AppExceptions"];
+
+        var queries = AllQueries().ToList();
+
+        // NOT Assert.NotEmpty: AllQueries() always yields FivexxRate unconditionally, so
+        // a non-empty result proves only that FivexxRate still exists. If the reflection
+        // filter ever stopped matching (say the consts became `static readonly`, which is
+        // not IsLiteral), both schema guards would quietly shrink to checking one query
+        // and still pass — the same "test that stopped testing" failure this whole file
+        // exists to prevent. Assert the real count instead.
+        Assert.True(
+            queries.Count >= 9,
+            $"AllQueries() found only {queries.Count} queries. Either the reflection over " +
+            "MonitoringKql's const fields stopped matching, or a method-built query was " +
+            "added without registering it in AllQueries().");
+
+        foreach (var (name, kql) in queries)
+        {
+            var firstToken = kql.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            Assert.True(
+                workspaceTables.Contains(firstToken, StringComparer.Ordinal),
+                $"{name} queries '{firstToken}', which is not a Log Analytics workspace table. " +
+                $"Expected one of: {string.Join(", ", workspaceTables)}.");
+        }
+    }
+
+    [Fact]
+    public void NoQuery_UsesClassicApplicationInsightsIdentifiers()
+    {
+        // Case-sensitive: the workspace spellings (Name, Sum, ItemCount, Properties,
+        // ResultCode, Url, TimeGenerated) differ from these only by case in several
+        // cases, so an ordinal comparison is the whole point.
+        string[] classicIdentifiers =
+        [
+            "customMetrics", "customDimensions", "valueCount",
+            "resultCode", "sum(value)", "percentile(value", "timestamp",
+        ];
+
+        foreach (var (name, kql) in AllQueries())
+        {
+            foreach (var classic in classicIdentifiers)
+            {
+                Assert.False(
+                    kql.Contains(classic, StringComparison.Ordinal),
+                    $"{name} uses the classic App Insights identifier '{classic}'. " +
+                    "The workspace endpoint rejects the whole request (SEM0100) rather " +
+                    "than returning empty — see #851.");
+            }
+        }
     }
 
     [Fact]

@@ -94,8 +94,9 @@
             else if (_logResult.Availability == JobLogAvailability.Failed)
             {
                 <AppErrorAlert data-testid="exec-log-error">
-                    Logs could not be loaded from Log Analytics. Verify the app identity has the
-                    <em>Log Analytics Reader</em> role on the workspace, then refresh.
+                    Logs could not be loaded from Log Analytics. Try refreshing — if the problem
+                    persists, check the app logs for details and verify the app identity has the
+                    <em>Log Analytics Reader</em> role on the workspace.
                 </AppErrorAlert>
             }
             else

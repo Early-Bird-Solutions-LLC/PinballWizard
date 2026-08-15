@@ -49,6 +49,7 @@ namespace PinballWizard.ServiceDefaults.Tests.ServiceDefaults;
 /// (<see cref="GetServiceNameFromProvider"/>) so a future SDK version that publishes
 /// this API requires only a one-line change in that helper.
 /// </summary>
+[Collection(OpenTelemetryGlobalStateDefinition.Name)]
 public sealed class OpenTelemetryResourceTests
 {
     // ─────────────────────────────────────────────────────────────────────

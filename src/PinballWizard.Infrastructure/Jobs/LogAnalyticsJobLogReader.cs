@@ -82,9 +82,13 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Log AND meter: invariant #17 wants a degraded path to be visible on a
+            // dashboard, not only in a log line nobody is tailing. The UI already shows
+            // an error rather than a fake-empty log, so the remaining gap was the meter.
             _logger.LogWarning(ex,
                 "Log Analytics query failed for job {JobName} execution {Execution}; logs shown unavailable.",
                 JobLogSafe.Scrub(jobName), JobLogSafe.Scrub(executionName));
+            JobLogMetrics.QueryFailed.Add(1);
             return JobLogResult.Failed();
         }
     }
