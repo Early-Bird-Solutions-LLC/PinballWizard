@@ -264,6 +264,110 @@ public sealed class StaticMetadataExtractorTests
         Assert.Equal("Pro", Assert.Single(editions).Name);
     }
 
+    // ---------- ParseEditionFromContactToBuyAnchor (new pattern, ~2026-08) ----------
+
+    [Fact]
+    public void ParseEditionFromContactToBuyAnchor_ExtractsTitleCasedNameFromDataTrackId()
+    {
+        // Stern's new URL pattern uses short codes (LE, AE) in the variant param;
+        // the data-track-id attribute carries the slug form (limited-edition,
+        // anniversary-edition). Prefer that for a readable display name.
+        var doc = Parse("""
+            <html><body>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=LE"
+                 data-track-id="Buy Now button for: limited-edition; in Game Card on the Game Page: jaws">
+                Buy Now
+              </a>
+            </body></html>
+            """);
+        var anchor = doc.QuerySelector("a[href]")!;
+
+        var edition = StaticMetadataExtractor.ParseEditionFromContactToBuyAnchor(anchor);
+
+        Assert.NotNull(edition);
+        Assert.Equal("Limited Edition", edition!.Name);
+        Assert.Null(edition.Msrp);
+    }
+
+    [Fact]
+    public void ParseEditionFromContactToBuyAnchor_TitleCasesLowercaseVariantNamesWhenTrackIdAbsent()
+    {
+        // When no data-track-id is present, fall back to the variant param and title-case it.
+        var doc = Parse("""
+            <html><body>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=pro">Buy Now</a>
+            </body></html>
+            """);
+        var anchor = doc.QuerySelector("a[href]")!;
+
+        var edition = StaticMetadataExtractor.ParseEditionFromContactToBuyAnchor(anchor);
+
+        Assert.NotNull(edition);
+        Assert.Equal("Pro", edition!.Name);
+    }
+
+    [Fact]
+    public void ParseEditionFromContactToBuyAnchor_ReturnsNullForGenericLinkWithoutVariant()
+    {
+        // The page-wide "Where To Buy" link has no variant param; must be filtered out.
+        var doc = Parse("""
+            <html><body>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS">Where To Buy</a>
+            </body></html>
+            """);
+        var anchor = doc.QuerySelector("a[href]")!;
+
+        Assert.Null(StaticMetadataExtractor.ParseEditionFromContactToBuyAnchor(anchor));
+    }
+
+    [Fact]
+    public void ExtractEditionsFromContactLinks_HandlesNewContactToBuyPattern()
+    {
+        // Mirrors the JAWS page structure as of 2026-08 after Stern's site redesign.
+        // Old pattern (shop.sternpinball.com/pages/contact-for-availability) is gone;
+        // new pattern uses relative /contact-to-buy?...&variant={code} with data-track-id.
+        var doc = Parse("""
+            <html><body>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS">Where To Buy</a>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=pro"
+                 data-track-id="Buy Now button for: pro; in Game Card on the Game Page: jaws">Buy Now</a>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=premium"
+                 data-track-id="Buy Now button for: premium; in Game Card on the Game Page: jaws">Buy Now</a>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=LE"
+                 data-track-id="Buy Now button for: limited-edition; in Game Card on the Game Page: jaws">Buy Now</a>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=AE"
+                 data-track-id="Buy Now button for: anniversary-edition; in Game Card on the Game Page: jaws">Buy Now</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromContactLinks(doc);
+
+        Assert.Equal(4, editions.Count);
+        Assert.Equal("Pro", editions[0].Name);
+        Assert.Equal("Premium", editions[1].Name);
+        Assert.Equal("Limited Edition", editions[2].Name);
+        Assert.Equal("Anniversary Edition", editions[3].Name);
+        Assert.All(editions, e => Assert.Null(e.Msrp));
+    }
+
+    [Fact]
+    public void ExtractEditionsFromContactLinks_HandlesOldPatternWhenSiteHasNotChangedYet()
+    {
+        // Backward compatibility: the old pattern must still work for any pages
+        // not yet updated to the new site structure.
+        var doc = Parse("""
+            <html><body>
+              <a href="https://shop.sternpinball.com/pages/contact-for-availability?product=jaws&price=MSRP+%246%2C999&title=JAWS&variant=Pro">contact</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromContactLinks(doc);
+
+        var pro = Assert.Single(editions);
+        Assert.Equal("Pro", pro.Name);
+        Assert.Equal("MSRP $6,999", pro.Msrp);
+    }
+
     // ---------- Extract (one-shot) ----------
 
     [Fact]

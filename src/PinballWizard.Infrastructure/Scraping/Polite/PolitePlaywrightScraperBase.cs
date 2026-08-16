@@ -182,6 +182,27 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         }).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Recycles the Playwright browser process, freeing all accumulated renderer
+    /// and V8 memory that persists at process scope across context recycling.
+    /// </summary>
+    /// <remarks>
+    /// Context recycling alone (see <see cref="GetOrCreateContextAsync"/>) does not
+    /// free browser-process-level memory. Evidence from the post-#862 OOMKill: the
+    /// first context survived 20 pages; the second context (same browser process) OOMed
+    /// after only 13 pages — proving that the browser retained significant state that
+    /// context disposal did not release. Recycling the process at the same cadence as
+    /// the context ensures each new context opens into a process near its baseline
+    /// footprint (~100–200 MB). The restart cost is ~1 s, negligible against the
+    /// per-page politeness delay.
+    /// <para>
+    /// <c>protected virtual</c> so tests can override to track calls without launching
+    /// Chromium — the same seam used by <see cref="CreateContextAsync"/>.
+    /// </para>
+    /// </remarks>
+    protected virtual Task RecycleBrowserAsync()
+        => _playwrightFactory.RecycleBrowserAsync();
+
     private async Task<IBrowserContext> GetOrCreateContextAsync()
     {
         await _contextInitLock.WaitAsync().ConfigureAwait(false);
@@ -197,6 +218,10 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                 await RecycleContextSafelyAsync(_context).ConfigureAwait(false);
                 _context = null;
                 _pageCount = 0;
+
+                // Context disposal alone does not free browser-process memory. Recycle
+                // the browser process too so the next context starts at baseline footprint.
+                await RecycleBrowserAsync().ConfigureAwait(false);
             }
 
             // Lazy-create on first call or after a recycle.

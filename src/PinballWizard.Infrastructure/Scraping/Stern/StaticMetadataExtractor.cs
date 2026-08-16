@@ -30,6 +30,14 @@ public static class StaticMetadataExtractor
     private const string ContactAvailabilityPathFragment = "/pages/contact-for-availability";
 
     /// <summary>
+    /// Stern's replacement checkout path, introduced ~2026-08. Relative links on
+    /// the game page now use <c>/contact-to-buy?ip-family=…&amp;product-name=…&amp;variant={code}</c>.
+    /// The edition display name is encoded in the <c>data-track-id</c> attribute
+    /// (slug form, e.g. <c>limited-edition</c>); price is no longer in the URL.
+    /// </summary>
+    private const string ContactToBuyPathFragment = "/contact-to-buy";
+
+    /// <summary>
     /// One-shot convenience: extract every machine-readable field from a
     /// parsed Stern game page in a single pass.
     /// </summary>
@@ -104,15 +112,16 @@ public static class StaticMetadataExtractor
     }
 
     /// <summary>
-    /// Walks every <c>&lt;a&gt;</c> on the page, keeps the ones pointing at
-    /// <c>shop.sternpinball.com/pages/contact-for-availability</c> with a
-    /// <c>variant</c> query param, and decodes <c>name</c> / <c>msrp</c> /
-    /// <c>availability</c> from their query strings.
+    /// Walks every <c>&lt;a&gt;</c> on the page and extracts per-edition data
+    /// from contact-purchase links. Handles both the legacy
+    /// <c>shop.sternpinball.com/pages/contact-for-availability</c> pattern
+    /// (which carries edition name + MSRP in query params) and the replacement
+    /// <c>/contact-to-buy</c> pattern introduced ~2026-08 (relative URL, edition
+    /// name in <c>data-track-id</c>, MSRP absent from URL).
     /// </summary>
     /// <remarks>
-    /// The first generic link on each page (no <c>variant</c>, no <c>price</c>)
-    /// is the game-wide "contact us" form and is filtered out — only the
-    /// per-edition links carry structured data.
+    /// The generic page-wide "Where To Buy" link (no <c>variant</c> param) is
+    /// filtered out — only per-edition links carry structured data.
     /// </remarks>
     public static List<EditionInfo> ExtractEditionsFromContactLinks(IDocument document)
     {
@@ -122,10 +131,26 @@ public static class StaticMetadataExtractor
         {
             var href = anchor.GetAttribute("href");
             if (string.IsNullOrEmpty(href)) continue;
-            if (!href.Contains(ContactAvailabilityHost, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!href.Contains(ContactAvailabilityPathFragment, StringComparison.OrdinalIgnoreCase)) continue;
 
-            var edition = ParseEditionFromUrl(href);
+            EditionInfo? edition;
+            if (href.Contains(ContactAvailabilityHost, StringComparison.OrdinalIgnoreCase)
+                && href.Contains(ContactAvailabilityPathFragment, StringComparison.OrdinalIgnoreCase))
+            {
+                // Legacy pattern: absolute URL to shop.sternpinball.com with
+                // variant + price query params.
+                edition = ParseEditionFromUrl(href);
+            }
+            else if (href.Contains(ContactToBuyPathFragment, StringComparison.OrdinalIgnoreCase))
+            {
+                // New pattern (~2026-08): relative /contact-to-buy link with
+                // variant code in query string and display name in data-track-id.
+                edition = ParseEditionFromContactToBuyAnchor(anchor);
+            }
+            else
+            {
+                continue;
+            }
+
             if (edition is not null) editions.Add(edition);
         }
 
@@ -173,6 +198,89 @@ public static class StaticMetadataExtractor
             Msrp = msrp,
             Availability = availability,
         };
+    }
+
+    /// <summary>
+    /// Parses a single new-style <c>/contact-to-buy</c> anchor into an
+    /// <see cref="EditionInfo"/>. Returns null when the link has no <c>variant</c>
+    /// query param — those are the page-wide generic "Where To Buy" buttons.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Stern replaced the absolute <c>shop.sternpinball.com/pages/contact-for-availability</c>
+    /// links with relative <c>/contact-to-buy?ip-family=…&amp;product-name=…&amp;variant={code}</c>
+    /// links (~2026-08). The <c>variant</c> param uses short codes (<c>LE</c>, <c>AE</c>)
+    /// for multi-word editions; the <c>data-track-id</c> attribute holds the slug form
+    /// (<c>limited-edition</c>, <c>anniversary-edition</c>) from which a readable
+    /// display name is derived. Price is not present in the new URL; MSRP is left null.
+    /// </para>
+    /// <para>
+    /// The <c>variant</c> query param is used as a fallback display name when
+    /// <c>data-track-id</c> is absent or does not match the expected format.
+    /// </para>
+    /// </remarks>
+    public static EditionInfo? ParseEditionFromContactToBuyAnchor(IElement anchor)
+    {
+        var href = anchor.GetAttribute("href");
+        if (string.IsNullOrEmpty(href)) return null;
+        if (!href.Contains(ContactToBuyPathFragment, StringComparison.OrdinalIgnoreCase)) return null;
+
+        // Relative URLs need a dummy base to parse with Uri/HttpUtility.
+        var absoluteHref = href.StartsWith('/')
+            ? "https://sternpinball.com" + href
+            : href;
+
+        if (!Uri.TryCreate(absoluteHref, UriKind.Absolute, out var uri)) return null;
+
+        var query = HttpUtility.ParseQueryString(uri.Query);
+        var variant = query["variant"];
+        if (string.IsNullOrWhiteSpace(variant)) return null;
+
+        // Prefer the data-track-id slug for a human-readable display name;
+        // fall back to title-casing the variant code directly.
+        var trackId = anchor.GetAttribute("data-track-id");
+        var name = (!string.IsNullOrEmpty(trackId) ? ParseDisplayNameFromTrackId(trackId) : null)
+                   ?? TitleCaseSlug(variant.Trim());
+
+        return new EditionInfo
+        {
+            Name = name,
+            Msrp = null, // price is no longer encoded in the new URL
+        };
+    }
+
+    /// <summary>
+    /// Parses the slug from a <c>data-track-id</c> of the form
+    /// <c>"Buy Now button for: {slug}; in Game Card on the Game Page: {game}"</c>
+    /// and converts it to a title-cased display name.
+    /// Returns null when the format doesn't match.
+    /// </summary>
+    private static string? ParseDisplayNameFromTrackId(string trackId)
+    {
+        // Find the first ": " separator — the slug follows it.
+        var colonIdx = trackId.IndexOf(": ", StringComparison.Ordinal);
+        if (colonIdx < 0) return null;
+
+        var start = colonIdx + 2;
+        var semiIdx = trackId.IndexOf(';', start);
+        var slug = semiIdx >= 0
+            ? trackId[start..semiIdx].Trim()
+            : trackId[start..].Trim();
+
+        return string.IsNullOrEmpty(slug) ? null : TitleCaseSlug(slug);
+    }
+
+    /// <summary>
+    /// Title-cases a hyphen-delimited slug into a display name.
+    /// <c>"limited-edition"</c> → <c>"Limited Edition"</c>,
+    /// <c>"pro"</c> → <c>"Pro"</c>.
+    /// </summary>
+    private static string TitleCaseSlug(string slug)
+    {
+        var words = slug.Split('-');
+        return string.Join(
+            ' ',
+            words.Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
     }
 
     private static string? ReadMeta(IDocument document, string keyAttribute, string keyValue)
