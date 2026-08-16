@@ -88,6 +88,9 @@ public sealed class ScraperSettings
     ///     documents yet or that run through a non-scraper path (e.g. OPDB).</item>
     ///   <item>N &gt; 0 — the scraper must yield at least N link items or the run is
     ///     recorded as failed.</item>
+    ///   <item>negative — disables the guard exactly as 0 does (no count can fall below
+    ///     it), but is logged as a warning at run time because it is almost certainly a
+    ///     typo rather than an intended opt-out. Use 0.</item>
     /// </list>
     /// Configure via <c>appsettings.json</c>:
     /// <code>

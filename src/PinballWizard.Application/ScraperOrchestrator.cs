@@ -132,13 +132,7 @@ public sealed class ScraperOrchestrator
                         }
                     }
 
-                    // Telemetry (Option 3): always emit per-scraper link count so dashboards
-                    // can chart throughput trends and detect collapses before they are fatal.
-                    PinballWizardTelemetry.ScraperLinksDiscovered.Add(
-                        scraperLinkCount,
-                        new System.Diagnostics.TagList { { "scraper", scraper.Name } });
-
-                    // Yield guard (Option 2, #857): a scraper that silently collects nothing
+                    // Yield guard (#857): a scraper that silently collects nothing
                     // (e.g. swallowed PlaywrightException, broken URL pattern) exits 0 today
                     // because the CLI only checks result.Errors — which is only populated on
                     // upsert failure or caught exceptions from the scraper. Adding the error
@@ -154,12 +148,26 @@ public sealed class ScraperOrchestrator
                     var minimumYield = _settings.MinimumYieldPerScraper.TryGetValue(scraper.Name, out var configuredMinimum)
                         ? configuredMinimum
                         : 1;  // default: at least one link discovered (opt-out design, #857)
+
+                    // A negative minimum disables the guard exactly as 0 does, because no
+                    // count can fall below it. That is a safety guard silently switched off
+                    // by what is almost certainly a typo — the precise failure class #857 is
+                    // about — so say so rather than letting it pass unremarked. 0 is the
+                    // sanctioned way to opt out; behaviour is unchanged, only the silence is.
+                    if (minimumYield < 0)
+                    {
+                        _logger.LogWarning(
+                            "Scraper {Name}: MinimumYieldPerScraper is {Configured}, which disables the yield guard. " +
+                            "Use 0 to opt out explicitly; negative values are almost certainly a mistake.",
+                            scraper.Name, minimumYield);
+                    }
+
                     if (scraperLinkCount < minimumYield)
                     {
                         var guardMsg = $"{scraper.Name}: yielded {scraperLinkCount} links, expected at least {minimumYield}. " +
                                        "The scraper may have silently failed (e.g. browser not installed, URL pattern changed).";
                         _logger.LogError(
-                            "Yield guard fired for {ScraperName}: {Actual} links discovered, minimum is {Minimum}. " +
+                            "Yield guard fired for {Name}: {Actual} links discovered, minimum is {Minimum}. " +
                             "Check whether the scraper swallowed an internal exception or the source site changed. " +
                             "See GitHub issue #857.",
                             scraper.Name, scraperLinkCount, minimumYield);
@@ -222,6 +230,24 @@ public sealed class ScraperOrchestrator
                 }
                 finally
                 {
+                    // Emitted here, not on the success path, so EVERY scraper run produces
+                    // exactly one observation — including one that threw part-way through.
+                    // On the success path this is the full count; on a throw it is however
+                    // much was discovered before the exception. The distinction matters on a
+                    // dashboard: an absent data point reads as "this scraper did not run",
+                    // while a real 0 reads as "it ran and found nothing" — which is the
+                    // #857 signature. Absence must never be the way a failure is reported.
+                    PinballWizardTelemetry.ScraperLinksDiscovered.Add(
+                        scraperLinkCount,
+                        new System.Diagnostics.TagList { { "scraper", scraper.Name } });
+
+                    // Emitted here, not on the success path, so EVERY scraper run produces
+                    // exactly one observation — including one that threw part-way through.
+                    // On the success path this is the full count; on a throw it is however
+                    // much was discovered before the exception. The distinction matters on a
+                    // dashboard: an absent data point reads as "this scraper did not run",
+                    // while a real 0 reads as "it ran and found nothing" — which is the
+                    // #857 signature. Absence must never be the way a failure is reported.
                     if (pending.Count > 0)
                     {
                         try { await Task.WhenAll(pending).ConfigureAwait(false); }

@@ -639,8 +639,8 @@ public sealed class ScraperOrchestratorTests : IDisposable
     [Fact]
     public async Task YieldGuard_ExternallyThrowingScraper_ErrorReachesResultErrors()
     {
-        // Option 1 coverage: an exception that propagates OUT of a scraper's
-        // ScrapeAsync enumerable is caught by the orchestrator and added to
+        // The other failure route, kept distinct from the yield guard: an exception that
+        // propagates OUT of a scraper's ScrapeAsync enumerable is caught by the orchestrator and added to
         // result.Errors — verified independently of the yield guard so the test
         // name is precise about which mechanism fires.
         var bad = new ThrowingScraper("Manuals", new InvalidOperationException("playwright missing"));
