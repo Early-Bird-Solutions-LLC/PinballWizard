@@ -347,6 +347,10 @@ internal sealed class CosmosRawDocumentRepository
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
         ArgumentException.ThrowIfNullOrWhiteSpace(supersededByDocumentId);
+        // Guarded like its siblings: reason is persisted to ResolutionStrategy and is the
+        // only record of WHY this document was retired, so a blank one would leave an
+        // unexplained superseded row behind.
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
         var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
             .ConfigureAwait(false);

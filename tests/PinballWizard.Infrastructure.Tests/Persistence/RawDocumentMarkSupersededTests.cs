@@ -24,7 +24,7 @@ namespace PinballWizard.Infrastructure.Tests.Persistence;
 public sealed class RawDocumentMarkSupersededTests
 {
     [Fact]
-    public async Task MarkSupersededAsync_SetsStatusAndSuperseededBy()
+    public async Task MarkSupersededAsync_SetsStatusAndSupersededBy()
     {
         var repo = await NewRepositoryWithDocumentAsync("doc-superseded-1");
 
@@ -70,6 +70,21 @@ public sealed class RawDocumentMarkSupersededTests
 
         // Timeline still present (first_discovered_at not wiped)
         Assert.Equal(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), stored.Timeline.FirstDiscoveredAt);
+
+        // Classification, Game and CrossReferences survive too. These are the fields a
+        // partial-model write would silently drop, so asserting them is the whole point
+        // — the comment above previously named them without any assertion behind it.
+        Assert.NotNull(stored.Classification);
+        Assert.Equal(DocumentType.Manual, stored.Classification!.DocumentType);
+
+        Assert.NotNull(stored.Game);
+        Assert.Equal("Stranger Things", stored.Game!.Title);
+        Assert.Equal("stranger-things", stored.Game.Slug);
+        Assert.Equal("Premium", stored.Game.Edition);
+
+        var crossRef = Assert.Single(stored.CrossReferences);
+        Assert.Equal("https://sternpinball.com/manuals/", crossRef.AlsoFoundAt);
+        Assert.Equal("manuals index", crossRef.DiscoveryContext);
     }
 
     [Fact]
@@ -124,6 +139,32 @@ public sealed class RawDocumentMarkSupersededTests
             {
                 FirstDiscoveredAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             },
+            // Populated so the provenance test can assert these survive rather than
+            // merely assert on the two fields that happened to be set. A read-modify-write
+            // preserves them structurally, but the point of the test is to catch a future
+            // refactor to a partial-model write — which would drop exactly these.
+            Classification = new RawClassificationInfo
+            {
+                DocumentType = "Manual",
+                FileFormat = "pdf",
+            },
+            Game = new RawGameInfo
+            {
+                Title = "Stranger Things",
+                Slug = "stranger-things",
+                Edition = "Premium",
+                GamePageUrl = "https://sternpinball.com/game/stranger-things/",
+            },
+            CrossReferences =
+            [
+                new RawCrossRef
+                {
+                    AlsoFoundAt = "https://sternpinball.com/manuals/",
+                    DiscoveryContext = "manuals index",
+                    LinkText = "Stranger Things Manual",
+                    DiscoveredAt = new DateTime(2026, 2, 2, 0, 0, 0, DateTimeKind.Utc),
+                },
+            ],
         };
 
         container
