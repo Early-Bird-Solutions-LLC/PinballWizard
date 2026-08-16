@@ -130,7 +130,34 @@ jobs:
             echo "No prior SHA available — assuming CLI/infra changed."
             exit 0
           fi
-          if git diff --name-only "$BEFORE" HEAD | grep -qE \
+          # The base commit must actually be present. fetch-depth is 2, which covers a
+          # single-commit push, but a multi-commit push or a force-push puts $BEFORE out
+          # of reach. Piping `git diff` straight into grep would hide that: the pipeline
+          # takes grep's exit status, a failed diff produces no output, grep reports "no
+          # match", and the else branch silently sets run_stack=false. The stack would be
+          # skipped on a GREEN run — which is exactly the stale-image bug #859 exists to
+          # fix, reintroduced invisibly and intermittently.
+          #
+          # So: resolve the diff separately, and on ANY failure fall toward RUNNING the
+          # stack. A redundant stack run is cheap and idempotent; a silently skipped one
+          # leaves 20 jobs on stale code with nothing to indicate it. This matches how the
+          # zero-SHA case above already fails toward true, and honours "fallbacks must not
+          # hide failures" (invariant #17) — the degradation is loud, via ::warning::.
+          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Base commit $BEFORE is not present in this clone (shallow fetch)."
+            echo "::warning::Running the deployment stack rather than skipping it."
+            exit 0
+          fi
+
+          if ! CHANGED=$(git diff --name-only "$BEFORE" HEAD 2>&1); then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::git diff against $BEFORE failed: $CHANGED"
+            echo "::warning::Running the deployment stack rather than skipping it."
+            exit 0
+          fi
+
+          if printf '%s\n' "$CHANGED" | grep -qE \
             '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/)'; then
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
             echo "CLI or infra paths changed — deployment stack will run."
@@ -305,22 +332,40 @@ jobs:
         id: imgs
         run: |
           RG="${{ vars.ACA_RESOURCE_GROUP }}"
-          PH="mcr.microsoft.com/k8se/quickstart:latest"
 
-          WIZARD=$(az containerapp show \
-            -n "${{ vars.WIZARD_APP_NAME }}" -g "$RG" \
-            --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || true)
-          [ -z "$WIZARD" ] && WIZARD="$PH"
+          # These values are passed straight into the stack run, which REWRITES the three
+          # live apps. So a lookup failure must abort, never substitute.
+          #
+          # This previously fell back to mcr.microsoft.com/k8se/quickstart:latest whenever
+          # the lookup returned empty — and because `az` was run with `2>/dev/null || true`,
+          # a transient auth blip or throttle was indistinguishable from "no app". The stack
+          # would then apply the Microsoft quickstart placeholder to wizard, api and
+          # ragindexer: a self-inflicted production outage, executed unattended, on a run
+          # that reported success. That is precisely the "fabricated success" invariant #17
+          # forbids — a fallback presenting a synthetic value as though it were real state.
+          #
+          # Fail loudly instead. The apps are already on the new SHA by this point (build-deploy
+          # completed), so aborting here costs only the job repoint, which the next run redoes.
+          discover_image() {
+            local app="$1" out
+            if ! out=$(az containerapp show -n "$app" -g "$RG" \
+                 --query 'properties.template.containers[0].image' -o tsv 2>&1); then
+              echo "::error::Could not read the current image for '$app': $out"
+              echo "::error::Refusing to run the deployment stack — passing a guessed image here"
+              echo "::error::would rewrite the live app with it."
+              return 1
+            fi
+            if [ -z "$out" ]; then
+              echo "::error::Current image for '$app' came back empty. Refusing to run the"
+              echo "::error::deployment stack rather than substitute a placeholder."
+              return 1
+            fi
+            printf '%s' "$out"
+          }
 
-          API=$(az containerapp show \
-            -n "${{ vars.API_APP_NAME }}" -g "$RG" \
-            --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || true)
-          [ -z "$API" ] && API="$PH"
-
-          RAGINDEXER=$(az containerapp show \
-            -n "${{ vars.RAGINDEXER_APP_NAME }}" -g "$RG" \
-            --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || true)
-          [ -z "$RAGINDEXER" ] && RAGINDEXER="$PH"
+          WIZARD=$(discover_image "${{ vars.WIZARD_APP_NAME }}") || exit 1
+          API=$(discover_image "${{ vars.API_APP_NAME }}") || exit 1
+          RAGINDEXER=$(discover_image "${{ vars.RAGINDEXER_APP_NAME }}") || exit 1
 
           echo "wizard=$WIZARD"     >> "$GITHUB_OUTPUT"
           echo "api=$API"           >> "$GITHUB_OUTPUT"
@@ -540,7 +585,7 @@ jobs:
     # state tracks live deploy health. Mirrors canary.yml's alarm pattern.
     name: Report deploy health
     runs-on: ubuntu-latest
-    needs: [build-deploy, deploy-jobs, smoke, e2e]
+    needs: [detect-changes, build-deploy, deploy-jobs, smoke, e2e]
     if: ${{ always() }}
     permissions:
       contents: read
