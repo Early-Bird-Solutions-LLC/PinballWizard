@@ -308,6 +308,14 @@ jobs:
   deploy-jobs:
     name: Repoint ACA jobs via deployment stack
     runs-on: ubuntu-latest
+    # Declared explicitly even though the top-level permissions block already grants
+    # both. It is redundant today, but `smoke` and `report` already set their own, and
+    # a job that authenticates to Azure via OIDC should state the token requirement at
+    # the point of use — if some later job adds a narrower override, this one keeps
+    # working rather than failing at azure/login with an unobvious cause.
+    permissions:
+      contents: read
+      id-token: write
     needs: [build-deploy, detect-changes]
     # Skip when: (a) build-deploy failed (avoids pushing a non-existent SHA to
     # jobs), or (b) detect-changes determined no CLI/infra paths changed.
