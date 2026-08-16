@@ -41,8 +41,10 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
         PlaywrightFactory playwrightFactory,
         IPolitenessGate politeness,
         IOptions<PolitenessOptions> politenessOptions,
+        IOptions<ScraperSettings> settings,
         ILogger<GamePageScraper> logger)
-        : base(playwrightFactory, politeness, politenessOptions.Value, logger)
+        : base(playwrightFactory, politeness, politenessOptions.Value, logger,
+               ResolveRecycleInterval(settings))
     {
         ArgumentNullException.ThrowIfNull(listingScraper);
         _listingScraper = listingScraper;

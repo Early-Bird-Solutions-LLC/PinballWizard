@@ -54,6 +54,23 @@ No staging / pre-prod separation at current scale. `dev` is the live showcase en
 
 ## Deploy
 
+### Automated (CI/CD — the normal path)
+
+`.github/workflows/deploy.yml` runs on every push to `main` and handles the full deploy:
+
+| Resource type | Mechanism | Trigger |
+| --- | --- | --- |
+| ACA Apps (Wizard, Api, RAG-indexer) | `az containerapp update --image :{sha}` — each matrix leg | Every source change (their respective paths) |
+| 20 ACA Jobs (all scraper / linker / OPDB-sync crons) | `az stack sub create` (`deploy-jobs` job) | CLI/infra/`deploy/` paths changed |
+
+**ACA Jobs and the CLI image.** All 20 jobs share a single `cliImageTag` parameter threaded through `infra/main-shared.bicep`. The `deploy-jobs` workflow job runs a full subscription-scoped Deployment Stack update with the new `pinwiz-cli:{sha}` tag — all 20 jobs are repointed atomically. This closes the historical gap where job images could lag merged code by weeks (issue #859).
+
+The stack run is gated on CLI, infra, or `deploy/` (the `scheduled-cli-job` Bicep module every job is built from) path changes to avoid triggering the Azure CognitiveServices RTFP throttle (error 715-123420) that fires after ~3–5 rapid Foundry model-deployment cycles. This is a CognitiveServices-specific throttle, not a Deployment Stack limit (which has no documented per-day cap per Microsoft Learn).
+
+**Operator prerequisites for `deploy-jobs`.** Two one-time setups gate the automated repoint: the GitHub OIDC service principal needs **Owner at subscription scope** (`az stack sub create` operates at subscription scope and the template writes role assignments — Contributor is not sufficient), and the repository secret **`DEVELOPER_OBJECT_ID`** must hold the developer's Entra Object ID (an empty value would strip developer data-plane RBAC under `--action-on-unmanage deleteResources` — issue #744). If either is missing the job fails loudly — at the secret guard or at the `az stack sub validate` preflight, before anything is mutated — and the 20 jobs stay on their previous image until it is fixed. Exact remediation commands are in the `deploy.yml` header comment.
+
+### Manual (infra-only changes / emergency redeploy)
+
 All Azure resource deployments use `az stack sub create` (subscription-scoped Deployment Stacks). Never `az deployment sub create` — Deployment Stacks automatically delete resources removed from Bicep ([CLAUDE.md locked invariant #16](../CLAUDE.md)).
 
 ```pwsh
@@ -64,11 +81,26 @@ pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev -WhatIf
 pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev
 ```
 
+The script auto-discovers the currently-running image tags for wizard/api/ragindexer/cli so a manual Bicep re-deploy does not revert them to the quickstart placeholder.
+
 The two-tier gate controls which resources deploy:
 - `deployPhase2 = false` (default): Cosmos + Log Analytics only (~$30/mo idle)
 - `deployPhase2 = true`: full platform including ACA, AI Search, OpenAI, Storage, App Insights (~$150/mo idle)
 
 See [ADR 0013](adr/0013-two-tier-bicep-deploy.md) for the rationale and the one-way `true → false` warning.
+
+### Verifying job images after a deploy
+
+To confirm all 20 jobs are running the expected SHA:
+
+```pwsh
+az containerapp job list \
+  --resource-group rg-pinwiz-shared-dev \
+  --query "[].{name:name, image:properties.template.containers[0].image}" \
+  -o table
+```
+
+All `pinwiz-job-*` entries should show `<acr>.azurecr.io/pinwiz-cli:<sha>` for the merge SHA you just deployed.
 
 ---
 

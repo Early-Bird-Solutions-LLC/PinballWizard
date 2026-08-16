@@ -46,6 +46,26 @@ public interface IRawDocumentRepository
     // Throws if the document does not exist.
     Task MarkDownloadSkipAsync(string documentId, DownloadSkipInfo skip, CancellationToken cancellationToken);
 
+    // Soft-supersedes a document that is a host-alias duplicate of an existing
+    // canonical record. Sets link_status = Superseded and superseded_by = the
+    // canonical document_id. Only the linker-owned fields (LinkStatus, SupersededBy,
+    // ResolutionStrategy, LinkAttemptedAt) are touched — Source, Timeline, File,
+    // CrossReferences, Game, and Classification are left exactly as they were so the
+    // full provenance chain is preserved (provenance is sacred, LOCKED invariant).
+    //
+    // A Superseded record is excluded from all pipeline consumers (DocumentLinker,
+    // AdminDocumentTriage, AdminLinkReview) by their existing allow-list filters —
+    // no guard code is required. Pinned by LinkStatusSupersededExclusionTests.
+    //
+    // There is deliberately no delete method on this interface. Deleting the row
+    // would destroy the source chain and the evidence that the duplication occurred.
+    // Throws InvalidOperationException if the document does not exist.
+    Task MarkSupersededAsync(
+        string documentId,
+        string supersededByDocumentId,
+        string reason,
+        CancellationToken cancellationToken);
+
     // Copies an already-known File.Sha256 into the top-level ContentHash field
     // ONLY — no File, Timeline, or other field is touched. For the case where
     // Sha256 was already computed (a prior download, or UpdateFileAsync's own

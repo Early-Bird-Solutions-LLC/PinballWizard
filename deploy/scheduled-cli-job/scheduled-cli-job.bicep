@@ -83,7 +83,31 @@ resource job 'Microsoft.App/jobs@2023-05-01' = {
             memory: memory
           }
           command: command
-          env: env
+          // PINWIZ_SERVICE_NAME is appended here, in the module, rather than repeated in
+          // each of the 20 caller blocks in shared.bicep (#875).
+          //
+          // ServiceDefaults reads it to set the OpenTelemetry service.name, which Azure
+          // Monitor maps to AppRoleName. Without it every scheduled job falls back to
+          // IHostEnvironment.ApplicationName — which is "PinballWizard.Cli" for ALL of
+          // them, because they share one entry assembly. #870 moved the four host types
+          // off "unknown_service:dotnet"; this is what finally separates the jobs from
+          // each other in the portal.
+          //
+          // Setting it centrally is the point: jobName is already the module's own
+          // parameter and is unique per job, so a job added later is named correctly by
+          // construction instead of relying on someone remembering to copy an env entry.
+          // That is the failure mode #866 describes for the hand-maintained expected-job
+          // list, and it is avoidable here.
+          //
+          // Appended last so it cannot be clobbered by a caller-supplied env array. No
+          // caller sets this today (verified: zero occurrences of PINWIZ_SERVICE_NAME
+          // across infra/ before this change).
+          env: concat(env, [
+            {
+              name: 'PINWIZ_SERVICE_NAME'
+              value: jobName
+            }
+          ])
         }
       ]
     }

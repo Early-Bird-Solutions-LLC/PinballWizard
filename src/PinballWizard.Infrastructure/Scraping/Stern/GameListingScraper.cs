@@ -37,9 +37,9 @@ public sealed class GameListingScraper : PolitePlaywrightScraperBase
         IOptions<PolitenessOptions> politenessOptions,
         IOptions<ScraperSettings> settings,
         ILogger<GameListingScraper> logger)
-        : base(playwrightFactory, politeness, politenessOptions.Value, logger)
+        : base(playwrightFactory, politeness, politenessOptions.Value, logger,
+               ResolveRecycleInterval(settings))
     {
-        ArgumentNullException.ThrowIfNull(settings);
         _settings = settings.Value;
     }
 

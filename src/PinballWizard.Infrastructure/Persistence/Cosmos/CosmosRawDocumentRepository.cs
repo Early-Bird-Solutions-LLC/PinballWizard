@@ -333,6 +333,48 @@ internal sealed class CosmosRawDocumentRepository
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
 
+    // IRawDocumentRepository.MarkSupersededAsync
+    // Sets link_status = "superseded" and superseded_by = <canonical doc id>.
+    // Provenance discipline: only linker-owned fields (LinkStatus, SupersededBy,
+    // ResolutionStrategy, LinkAttemptedAt) are written; Source, Timeline, File,
+    // CrossReferences, Game, and Classification are left exactly as they were.
+    // Modelled on MarkDownloadSkipAsync — same shape, same provenance discipline.
+    public async Task MarkSupersededAsync(
+        string documentId,
+        string supersededByDocumentId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(supersededByDocumentId);
+        // Guarded like its siblings: reason is persisted to ResolutionStrategy and is the
+        // only record of WHY this document was retired, so a blank one would leave an
+        // unexplained superseded row behind.
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            throw new InvalidOperationException(
+                $"MarkSupersededAsync: document {documentId} not found in scraped_documents_raw.");
+        }
+
+        existing.LinkStatus = ToWireStatus(LinkStatus.Superseded);
+        existing.SupersededBy = supersededByDocumentId;
+        // ResolutionStrategy carries the reason so the admin UI and run logs can
+        // explain WHY this record was superseded without reading the canonical doc.
+        existing.ResolutionStrategy = reason;
+        existing.LinkAttemptedAt = DateTimeOffset.UtcNow;
+
+        // LinkReview block is no longer meaningful once the record is superseded —
+        // clear it so the document does not appear in the link-review queue.
+        existing.LinkReview = null;
+
+        await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
+
     // IRawDocumentRepository.DenormalizeContentHashAsync
     public async Task DenormalizeContentHashAsync(
         string documentId,
@@ -874,6 +916,7 @@ internal sealed class CosmosRawDocumentRepository
                     SkippedAt = ds.SkippedAt,
                 }
                 : null,
+            SupersededBy = cosmos.SupersededBy,
         };
     }
 
@@ -887,6 +930,7 @@ internal sealed class CosmosRawDocumentRepository
         LinkStatus.Failed => "failed",
         LinkStatus.ManuallyLinked => "manually_linked",
         LinkStatus.NeedsReview => "needs_review",
+        LinkStatus.Superseded => "superseded",
         _ => throw new InvalidOperationException($"Unhandled LinkStatus value: {status}"),
     };
 
@@ -902,6 +946,7 @@ internal sealed class CosmosRawDocumentRepository
         "failed" => "Failed",
         "manually_linked" => "ManuallyLinked",
         "needs_review" => "NeedsReview",
+        "superseded" => "Superseded",
         _ => string.Empty,
     };
 }

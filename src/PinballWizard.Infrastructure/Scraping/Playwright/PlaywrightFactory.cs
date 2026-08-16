@@ -52,24 +52,6 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     }
 
     /// <summary>
-    /// Creates a new page with standard configuration for scraping sternpinball.com.
-    /// </summary>
-    public async Task<IPage> NewPageAsync()
-    {
-        var browser = await GetBrowserAsync();
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions
-        {
-            UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
-        });
-
-        var page = await context.NewPageAsync();
-        page.SetDefaultTimeout(30_000);
-        return page;
-    }
-
-    /// <summary>
     /// Installs Playwright browsers (called with --install-playwright CLI flag).
     /// </summary>
     /// <param name="withDeps">

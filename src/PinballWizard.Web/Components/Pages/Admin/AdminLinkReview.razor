@@ -10,16 +10,25 @@
 @* AdminLinkReview — /admin/link-review needs_review queue.
  *
  * Public-read after the admin showcase split: candidate rows are visible to
- * everyone; the Assign action is gated by _isAdmin (UI) and AdminActionGuard
- * (server). Renders one row per (document, candidate) pair for every raw
- * document whose link_status is NeedsReview — the resolver never guesses on
- * ambiguity (invariant #17), so a human picks the correct machine here.
+ * everyone; the Assign and Supersede actions are gated by _isAdmin (UI) and
+ * AdminActionGuard (server). Renders one row per (document, candidate) pair
+ * for every raw document whose link_status is NeedsReview — the resolver
+ * never guesses on ambiguity (invariant #17), so a human picks the correct
+ * machine here.
  *
  * Assign writes a Tier-0 link_overrides row scoped to the document's
  * source_pattern (LinkOverrideRecord.BuildSourcePattern) and flips the
  * document back to Pending so the linker re-processes it and applies the
  * override on its next pass — the same Tier-0 lookup DocumentLinker already
  * performs for every other document (see DocumentLinker.TryTier0Override).
+ *
+ * Supersede (issue #872) marks a row as a host-alias duplicate of its
+ * canonical counterpart: sets link_status = Superseded + superseded_by =
+ * the canonical doc id. Only available when UrlCanonicalizer auto-detects a
+ * known alias (currently wp.sternpinball.com → sternpinball.com). For rows
+ * where the file URL already uses the canonical host, no canonical id can be
+ * derived without operator knowledge, so the action is not offered — Assign
+ * is the correct action for ambiguous-but-not-alias rows.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
@@ -32,6 +41,7 @@
 
 @inject IRawDocumentRepository RawDocRepo
 @inject ILinkOverrideRepository OverrideRepo
+@inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject ILogger<AdminLinkReview> Logger
 @inject PinballWizard.Web.Security.AdminActionGuard Guard
@@ -82,13 +92,25 @@
                     }
                     else if (_isAdmin)
                     {
-                        <MudButton Size="Size.Small"
-                                   Variant="Variant.Filled"
-                                   Color="Color.Primary"
-                                   data-testid="@($"link-review-assign-{context.Item.DocumentId}-{context.Item.MachineId}")"
-                                   OnClick="@(() => AssignAsync(context.Item))">
-                            Assign
-                        </MudButton>
+                        <MudStack Row="true" Spacing="1">
+                            <MudButton Size="Size.Small"
+                                       Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       data-testid="@($"link-review-assign-{context.Item.DocumentId}-{context.Item.MachineId}")"
+                                       OnClick="@(() => AssignAsync(context.Item))">
+                                Assign
+                            </MudButton>
+                            @if (context.Item.CanonicalDuplicateId is not null)
+                            {
+                                <MudButton Size="Size.Small"
+                                           Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           data-testid="@($"link-review-supersede-{context.Item.DocumentId}")"
+                                           OnClick="@(() => SupersedeAsync(context.Item))">
+                                    Supersede duplicate
+                                </MudButton>
+                            }
+                        </MudStack>
                     }
                 </CellTemplate>
             </TemplateColumn>
@@ -118,12 +140,25 @@
         public required string DocumentId { get; init; }
         public required string SourcePattern { get; init; }
         public required string DiscoveryUrl { get; init; }
+        public required string FileUrl { get; init; }
         public required string Manufacturer { get; init; }
         public required string MachineId { get; init; }
         public required string MachineTitle { get; init; }
         public required string EvidenceKind { get; init; }
         public required string MatchedVariant { get; init; }
         public bool ActionBusy { get; set; }
+
+        // Non-null when UrlCanonicalizer auto-detects that this document's file URL
+        // is a known host alias (e.g. wp.sternpinball.com → sternpinball.com). In
+        // that case the canonical document_id is pre-computed here so the operator can
+        // confirm the supersede without typing it.
+        //
+        // Null when the file URL already uses the canonical host, or when the host is
+        // not in UrlCanonicalizer's alias map. In that case the row is NOT a detectable
+        // host-alias duplicate — do not offer a pre-filled supersede action, because
+        // any id we supplied would be a guess and could silently point to the wrong
+        // document. The correct action for these rows is Assign.
+        public string? CanonicalDuplicateId { get; init; }
     }
 
     private List<LinkReviewRow> _rows = [];
@@ -156,6 +191,20 @@
             await foreach (var doc in RawDocRepo.StreamByStatusAsync([LinkStatus.NeedsReview], cts.Token))
             {
                 var sourcePattern = LinkOverrideRecord.BuildSourcePattern(doc.Source.DiscoveryUrl, doc.DocumentType);
+
+                // Auto-detect host-alias duplicates: canonicalize the file URL and check
+                // whether the result differs from the original. When it does, the document
+                // is a known alias duplicate (e.g. wp.sternpinball.com → sternpinball.com);
+                // compute the canonical id so the operator can supersede with one click.
+                // When canonicalization produces the same URL, no alias applies — we have
+                // no basis for computing a canonical id, so we leave CanonicalDuplicateId
+                // null and the Supersede button does not render for that row.
+                var fileUrl = doc.Source.FileUrl;
+                var canonicalized = UrlCanonicalizer.Canonicalize(fileUrl);
+                var canonicalDuplicateId = !string.Equals(canonicalized, fileUrl, StringComparison.Ordinal)
+                    ? DocumentRecord.GenerateId(fileUrl)  // GenerateId already calls Canonicalize internally
+                    : null;
+
                 foreach (var candidate in doc.LinkReview?.Candidates ?? [])
                 {
                     rows.Add(new LinkReviewRow
@@ -163,11 +212,13 @@
                         DocumentId = doc.DocumentId,
                         SourcePattern = sourcePattern,
                         DiscoveryUrl = doc.Source.DiscoveryUrl,
+                        FileUrl = fileUrl,
                         Manufacturer = doc.Manufacturer ?? string.Empty,
                         MachineId = candidate.MachineId,
                         MachineTitle = candidate.MachineTitle,
                         EvidenceKind = candidate.EvidenceKind,
                         MatchedVariant = candidate.MatchedVariant,
+                        CanonicalDuplicateId = canonicalDuplicateId,
                     });
                 }
 
@@ -247,6 +298,67 @@
                 "Link-review assign failed for document {DocumentId} to machine {MachineId} (override written: {OverrideWritten}).",
                 row.DocumentId, row.MachineId, overrideWritten);
             Snackbar.Add($"Assign failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            row.ActionBusy = false;
+            SafeStateHasChanged();
+        }
+    }
+
+    // Soft-supersedes a host-alias duplicate: marks the row as Superseded and records
+    // the canonical document_id it duplicates. Requires confirmation before writing —
+    // the operator cannot undo this from the UI (there is no un-supersede action, and
+    // no delete action exists on IRawDocumentRepository by design).
+    //
+    // Pattern: DialogService.ShowMessageBoxAsync — same confirm flow as AdminLinkOverrides
+    // DeleteAsync. A MudDialog inline was also considered; ShowMessageBoxAsync is lighter
+    // (no extra markup) and consistent with the existing admin confirm pattern.
+    private async Task SupersedeAsync(LinkReviewRow row)
+    {
+        if (!await Guard.IsAdminAsync(AuthState))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+
+        // CanonicalDuplicateId is non-null whenever the Supersede button renders,
+        // but guard explicitly so a misconfigured template cannot write a null id.
+        if (row.CanonicalDuplicateId is null)
+        {
+            Snackbar.Add("Cannot supersede: no canonical duplicate id detected for this document.", Severity.Warning);
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Supersede duplicate document",
+            $"Mark {row.DocumentId} as a duplicate of {row.CanonicalDuplicateId}?\n\n" +
+            "This is a permanent action from the UI — the row will be excluded from all " +
+            "processing queues and the Assign button will no longer appear for it.",
+            yesText: "Supersede",
+            cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        row.ActionBusy = true;
+        SafeStateHasChanged();
+        try
+        {
+            await RawDocRepo.MarkSupersededAsync(
+                row.DocumentId,
+                row.CanonicalDuplicateId,
+                reason: "host_alias_duplicate",
+                CancellationToken.None);
+
+            _rows.RemoveAll(r => r.DocumentId == row.DocumentId);
+            Snackbar.Add($"Marked {row.DocumentId} as superseded by {row.CanonicalDuplicateId}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "Link-review supersede failed for document {DocumentId} (canonical: {CanonicalId}).",
+                row.DocumentId, row.CanonicalDuplicateId);
+            Snackbar.Add($"Supersede failed: {ex.Message}", Severity.Error);
         }
         finally
         {
