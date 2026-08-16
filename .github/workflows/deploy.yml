@@ -621,6 +621,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: smoke
+    # Explicit condition, and it is load-bearing — without it this canary SKIPS.
+    #
+    # GitHub propagates "skipped" transitively. `smoke` depends on `deploy-jobs`, which is
+    # skipped on any merge that touches no CLI/infra path (the common case). `smoke` itself
+    # survives that via its own `!cancelled()`, but a dependent with NO `if:` of its own is
+    # skipped anyway — so adding deploy-jobs to smoke's needs silently disabled this job.
+    # Observed on df8e280: smoke succeeded, e2e skipped, Deploy still reported green.
+    #
+    # That is exactly the failure this pipeline exists to prevent — a verification step
+    # quietly not running while everything looks healthy. /alive stayed green through the
+    # 2026-06-10 functional outage; this canary is the gate the postmortems asked for, so
+    # it must never be silently absent.
+    #
+    # `needs.smoke.result == 'success'` preserves the original semantics (do not canary a
+    # deployment whose smoke test failed) rather than the looser `!cancelled()`, which
+    # would run it even after a failed smoke.
+    if: ${{ !cancelled() && needs.smoke.result == 'success' }}
 
     env:
       DOTNET_NOLOGO: 'true'
