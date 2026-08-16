@@ -78,6 +78,11 @@ on:
       # ^infra/ branch of that gate was unreachable and Bicep edits reached production
       # only via a manual stack run — the gap #859 exists to close.
       - 'infra/**'
+      # deploy/** holds scheduled-cli-job.bicep, the module every one of the 20 ACA
+      # Jobs is built from. Omitting it meant a change to the job definitions could
+      # merge and never deploy — the same inert-change defect as #859, one directory
+      # over. Found when #875 merged and triggered nothing.
+      - 'deploy/**'
       - 'docs/**'
 
   # Allow manual trigger from the Actions tab (useful for re-deploying
@@ -167,7 +172,7 @@ jobs:
           rm -f "$DIFF_ERR"
 
           if printf '%s\n' "$CHANGED" | grep -qE \
-            '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/)'; then
+            '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/|deploy/)'; then
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
             echo "CLI or infra paths changed — deployment stack will run."
           else
