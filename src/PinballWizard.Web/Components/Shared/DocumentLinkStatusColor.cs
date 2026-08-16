@@ -22,6 +22,10 @@ internal static class DocumentLinkStatusColor
         // (blue) is banned as a status color by the closed palette; the queue
         // surfaces urgency through the admin review list, not through chip color.
         "needs_review" or "NeedsReview"              => Color.Default,
+        // superseded: terminal/resolved state — neutral role. Not a failure;
+        // not a success (no active machine link); just "this record has been
+        // retired in favor of its canonical counterpart."
+        "superseded" or "Superseded"                 => Color.Default,
         _                                            => Color.Default,
     };
 }

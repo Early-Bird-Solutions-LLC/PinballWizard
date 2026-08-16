@@ -93,6 +93,13 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     [JsonPropertyName("download_skip")]
     public RawDownloadSkipInfo? DownloadSkip { get; set; }
 
+    // Non-null when link_status = "superseded". Holds the canonical document_id this
+    // record is a host-alias duplicate of. Written by MarkSupersededAsync; immutable
+    // thereafter. The canonical record is NOT updated — the relationship is one-way:
+    // this record points to its canonical counterpart, not vice versa.
+    [JsonPropertyName("superseded_by")]
+    public string? SupersededBy { get; set; }
+
     // Cosmos system property — populated from the JSON response when reading
     // an existing document. Used for ETag-conditional writes (ADR-0025 § 7)
     // to prevent lost updates when the scraper and linker write concurrently.
