@@ -367,17 +367,23 @@ jobs:
             out=$(az containerapp show -n "$app" -g "$RG" \
                   --query 'properties.template.containers[0].image' -o tsv 2>"$err")
             rc=$?
+            # Diagnostics go to STDERR (>&2), never stdout. This function is called as
+            # WIZARD=$(discover_image ...), so anything written to stdout is captured into
+            # the variable instead of printed — the loud failure would have been silently
+            # swallowed by the very command substitution meant to read its result, leaving
+            # an operator with a bare non-zero exit and no reason. Only the image tag
+            # itself belongs on stdout.
             if [ "$rc" -ne 0 ]; then
-              echo "::error::Could not read the current image for '$app': $(tr '\n' ' ' < "$err")"
-              echo "::error::Refusing to run the deployment stack — passing a guessed image here"
-              echo "::error::would rewrite the live app with it."
+              echo "::error::Could not read the current image for '$app': $(tr '\n' ' ' < "$err")" >&2
+              echo "::error::Refusing to run the deployment stack — passing a guessed image here" >&2
+              echo "::error::would rewrite the live app with it." >&2
               rm -f "$err"
               return 1
             fi
             rm -f "$err"
             if [ -z "$out" ]; then
-              echo "::error::Current image for '$app' came back empty. Refusing to run the"
-              echo "::error::deployment stack rather than substitute a placeholder."
+              echo "::error::Current image for '$app' came back empty. Refusing to run the" >&2
+              echo "::error::deployment stack rather than substitute a placeholder." >&2
               return 1
             fi
             printf '%s' "$out"
@@ -444,6 +450,46 @@ jobs:
             --action-on-unmanage deleteResources \
             --deny-settings-mode none \
             --yes
+
+      # A green stack run is not evidence the 20 jobs actually moved. #859 exists
+      # precisely because images stayed stale while everything reported success, so
+      # this asserts the acceptance criterion rather than assuming it: every
+      # pinwiz-job-* container must now reference the SHA just built. Without it,
+      # deploy-jobs proves only that the ARM call returned 200 — the same
+      # green-but-unverified shape the issue is about.
+      - name: Verify all ACA jobs now run the built image
+        run: |
+          EXPECTED="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
+          RG="${{ vars.ACA_RESOURCE_GROUP }}"
+
+          ERRF=$(mktemp)
+          if ! ACTUAL=$(az containerapp job list -g "$RG" \
+               --query "[?starts_with(name,'pinwiz-job-')].{name:name,image:properties.template.containers[0].image}" \
+               -o tsv 2>"$ERRF"); then
+            echo "::error::Could not list ACA jobs to verify the repoint:"
+            sed 's/^/::error::  /' "$ERRF"
+            rm -f "$ERRF"
+            exit 1
+          fi
+          rm -f "$ERRF"
+
+          # An empty list must fail, not pass. A query that silently matches nothing
+          # would otherwise report success for zero jobs — a false green of exactly
+          # the kind this step exists to prevent.
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::No pinwiz-job-* jobs found in $RG. Expected 20 — refusing to"
+            echo "::error::report a successful repoint against an empty result."
+            exit 1
+          fi
+
+          STALE=$(printf '%s\n' "$ACTUAL" | grep -v -F "$EXPECTED" || true)
+          TOTAL=$(printf '%s\n' "$ACTUAL" | grep -c . || true)
+          if [ -n "$STALE" ]; then
+            echo "::error::These ACA jobs are NOT on $EXPECTED after the stack run:"
+            printf '%s\n' "$STALE" | sed 's/^/::error::  /'
+            exit 1
+          fi
+          echo "All $TOTAL pinwiz-job-* jobs are on $EXPECTED."
 
   smoke:
     # Runs after the build-deploy matrix completes — the wizard app depends on
