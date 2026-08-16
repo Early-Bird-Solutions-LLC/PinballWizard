@@ -1,7 +1,7 @@
 name: Deploy
 
-# Builds and pushes container images to ACR, then updates the ACA apps
-# when source code changes land on main. Separated from ci.yml so a
+# Builds and pushes container images to ACR, then updates the ACA apps and
+# ACA Jobs when source code changes land on main. Separated from ci.yml so a
 # failed deploy does not block test-coverage reporting, and so the deploy
 # can be re-triggered independently.
 #
@@ -12,19 +12,33 @@ name: Deploy
 #        Issuer:  https://token.actions.githubusercontent.com
 #        Subject: repo:Early-Bird-Solutions-LLC/PinballWizard:ref:refs/heads/main
 #        Audience: api://AzureADTokenExchange
-#   3. Grant the app registration this Azure RBAC role (data-plane, manual):
-#        AcrPush       on  <acr-resource>           (push + az acr login token exchange)
-#      The Container App Contributor grants needed for `az containerapp update
-#      --image` (Wizard / Api / RAG-indexer) are NO LONGER manual — they are IaC:
-#      infra/modules/shared.bicep assigns Contributor from the cicdDeployPrincipalId
-#      param (the SP OBJECT id, set in main-shared.<env>.bicepparam). They apply on
-#      the next `Deploy-SharedResources.ps1` run. ⚠️ Adding a NEW app to the matrix
-#      below? Add its Contributor assignment in shared.bicep too (an un-granted app
-#      makes `az containerapp update` fail with a misleading "does not exist").
+#   3. Grant the app registration these Azure RBAC roles:
+#        AcrPush  on  <acr-resource>   (push + az acr login token exchange)
+#        Owner    on  <subscription>   (required for az stack sub create — manages
+#                                       subscription-scoped deploymentStack resources
+#                                       and creates the role assignments the Bicep
+#                                       template controls). The per-app Contributor
+#                                       grants in infra/modules/shared.bicep are
+#                                       still IaC-managed via cicdDeployPrincipalId
+#                                       (set in main-shared.dev.bicepparam), but the
+#                                       stack run itself requires subscription Owner
+#                                       because `az stack sub create` operates at
+#                                       subscription scope and the template creates
+#                                       sqlRoleAssignments / Storage / KV RBAC that
+#                                       require Microsoft.Authorization/*/write.
+#                                       ⚠️ Standard Contributor is NOT enough.
 #   4. Add these GitHub repository secrets:
 #        AZURE_CLIENT_ID       — app registration client ID (appId)
 #        AZURE_TENANT_ID       — 9793cd0f-2b27-4757-9986-1f7f1e35864a
 #        AZURE_SUBSCRIPTION_ID — b1f33f17-74a9-4ecc-b46c-c4f31776b840
+#        DEVELOPER_OBJECT_ID   — Entra Object ID of the human developer (not the
+#                                SP). Passed to the stack run so the developer's
+#                                data-plane RBAC assignments (Cosmos Data
+#                                Contributor, Search Index Data Contributor,
+#                                Cognitive Services OpenAI User) are preserved.
+#                                Without this, every CI stack run strips those
+#                                roles and local-live CLI runs fail with 403.
+#                                Find it: az ad signed-in-user show --query id
 #   5. Add these GitHub repository variables (Settings → Variables → Actions):
 #        ACR_LOGIN_SERVER      — <acr-name>.azurecr.io  (full login server)
 #        ACA_RESOURCE_GROUP    — rg-pinwiz-shared-dev
@@ -59,6 +73,11 @@ on:
       - 'src/PinballWizard.ServiceDefaults/**'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
+      # infra/** matters because detect-changes gates the deployment stack on it.
+      # Without it an infra-only change never triggers this workflow at all, so the
+      # ^infra/ branch of that gate was unreachable and Bicep edits reached production
+      # only via a manual stack run — the gap #859 exists to close.
+      - 'infra/**'
       - 'docs/**'
 
   # Allow manual trigger from the Actions tab (useful for re-deploying
@@ -75,6 +94,87 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Fast pre-flight: detect which logical path categories changed. Runs in
+  # parallel with build-deploy so it adds no wall-clock to the critical path.
+  #
+  # The `deploy-jobs` stack run is gated on `run_stack == 'true'` specifically
+  # to avoid triggering the Azure CognitiveServices Real-Time Fraud Protection
+  # (RTFP) system (error 715-123420) on every merge. The stack includes Foundry
+  # model deployments; repeated rapid cycles (>~3–5/day) trigger a service-side
+  # block that requires waiting or Microsoft Support. The ARM Deployment Stack
+  # itself has no documented per-day limit (confirmed against Microsoft Learn
+  # 2026-08-13: https://learn.microsoft.com/en-us/azure/azure-resource-manager/
+  # bicep/deployment-stacks-known-issues). Gating on CLI/infra changes avoids
+  # unnecessary stack runs when only web/api/rag-indexer code changed.
+  detect-changes:
+    name: Detect CLI / infra changes
+    runs-on: ubuntu-latest
+    outputs:
+      run_stack: ${{ steps.detect.outputs.run_stack }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Check for CLI or infra changes
+        id: detect
+        run: |
+          # workflow_dispatch: always run the stack (operator intent).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "Manual trigger — unconditionally running the deployment stack."
+            exit 0
+          fi
+          BEFORE="${{ github.event.before }}"
+          # Zero SHA = first commit / force-push with no common ancestor — treat
+          # as changed rather than silently skipping the stack run.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "No prior SHA available — assuming CLI/infra changed."
+            exit 0
+          fi
+          # The base commit must actually be present. fetch-depth is 2, which covers a
+          # single-commit push, but a multi-commit push or a force-push puts $BEFORE out
+          # of reach. Piping `git diff` straight into grep would hide that: the pipeline
+          # takes grep's exit status, a failed diff produces no output, grep reports "no
+          # match", and the else branch silently sets run_stack=false. The stack would be
+          # skipped on a GREEN run — which is exactly the stale-image bug #859 exists to
+          # fix, reintroduced invisibly and intermittently.
+          #
+          # So: resolve the diff separately, and on ANY failure fall toward RUNNING the
+          # stack. A redundant stack run is cheap and idempotent; a silently skipped one
+          # leaves 20 jobs on stale code with nothing to indicate it. This matches how the
+          # zero-SHA case above already fails toward true, and honours "fallbacks must not
+          # hide failures" (invariant #17) — the degradation is loud, via ::warning::.
+          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Base commit $BEFORE is not present in this clone (shallow fetch)."
+            echo "::warning::Running the deployment stack rather than skipping it."
+            exit 0
+          fi
+
+          DIFF_ERR=$(mktemp)
+          if ! CHANGED=$(git diff --name-only "$BEFORE" HEAD 2>"$DIFF_ERR"); then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::git diff against $BEFORE failed:"
+            sed 's/^/::warning::  /' "$DIFF_ERR"
+            rm -f "$DIFF_ERR"
+            echo "::warning::Running the deployment stack rather than skipping it."
+            exit 0
+          fi
+          rm -f "$DIFF_ERR"
+
+          if printf '%s\n' "$CHANGED" | grep -qE \
+            '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/)'; then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "CLI or infra paths changed — deployment stack will run."
+          else
+            echo "run_stack=false" >> "$GITHUB_OUTPUT"
+            echo "No CLI or infra changes detected — skipping deployment stack run."
+          fi
+
   build-deploy:
     # Web and Api images build + deploy in parallel matrix legs — they
     # share no build outputs (independent Dockerfiles over the same
@@ -104,14 +204,15 @@ jobs:
           - image: pinwiz-rag-indexer
             dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
             app_name_var: RAGINDEXER_APP_NAME
-          # CLI image — feeds ACA *Jobs* (nightly linker + weekly OPDB sync),
-          # NOT an ACA *App*. So this leg is build + push only: there is no
-          # `az containerapp update` to run (that command targets apps, not
-          # jobs). Jobs pick up the new :{sha} image on the next Deployment
-          # Stack run via Deploy-SharedResources.ps1 (operator-controlled), which
-          # is the deliberate gate before the resurrected linker / new OPDB cron
-          # mutate live Cosmos data. The empty app_name_var below disables the
-          # update step for this leg.
+          # CLI image — feeds all 20 ACA *Jobs* (scraper / linker / OPDB sync
+          # cron jobs), NOT an ACA *App*. This leg is build + push only; the
+          # `deploy-jobs` job below then triggers an `az stack sub create` with
+          # the new :{sha} CLI tag, which repoints all 20 jobs atomically via
+          # Bicep (every job uses the `cliImageTag` parameter). Using the stack
+          # is the only path that satisfies the Deployment Stacks LOCKED
+          # INVARIANT (CLAUDE.md #16, DLV-02) — `az containerapp job update` is
+          # explicitly banned. The empty app_name_var disables the `az
+          # containerapp update` step that serves ACA *App* legs only.
           - image: pinwiz-cli
             dockerfile: src/PinballWizard.Cli/Dockerfile
             app_name_var: ''
@@ -178,10 +279,283 @@ jobs:
             --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
             --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # Run a Deployment Stack update with the freshly built CLI SHA so all 20 ACA
+  # Jobs are repointed in one IaC-governed, idempotent operation. This closes
+  # the gap where `pinwiz-cli` images merged to main but jobs ran a 26-day-old
+  # build until an operator manually re-ran Deploy-SharedResources.ps1 (#859).
+  #
+  # Using `az stack sub create` is the ONLY correct path (locked invariant
+  # DLV-02 / CLAUDE.md #16). `az containerapp job update --image` is banned.
+  #
+  # Only runs when CLI or infra files changed (gated by detect-changes). Skips
+  # if the build-deploy matrix failed — never push a non-existent image tag.
+  #
+  # RBAC PREREQUISITE (one-time operator setup, not yet applied):
+  #   Grant the OIDC SP Owner at subscription scope so it can create the
+  #   subscription-scoped deploymentStack resource and manage the RBAC
+  #   assignments the Bicep template controls (sqlRoleAssignments, KV, Storage,
+  #   AI Search, per-app Contributor). Standard Contributor is not sufficient
+  #   because it lacks Microsoft.Authorization/roleAssignments/write.
+  #
+  #   az role assignment create \
+  #     --role Owner \
+  #     --assignee c8466e83-9470-4cad-92a1-2d4149263fdc \
+  #     --scope /subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840
+  #
+  #   Until this grant is applied, this job will fail on first run.
+  #
+  deploy-jobs:
+    name: Repoint ACA jobs via deployment stack
+    runs-on: ubuntu-latest
+    # Declared explicitly even though the top-level permissions block already grants
+    # both. It is redundant today, but `smoke` and `report` already set their own, and
+    # a job that authenticates to Azure via OIDC should state the token requirement at
+    # the point of use — if some later job adds a narrower override, this one keeps
+    # working rather than failing at azure/login with an unobvious cause.
+    permissions:
+      contents: read
+      id-token: write
+    needs: [build-deploy, detect-changes]
+    # Skip when: (a) build-deploy failed (avoids pushing a non-existent SHA to
+    # jobs), or (b) detect-changes determined no CLI/infra paths changed.
+    # Default GHA behavior: job is SKIPPED (not failed) when needs.*.result !=
+    # 'success', which is correct — a skip does NOT trigger the report failure
+    # alarm. We deliberately omit !cancelled() here so a build failure also
+    # prevents the stack run.
+    if: ${{ needs.detect-changes.outputs.run_stack == 'true' }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # ── Azure login via OIDC ────────────────────────────────────────────────
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Preserve currently-deployed app images ──────────────────────────────
+      # Auto-discover the running wizard / api / ragindexer image tags so a
+      # CLI-only stack run does not revert those apps to the quickstart
+      # placeholder. Mirrors Deploy-SharedResources.ps1 lines 325-353. At this
+      # point build-deploy has already completed, so the apps are on the new SHA
+      # (or the previous SHA if those legs failed — either way, we preserve what
+      # is actually running rather than blindly assuming the new SHA).
+      - name: Discover current app image tags
+        id: imgs
+        run: |
+          RG="${{ vars.ACA_RESOURCE_GROUP }}"
+
+          # These values are passed straight into the stack run, which REWRITES the three
+          # live apps. So a lookup failure must abort, never substitute.
+          #
+          # This previously fell back to mcr.microsoft.com/k8se/quickstart:latest whenever
+          # the lookup returned empty — and because `az` was run with `2>/dev/null || true`,
+          # a transient auth blip or throttle was indistinguishable from "no app". The stack
+          # would then apply the Microsoft quickstart placeholder to wizard, api and
+          # ragindexer: a self-inflicted production outage, executed unattended, on a run
+          # that reported success. That is precisely the "fabricated success" invariant #17
+          # forbids — a fallback presenting a synthetic value as though it were real state.
+          #
+          # Fail loudly instead. The apps are already on the new SHA by this point (build-deploy
+          # completed), so aborting here costs only the job repoint, which the next run redoes.
+          # stderr goes to its own file, never merged into stdout with 2>&1. az writes
+          # deprecation and extension warnings to stderr even on SUCCESS, and merging
+          # them would splice that text into the image tag — which is then handed to the
+          # stack and written onto the live app. That is the same defect as the
+          # placeholder fallback this function replaced, just arriving by a different
+          # route, so the capture has to keep the streams apart.
+          discover_image() {
+            local app="$1" out err rc
+            err=$(mktemp)
+            out=$(az containerapp show -n "$app" -g "$RG" \
+                  --query 'properties.template.containers[0].image' -o tsv 2>"$err")
+            rc=$?
+            # Diagnostics go to STDERR (>&2), never stdout. This function is called as
+            # WIZARD=$(discover_image ...), so anything written to stdout is captured into
+            # the variable instead of printed — the loud failure would have been silently
+            # swallowed by the very command substitution meant to read its result, leaving
+            # an operator with a bare non-zero exit and no reason. Only the image tag
+            # itself belongs on stdout.
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::Could not read the current image for '$app': $(tr '\n' ' ' < "$err")" >&2
+              echo "::error::Refusing to run the deployment stack — passing a guessed image here" >&2
+              echo "::error::would rewrite the live app with it." >&2
+              rm -f "$err"
+              return 1
+            fi
+            rm -f "$err"
+            if [ -z "$out" ]; then
+              echo "::error::Current image for '$app' came back empty. Refusing to run the" >&2
+              echo "::error::deployment stack rather than substitute a placeholder." >&2
+              return 1
+            fi
+            printf '%s' "$out"
+          }
+
+          WIZARD=$(discover_image "${{ vars.WIZARD_APP_NAME }}") || exit 1
+          API=$(discover_image "${{ vars.API_APP_NAME }}") || exit 1
+          RAGINDEXER=$(discover_image "${{ vars.RAGINDEXER_APP_NAME }}") || exit 1
+
+          echo "wizard=$WIZARD"     >> "$GITHUB_OUTPUT"
+          echo "api=$API"           >> "$GITHUB_OUTPUT"
+          echo "ragindexer=$RAGINDEXER" >> "$GITHUB_OUTPUT"
+
+          echo "  wizardImageTag:     $WIZARD"
+          echo "  apiImageTag:        $API"
+          echo "  ragIndexerImageTag: $RAGINDEXER"
+          echo "  cliImageTag:        ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
+
+      # ── Deployment Stack update ─────────────────────────────────────────────
+      # Passes the committed bicepparam file (picks up cicdDeployPrincipalId,
+      # azureAdClientId, deployPhase2, searchLocation, etc.) and overrides:
+      #   - *ImageTag params with the auto-discovered / just-built values
+      #   - developerObjectId from the DEVELOPER_OBJECT_ID secret so the stack
+      #     preserves the human developer's data-plane role assignments. Without
+      #     this override the bicepparam's empty string causes deleteResources to
+      #     strip those assignments on every CI run (#744).
+      #
+      # Stack name convention: "pinwiz-shared-{env}" — matches Deploy-SharedResources.ps1.
+      # Location: eastus2 — matches the subscription-scope stack registration.
+      # action-on-unmanage deleteResources — Bicep-removed resources are cleaned up.
+      # Fail BEFORE the stack runs if DEVELOPER_OBJECT_ID is unset. Without this the
+      # step would pass developerObjectId="" straight through, and combined with
+      # --action-on-unmanage deleteResources that STRIPS the developer's Cosmos /
+      # Search / OpenAI data-plane role assignments (#744) — silently, on a run that
+      # otherwise looks successful. Restoring them is manual.
+      #
+      # Today the missing subscription-scope Owner grant masks this, because the stack
+      # call fails at authorization first. That is accidental protection, not a design:
+      # granting Owner without also adding the secret would expose it immediately. This
+      # guard makes the ordering explicit instead of relying on one gap covering another.
+      - name: Verify DEVELOPER_OBJECT_ID is configured
+        run: |
+          if [ -z "${{ secrets.DEVELOPER_OBJECT_ID }}" ]; then
+            echo "::error::DEVELOPER_OBJECT_ID secret is not set. Refusing to run the deployment"
+            echo "::error::stack: an empty developerObjectId would strip developer data-plane"
+            echo "::error::RBAC (Cosmos / Search / OpenAI) via --action-on-unmanage deleteResources (#744)."
+            echo "::error::Add the secret with the developer's Entra Object ID, then re-run."
+            exit 1
+          fi
+          echo "DEVELOPER_OBJECT_ID is set."
+
+      # Preflight the stack with the SAME arguments before mutating anything.
+      # `az stack sub validate` exercises the real path — authorization, template
+      # compilation, and the .bicepparam-plus-inline-override parameter syntax — without
+      # deploying, so a missing RBAC grant surfaces here with remediation attached rather
+      # than as a raw AuthorizationFailed part-way through an unattended
+      # --action-on-unmanage deleteResources run.
+      #
+      # This is deliberately a capability probe, not a role-name lookup: checking for
+      # "Owner" would assert a proxy for the permission instead of the permission itself,
+      # and would pass or fail for reasons unrelated to whether the operation can actually
+      # run. Validate answers the only question that matters.
+      #
+      # KNOWN: as of this commit the OIDC service principal has NO subscription-scope role
+      # assignment, so this step is expected to fail until the grant below is applied. That
+      # is why it fails loudly with instructions rather than letting the create attempt it.
+      - name: Preflight the deployment stack (validate only)
+        run: |
+          if ! az stack sub validate \
+            --name "pinwiz-shared-dev" \
+            --location eastus2 \
+            --template-file infra/main-shared.bicep \
+            --parameters infra/main-shared.dev.bicepparam \
+              wizardImageTag="${{ steps.imgs.outputs.wizard }}" \
+              apiImageTag="${{ steps.imgs.outputs.api }}" \
+              ragIndexerImageTag="${{ steps.imgs.outputs.ragindexer }}" \
+              cliImageTag="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}" \
+              developerObjectId="${{ secrets.DEVELOPER_OBJECT_ID }}" \
+            --action-on-unmanage deleteResources \
+            --deny-settings-mode none; then
+            echo "::error::Deployment stack validation failed — NOT running the stack."
+            echo "::error::"
+            echo "::error::If this is an authorization failure, the GitHub OIDC service"
+            echo "::error::principal needs Owner at subscription scope. az stack sub create"
+            echo "::error::operates at subscription scope and the template writes role"
+            echo "::error::assignments, which require Microsoft.Authorization/*/write —"
+            echo "::error::Contributor is NOT sufficient:"
+            echo "::error::"
+            echo "::error::  az role assignment create --role Owner \\"
+            echo "::error::    --assignee c8466e83-9470-4cad-92a1-2d4149263fdc \\"
+            echo "::error::    --scope /subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840"
+            echo "::error::"
+            echo "::error::Otherwise it is a template or parameter error — see the output above."
+            exit 1
+          fi
+          echo "Stack validation passed — proceeding to the live run."
+
+      - name: Run deployment stack (repoints 20 ACA jobs to pinwiz-cli:${{ github.sha }})
+        run: |
+          az stack sub create \
+            --name "pinwiz-shared-dev" \
+            --location eastus2 \
+            --template-file infra/main-shared.bicep \
+            --parameters infra/main-shared.dev.bicepparam \
+              wizardImageTag="${{ steps.imgs.outputs.wizard }}" \
+              apiImageTag="${{ steps.imgs.outputs.api }}" \
+              ragIndexerImageTag="${{ steps.imgs.outputs.ragindexer }}" \
+              cliImageTag="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}" \
+              developerObjectId="${{ secrets.DEVELOPER_OBJECT_ID }}" \
+            --action-on-unmanage deleteResources \
+            --deny-settings-mode none \
+            --yes
+
+      # A green stack run is not evidence the 20 jobs actually moved. #859 exists
+      # precisely because images stayed stale while everything reported success, so
+      # this asserts the acceptance criterion rather than assuming it: every
+      # pinwiz-job-* container must now reference the SHA just built. Without it,
+      # deploy-jobs proves only that the ARM call returned 200 — the same
+      # green-but-unverified shape the issue is about.
+      - name: Verify all ACA jobs now run the built image
+        run: |
+          EXPECTED="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
+          RG="${{ vars.ACA_RESOURCE_GROUP }}"
+
+          ERRF=$(mktemp)
+          if ! ACTUAL=$(az containerapp job list -g "$RG" \
+               --query "[?starts_with(name,'pinwiz-job-')].{name:name,image:properties.template.containers[0].image}" \
+               -o tsv 2>"$ERRF"); then
+            echo "::error::Could not list ACA jobs to verify the repoint:"
+            sed 's/^/::error::  /' "$ERRF"
+            rm -f "$ERRF"
+            exit 1
+          fi
+          rm -f "$ERRF"
+
+          # An empty list must fail, not pass. A query that silently matches nothing
+          # would otherwise report success for zero jobs — a false green of exactly
+          # the kind this step exists to prevent.
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::No pinwiz-job-* jobs found in $RG. Expected 20 — refusing to"
+            echo "::error::report a successful repoint against an empty result."
+            exit 1
+          fi
+
+          STALE=$(printf '%s\n' "$ACTUAL" | grep -v -F "$EXPECTED" || true)
+          TOTAL=$(printf '%s\n' "$ACTUAL" | grep -c . || true)
+          if [ -n "$STALE" ]; then
+            echo "::error::These ACA jobs are NOT on $EXPECTED after the stack run:"
+            printf '%s\n' "$STALE" | sed 's/^/::error::  /'
+            exit 1
+          fi
+          echo "All $TOTAL pinwiz-job-* jobs are on $EXPECTED."
+
   smoke:
     # Runs after the build-deploy matrix completes — the wizard app depends on
     # the Api app for answers, so probing before both are updated would pass
     # against a mixed-version pair.
+    #
+    # Also waits on deploy-jobs. The stack run re-applies the whole subscription
+    # template, which can churn app revisions while smoke is probing — a race that
+    # yields an arbitrary pass or fail rather than a verdict about the deployment.
+    # `!cancelled()` is what keeps this from becoming a new gate: smoke still runs
+    # when deploy-jobs is SKIPPED (the common web-only merge) or FAILS, so a stack
+    # problem never suppresses the app verification that would reveal its impact.
     #
     # `if: !cancelled()` overrides the default GHA behavior where any failed
     # matrix leg causes downstream jobs to be SKIPPED. Without it, a failure in
@@ -194,7 +568,7 @@ jobs:
     name: Smoke test /alive
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: build-deploy
+    needs: [build-deploy, deploy-jobs]
     if: ${{ !cancelled() }}
 
     permissions:
@@ -328,7 +702,7 @@ jobs:
           echo "| \`pinwiz-web\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
           echo "| \`pinwiz-api\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
           echo "| \`pinwiz-rag-indexer\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | ACA Jobs (next Deployment Stack run) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | 20 ACA Jobs (deployment stack — \`deploy-jobs\` job) |" >> $GITHUB_STEP_SUMMARY
 
   report:
     # Deploy-health reporter. Any failed leg (build/deploy, smoke, e2e) opens or
@@ -338,7 +712,7 @@ jobs:
     # state tracks live deploy health. Mirrors canary.yml's alarm pattern.
     name: Report deploy health
     runs-on: ubuntu-latest
-    needs: [build-deploy, smoke, e2e]
+    needs: [detect-changes, build-deploy, deploy-jobs, smoke, e2e]
     if: ${{ always() }}
     permissions:
       contents: read
@@ -355,7 +729,7 @@ jobs:
         run: |
           title="🚨 Deploy failing on main"
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          body=$(printf 'Deploy failed on `%s`.\n\nRun: %s\nTime: %s\n\nTriage: open the run, find the failed job (build-deploy / smoke / e2e), and fix-forward or revert. This issue auto-closes when a deploy goes green.' \
+          body=$(printf 'Deploy failed on `%s`.\n\nRun: %s\nTime: %s\n\nTriage: open the run, find the failed job (build-deploy / deploy-jobs / smoke / e2e), and fix-forward or revert. This issue auto-closes when a deploy goes green.' \
             "${{ github.sha }}" "$run_url" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
           existing=$(gh issue list --state open --label deploy-failure --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
