@@ -358,6 +358,25 @@ public sealed class LinkReviewTests : AsyncBunitContext
         };
     }
 
+    // Real replacement for a tautology deleted from LinkStatusSupersededExclusionTests:
+    // that version asserted a status array declared inside the test itself, so it could
+    // never fail. This one renders the actual page and asserts the filter the page
+    // really sends, so changing AdminLinkReview's query to include Superseded breaks it.
+    [Fact]
+    public void LinkReview_QueriesOnlyNeedsReview_NeverSuperseded()
+    {
+        SetupStream([]);
+
+        var cut = RenderWithPopover<AdminLinkReview>();
+
+        cut.WaitForAssertion(
+            () => _ = _rawDocRepo.Received().StreamByStatusAsync(
+                Arg.Is<IReadOnlyCollection<LinkStatus>>(s =>
+                    !s.Contains(LinkStatus.Superseded) && s.Contains(LinkStatus.NeedsReview)),
+                Arg.Any<CancellationToken>()),
+            timeout: TimeSpan.FromSeconds(3));
+    }
+
     private void SetupStream(IReadOnlyList<RawDocumentRecord> docs)
     {
         _rawDocRepo
