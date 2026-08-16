@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using MudBlazor;
 using MudBlazor.Services;
 using NSubstitute;
 using PinballWizard.Application.Persistence;
@@ -27,18 +28,27 @@ namespace PinballWizard.Web.Tests.Admin;
 //   (4) when the override write fails, the row survives (nothing removed from the
 //       queue) and the status flip never fires — the two-step write in AssignAsync
 //       must not silently continue past a failed first step.
+//   (5) a wp.sternpinball.com document shows a Supersede button; a plain
+//       sternpinball.com document does not — auto-detection by UrlCanonicalizer.
+//   (6) cancelling the confirmation dialog leaves the row in the queue and never
+//       calls MarkSupersededAsync.
+//   (7) confirming the dialog calls MarkSupersededAsync and removes the row.
 //
 // Pattern: RenderWithPopover<T> (base class helper) for MudBlazor 9 popover requirement.
 // Admin-gate: IAuthorizationService mocked per-test via _authService so individual
 // tests can flip Success/Failed without touching the shared constructor wiring.
+// IDialogService is mocked globally (registered after AddMudServices so it shadows
+// the real implementation) so ShowMessageBoxAsync can return controlled values.
 //
 // ADR-0046 — AppDataGrid / AppEmptyState (never raw MudTable)
 // ADR-0054 — NeedsReview status + admin queue
+// issue #872 — Supersede action for host-alias duplicates
 public sealed class LinkReviewTests : AsyncBunitContext
 {
     private readonly IRawDocumentRepository _rawDocRepo;
     private readonly ILinkOverrideRepository _overrideRepo;
     private readonly IAuthorizationService _authService;
+    private readonly IDialogService _dialogService;
 
     public LinkReviewTests()
     {
@@ -53,7 +63,20 @@ public sealed class LinkReviewTests : AsyncBunitContext
             .AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());
 
+        // IDialogService: default is "confirmed" (true) — the Supersede confirmation
+        // dialog returns true so the happy-path tests don't need per-test setup.
+        // Tests that verify the cancel path re-stub this to return null (= cancelled).
+        _dialogService = Substitute.For<IDialogService>();
+        _dialogService
+            .ShowMessageBoxAsync(Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+                Arg.Any<DialogOptions?>())
+            .Returns(Task.FromResult<bool?>(true));
+
         Services.AddMudServices();
+        // Register the mock IDialogService AFTER AddMudServices so it shadows the
+        // real DialogService registered by MudBlazor for this component's @inject.
+        Services.AddSingleton(_dialogService);
         Services.AddLogging(b => b.SetMinimumLevel(LogLevel.None));
         Services.AddSingleton(_rawDocRepo);
         Services.AddSingleton(_overrideRepo);
@@ -180,10 +203,129 @@ public sealed class LinkReviewTests : AsyncBunitContext
             Arg.Any<CancellationToken>());
     }
 
+    // ── Supersede action (issue #872) ────────────────────────────────────────
+
+    // A wp.sternpinball.com document is a detectable host-alias duplicate:
+    // UrlCanonicalizer.Canonicalize changes its URL, so CanonicalDuplicateId is
+    // set and the "Supersede duplicate" button renders.
+    // A plain sternpinball.com document is already canonical: Canonicalize returns
+    // the same URL, CanonicalDuplicateId is null, and no Supersede button renders.
+    [Fact]
+    public void LinkReview_WpSternDoc_ShowsSupersedeButton_CanonicalSternDoc_DoesNot()
+    {
+        // Arrange: two docs — one with wp. alias URL, one canonical
+        var wpDoc = MakeNeedsReviewDoc(
+            "doc_wp_alias",
+            candidateCount: 1,
+            fileUrl: "https://wp.sternpinball.com/wp-content/uploads/ST_Pro_Manual.pdf");
+        var canonicalDoc = MakeNeedsReviewDoc(
+            "doc_canonical",
+            candidateCount: 1,
+            fileUrl: "https://sternpinball.com/wp-content/uploads/ST_Pro_Manual.pdf");
+
+        SetupStream([wpDoc, canonicalDoc]);
+
+        var cut = RenderWithPopover<AdminLinkReview>();
+
+        // Wait for data load
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("doc_wp_alias", cut.Markup);
+            Assert.Contains("doc_canonical", cut.Markup);
+        }, timeout: TimeSpan.FromSeconds(3));
+
+        // Supersede button present for the wp. document
+        Assert.NotEmpty(cut.FindAll("[data-testid='link-review-supersede-doc_wp_alias']"));
+
+        // Supersede button NOT present for the already-canonical document — its URL
+        // doesn't change under Canonicalize so CanonicalDuplicateId stays null
+        Assert.Empty(cut.FindAll("[data-testid='link-review-supersede-doc_canonical']"));
+    }
+
+    // Cancelling the confirmation dialog must leave the row in the queue and
+    // must never call MarkSupersededAsync — the state change should not fire
+    // if the operator dismissed the dialog.
+    [Fact]
+    public async Task LinkReview_SupersedeCancel_LeavesRowInQueue_NeverCallsMarkSuperseded()
+    {
+        // Arrange: cancel the dialog (returns null)
+        _dialogService
+            .ShowMessageBoxAsync(Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+                Arg.Any<DialogOptions?>())
+            .Returns(Task.FromResult<bool?>(null));
+
+        var doc = MakeNeedsReviewDoc(
+            "doc_cancel",
+            candidateCount: 1,
+            fileUrl: "https://wp.sternpinball.com/wp-content/uploads/ST_Pro_Manual.pdf");
+        SetupStream([doc]);
+
+        var cut = RenderWithPopover<AdminLinkReview>();
+        cut.WaitForAssertion(() => Assert.Contains("doc_cancel", cut.Markup), timeout: TimeSpan.FromSeconds(3));
+
+        var supersedeButton = cut.Find("[data-testid='link-review-supersede-doc_cancel']");
+        await cut.InvokeAsync(() => supersedeButton.Click());
+
+        // Row survives — still in the queue
+        cut.WaitForAssertion(
+            () => Assert.NotEmpty(cut.FindAll("[data-testid='link-review-supersede-doc_cancel']")),
+            timeout: TimeSpan.FromSeconds(3));
+
+        // MarkSupersededAsync was never called
+        _ = _rawDocRepo.DidNotReceive().MarkSupersededAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // Confirming the dialog calls MarkSupersededAsync with the canonical id
+    // and removes all rows for that document from the queue.
+    [Fact]
+    public async Task LinkReview_SupersedeConfirm_CallsMarkSuperseded_RemovesRow()
+    {
+        var wpFileUrl = "https://wp.sternpinball.com/wp-content/uploads/ST_Pro_Manual.pdf";
+
+        // The canonical id that UrlCanonicalizer + DocumentRecord.GenerateId should produce
+        var expectedCanonicalId = DocumentRecord.GenerateId(wpFileUrl);
+
+        var doc = MakeNeedsReviewDoc("doc_supersede", candidateCount: 1, fileUrl: wpFileUrl);
+        SetupStream([doc]);
+
+        // MarkSupersededAsync returns successfully
+        _rawDocRepo
+            .MarkSupersededAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cut = RenderWithPopover<AdminLinkReview>();
+        cut.WaitForAssertion(() => Assert.Contains("doc_supersede", cut.Markup), timeout: TimeSpan.FromSeconds(3));
+
+        var supersedeButton = cut.Find("[data-testid='link-review-supersede-doc_supersede']");
+        await cut.InvokeAsync(() => supersedeButton.Click());
+
+        // MarkSupersededAsync called with the correct canonical id
+        _ = _rawDocRepo.Received(1).MarkSupersededAsync(
+            "doc_supersede",
+            expectedCanonicalId,
+            "host_alias_duplicate",
+            Arg.Any<CancellationToken>());
+
+        // Row removed from queue on success
+        cut.WaitForAssertion(
+            () => Assert.Empty(cut.FindAll("[data-testid='link-review-supersede-doc_supersede']")),
+            timeout: TimeSpan.FromSeconds(3));
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private static RawDocumentRecord MakeNeedsReviewDoc(string documentId, int candidateCount)
+    // fileUrl: when supplied, sets Source.FileUrl so UrlCanonicalizer-based
+    // auto-detection tests can control whether the Supersede button renders.
+    // Defaults to the generic example URL (no known alias → no Supersede button).
+    private static RawDocumentRecord MakeNeedsReviewDoc(
+        string documentId,
+        int candidateCount,
+        string? fileUrl = null)
     {
+        var resolvedFileUrl = fileUrl ?? "https://example.com/manual.pdf";
+
         var candidates = Enumerable.Range(0, candidateCount)
             .Select(i => new LinkReviewCandidate
             {
@@ -197,13 +339,13 @@ public sealed class LinkReviewTests : AsyncBunitContext
         return new RawDocumentRecord
         {
             DocumentId = documentId,
-            DocumentUrl = "https://example.com/manual.pdf",
+            DocumentUrl = resolvedFileUrl,
             DocumentType = DocumentType.Manual,
             Source = new SourceInfo
             {
                 DiscoveryUrl = "https://example.com/game/foo/",
                 DiscoveryContext = "Game Page",
-                FileUrl = "https://example.com/manual.pdf",
+                FileUrl = resolvedFileUrl,
             },
             Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
             LinkStatus = LinkStatus.NeedsReview,

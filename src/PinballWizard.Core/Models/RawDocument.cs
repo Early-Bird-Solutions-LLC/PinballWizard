@@ -13,6 +13,12 @@ public enum LinkStatus
     // Appended at end — stored as string in Cosmos, so renumbering existing values is safe,
     // but append-only is the documented convention (see RawDocumentRecord.cs wire comments).
     NeedsReview,
+    // Soft-supersede for host-alias duplicates (e.g. wp.sternpinball.com → sternpinball.com).
+    // The row is preserved (provenance is sacred — no delete path exists on IRawDocumentRepository)
+    // but excluded from all pipeline consumers by their existing allow-list filters.
+    // SupersededBy holds the canonical document_id this row duplicates.
+    // Added: issue #872.
+    Superseded,
 }
 
 // Attached to a RawDocumentRecord when link_status = needs_review.
@@ -95,4 +101,10 @@ public sealed class RawDocumentRecord
     // File.LocalPath + Sha256 + ContentHash, the fast-path skip fires first so this
     // field is never re-checked for that document.
     public DownloadSkipInfo? DownloadSkip { get; set; }
+
+    // Non-null when LinkStatus == Superseded. Holds the canonical document_id that this
+    // record is a host-alias duplicate of (e.g. a wp.sternpinball.com record superseded
+    // by its sternpinball.com counterpart). Read-only after MarkSupersededAsync writes it;
+    // the operator can navigate to the canonical document for context.
+    public string? SupersededBy { get; set; }
 }
