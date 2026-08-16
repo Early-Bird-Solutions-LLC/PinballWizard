@@ -192,7 +192,7 @@ These entity types are intentionally *not* routed in the first version of the co
 
 The Wizard's pricing-question handling is a deliberate hybrid: first-party data where we genuinely have it, explicit transparency about what is which.
 
-**What we have first-party:** manufacturer MSRPs scraped via the existing manufacturer scrapers (Stern, JJP, AP, Spooky, PB, BoF, Multimorphic, CGC). New-machine list pricing only — MSRP is the authoritative price *at release*, not current secondary-market value.
+**What we have first-party:** manufacturer MSRPs scraped via the existing manufacturer scrapers (Stern, JJP, AP, Spooky, PB, BoF, Multimorphic, CGC). New-machine list pricing only — MSRP is the authoritative price *at release*, not current secondary-market value. **As of 2026-08, Stern is an exception:** its game pages replaced the price-bearing `contact-for-availability` links with `/contact-to-buy` links that omit price, so Stern editions are captured without MSRP.
 
 **What we now have via live tool (ADR-0045):** secondary-market pricing, via `getMarketValue`
 calling the Silverball Labs API at query time. OPDB-keyed; dual attribution (Silverball Labs +
