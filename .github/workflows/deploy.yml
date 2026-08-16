@@ -343,6 +343,27 @@ jobs:
       # Stack name convention: "pinwiz-shared-{env}" — matches Deploy-SharedResources.ps1.
       # Location: eastus2 — matches the subscription-scope stack registration.
       # action-on-unmanage deleteResources — Bicep-removed resources are cleaned up.
+      # Fail BEFORE the stack runs if DEVELOPER_OBJECT_ID is unset. Without this the
+      # step would pass developerObjectId="" straight through, and combined with
+      # --action-on-unmanage deleteResources that STRIPS the developer's Cosmos /
+      # Search / OpenAI data-plane role assignments (#744) — silently, on a run that
+      # otherwise looks successful. Restoring them is manual.
+      #
+      # Today the missing subscription-scope Owner grant masks this, because the stack
+      # call fails at authorization first. That is accidental protection, not a design:
+      # granting Owner without also adding the secret would expose it immediately. This
+      # guard makes the ordering explicit instead of relying on one gap covering another.
+      - name: Verify DEVELOPER_OBJECT_ID is configured
+        run: |
+          if [ -z "${{ secrets.DEVELOPER_OBJECT_ID }}" ]; then
+            echo "::error::DEVELOPER_OBJECT_ID secret is not set. Refusing to run the deployment"
+            echo "::error::stack: an empty developerObjectId would strip developer data-plane"
+            echo "::error::RBAC (Cosmos / Search / OpenAI) via --action-on-unmanage deleteResources (#744)."
+            echo "::error::Add the secret with the developer's Entra Object ID, then re-run."
+            exit 1
+          fi
+          echo "DEVELOPER_OBJECT_ID is set."
+
       - name: Run deployment stack (repoints 20 ACA jobs to pinwiz-cli:${{ github.sha }})
         run: |
           az stack sub create \
