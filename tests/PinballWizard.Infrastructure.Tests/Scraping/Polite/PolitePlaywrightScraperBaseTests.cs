@@ -128,6 +128,66 @@ public sealed class PolitePlaywrightScraperBaseTests
         Assert.Null(ex);
     }
 
+    // --------------- Browser recycling tests ---------------
+
+    [Fact]
+    public async Task NewPolitePageAsync_WithinRecycleInterval_DoesNotRecycleBrowser()
+    {
+        // Browser recycling only fires when the context recycle threshold is reached.
+        // No recycles within the interval must mean no browser restarts.
+        const int recycleInterval = 5;
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+
+        for (int i = 0; i < recycleInterval - 1; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        Assert.Equal(0, scraper.BrowserRecycleCount);
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_AtRecycleInterval_RecyclesBrowserWithContext()
+    {
+        // The root cause of the post-#862 OOMKill: context recycling alone did not
+        // free browser-process memory (first context survived 20 pages; second context
+        // using the same browser OOMed after only 13). Both the context AND the browser
+        // process must be recycled together at each interval boundary.
+        const int recycleInterval = 3;
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+
+        // Fill the first context to the threshold
+        for (int i = 0; i < recycleInterval; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        // The (interval+1)th page triggers the recycle
+        await using var extra = await scraper.OpenPageAsync("https://example.com/");
+
+        Assert.Equal(1, scraper.BrowserRecycleCount);
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_AcrossMultipleRecycles_RecyclesBrowserOnEachContextRecycle()
+    {
+        // Each context recycle must also recycle the browser so that V8/renderer
+        // process-level state is freed at every interval boundary, not just the first.
+        const int recycleInterval = 3;
+        const int totalPages = 7; // spans two recycles (pages 4 and 7)
+        var contextLog = new ContextLog();
+        await using var scraper = BuildTrackingScraper(recycleInterval, contextLog);
+
+        for (int i = 0; i < totalPages; i++)
+        {
+            await using var _ = await scraper.OpenPageAsync("https://example.com/");
+        }
+
+        Assert.Equal(2, scraper.BrowserRecycleCount);
+    }
+
     // --------------- Context recycling tests ---------------
 
     [Theory]
@@ -416,6 +476,9 @@ public sealed class PolitePlaywrightScraperBaseTests
     private sealed class TrackingPlaywrightScraper : PolitePlaywrightScraperBase
     {
         private readonly Func<IBrowserContext> _contextFactory;
+        private int _browserRecycleCount;
+
+        public int BrowserRecycleCount => _browserRecycleCount;
 
         public TrackingPlaywrightScraper(
             PlaywrightFactory factory,
@@ -430,6 +493,14 @@ public sealed class PolitePlaywrightScraperBaseTests
 
         protected override Task<IBrowserContext> CreateContextAsync()
             => Task.FromResult(_contextFactory());
+
+        // Override to count browser-recycle calls without invoking the real factory
+        // (which has no browser in tests — avoiding a PlaywrightFactory dependency in unit tests).
+        protected override Task RecycleBrowserAsync()
+        {
+            Interlocked.Increment(ref _browserRecycleCount);
+            return Task.CompletedTask;
+        }
 
         public Task<PolitePage> OpenPageAsync(string url, CancellationToken ct = default)
             => NewPolitePageAsync(url, ct);

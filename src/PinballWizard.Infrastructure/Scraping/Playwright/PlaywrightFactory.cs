@@ -76,6 +76,44 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     internal static string[] BuildInstallArgs(bool withDeps) =>
         withDeps ? ["install", "--with-deps", "chromium"] : ["install", "chromium"];
 
+    /// <summary>
+    /// Closes and discards the current browser process, releasing all accumulated
+    /// renderer and V8 process-level memory. The next call to
+    /// <see cref="GetBrowserAsync"/> will launch a fresh Chromium instance.
+    /// </summary>
+    /// <remarks>
+    /// Context recycling (see <c>PolitePlaywrightScraperBase</c>) does not release
+    /// browser-process-level memory — V8 heap and renderer state persist at process
+    /// scope. Recycling the process here ensures each new context starts from a clean
+    /// baseline. Safe to call when no browser exists (no-op). Exceptions from a crashed
+    /// or already-disposed browser are suppressed, consistent with
+    /// <see cref="DisposeAsync"/>.
+    /// </remarks>
+    public async Task RecycleBrowserAsync()
+    {
+        await _initLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_browser is null) return;
+
+            _logger.LogInformation("Recycling Playwright browser process to release accumulated renderer memory.");
+            try
+            {
+                await _browser.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+            {
+                // Browser already closed or crashed — the resource is going away regardless.
+                _logger.LogDebug(ex, "Suppressed error recycling Playwright browser process.");
+            }
+            _browser = null;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_browser is not null)
