@@ -465,6 +465,10 @@ jobs:
       # is why it fails loudly with instructions rather than letting the create attempt it.
       - name: Preflight the deployment stack (validate only)
         run: |
+          # Captured rather than streamed, so the failure can be CLASSIFIED below instead
+          # of the operator having to interpret it. Echoed back on failure so nothing is
+          # hidden by the capture.
+          VALIDATE_OUT=$(mktemp)
           if ! az stack sub validate \
             --name "pinwiz-shared-dev" \
             --location eastus2 \
@@ -476,9 +480,32 @@ jobs:
               cliImageTag="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}" \
               developerObjectId="${{ secrets.DEVELOPER_OBJECT_ID }}" \
             --action-on-unmanage deleteResources \
-            --deny-settings-mode none; then
+            --deny-settings-mode none > "$VALIDATE_OUT" 2>&1; then
+            cat "$VALIDATE_OUT"
             echo "::error::Deployment stack validation failed — NOT running the stack."
             echo "::error::"
+
+            # 715-123420 is the CognitiveServices RTFP throttle, and it arrives disguised
+            # as a Microsoft.CognitiveServices/accounts PREFLIGHT VALIDATION error. Without
+            # this branch the RBAC text below sends the reader to check permissions that are
+            # perfectly intact, while the real cause is that the stack has already run
+            # ~3-5 times today. Retrying extends the block rather than clearing it.
+            # Classify it once here so every future occurrence is not re-diagnosed from
+            # scratch — this has already cost a debugging session before.
+            if grep -q "715-123420" "$VALIDATE_OUT"; then
+              echo "::error::THROTTLE, NOT A FAILURE: Azure returned 715-123420"
+              echo "::error::(CognitiveServices RTFP). The stack template includes Foundry model"
+              echo "::error::deployments, and roughly 3-5 stack runs per day trips a service-side"
+              echo "::error::block that presents itself as a validation error."
+              echo "::error::"
+              echo "::error::WAIT — do NOT retry. Retrying extends the block. RBAC is NOT the"
+              echo "::error::problem here and re-granting roles will not help."
+              echo "::error::"
+              echo "::error::The container images ARE built and pushed to ACR; only the ACA job"
+              echo "::error::repoint is deferred. The next successful stack run picks them up."
+              exit 1
+            fi
+
             echo "::error::If this is an authorization failure, the GitHub OIDC service"
             echo "::error::principal needs Owner at subscription scope. az stack sub create"
             echo "::error::operates at subscription scope and the template writes role"
