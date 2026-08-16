@@ -136,7 +136,7 @@ Capabilities verifiable directly in this repository:
 - **Shared Blazor component library** — eight `App*` wrapper components in `Components/Shared/` extract repeated MudBlazor patterns across all pages; enforced by project convention tests ([ADR-0046](docs/adr/0046-shared-blazor-component-library.md))
 - **Clean Architecture and engineering discipline** — Core / Application / Infrastructure / Web / Api layering enforced by architecture fitness tests; 47 ADRs for non-obvious decisions; behavior-asserting test culture; zero-warning build under `TreatWarningsAsErrors`
 - **Identity, access, and admin separation** — Microsoft Entra External ID with blanket `FallbackPolicy` (auth required by default); admin RBAC from day one; complete admin control plane (AdminDashboard, AdminSources with enable/disable toggle, AdminMachines, AdminManufacturers, AdminMonitoring with live App Insights telemetry via `IMonitoringStatsReader`, per-source run history, corpus/RAG stats)
-- **Infrastructure-as-code and operability** — Bicep with two-tier deploy gating; ARM-vs-data-plane Cosmos abstraction ([ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md)); OpenTelemetry throughout; Application Insights workbook (7 tiles); 7 metric alert rules; 7 operational runbooks; H-chain operator procedures
+- **Infrastructure-as-code and operability** — Bicep with two-tier deploy gating; ARM-vs-data-plane Cosmos abstraction ([ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md)); OpenTelemetry throughout; Application Insights workbook (7 tiles); 6 metric alert rules; 6 operational runbooks; H-chain operator procedures
 - **Polite integration with external systems** — `robots.txt` honored unconditionally; machine-consumer metadata (OG / JSON-LD / sitemap) preferred over DOM scraping; identifying User-Agents; `IPolitenessGate` enforced at every outbound HTTP call
 - **Cost discipline** — $300–$400/month steady-state cap with cost-per-feature attribution; per-call LLM cost ceiling (ADR-0015)
 - **Disciplined AI-authored delivery** — AI writes nearly all the code under a human-governed process (spec → plan → TDD → first-party `/local-review` + `/standards-audit` → CI gates → independent CodeQL/code-quality safety net → whole-branch senior review → human merge); see [`docs/ai-development-model.md`](docs/ai-development-model.md)
@@ -153,7 +153,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/quality-spec.md`](docs/quality-spec.md) | Comprehensive HOW — every quality gate (current and future) across code, tests, review, docs, ops, accessibility, security, cost |
 | [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0047) |
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
-| [`docs/runbooks/`](docs/runbooks/) | Operational runbooks (incident response, cost anomaly, Cosmos restore, AI Search rebuild, secret rotation, source-site outage, job missing run) |
+| [`docs/runbooks/`](docs/runbooks/) | Operational runbooks (incident response, cost anomaly, Cosmos restore, AI Search rebuild, secret rotation, source-site outage) |
 | [`docs/observability.md`](docs/observability.md) | OTel instrument catalogue — scraper, RAG, AI orchestration, and user-delight instruments |
 | [`docs/local-development.md`](docs/local-development.md) | Seeding the local Cosmos emulator for a fully functional catalog; identity isolation; `matchTokens` data-shape contract |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
@@ -279,7 +279,7 @@ The Bicep at [`infra/main-shared.bicep`](infra/main-shared.bicep) accepts a `dep
 | | Storage (LRS) + 3 blob containers (`pinwiz-raw` / `pinwiz-processed` / `pinwiz-photos`) |
 | | Wizard ACA app + ACA environment |
 | | RAG Ingestion Worker ACA Job |
-| | 7 metric alert rules (latency p95, 5xx rate, cost anomaly, dead letters, availability, ACA job failure, ACA job missing run) |
+| | 6 metric alert rules (latency p95, 5xx rate, cost anomaly, dead letters, availability, ACA job failure) |
 | | Diagnostic settings + developer RBAC for the above |
 
 Phase 1 spend: **~$30/mo** (Cosmos serverless idle + Log Analytics 1 GB cap). Phase 2+ brings the platform to **~$150/mo** even when idle.
