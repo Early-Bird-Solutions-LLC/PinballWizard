@@ -443,6 +443,52 @@ jobs:
           fi
           echo "DEVELOPER_OBJECT_ID is set."
 
+      # Preflight the stack with the SAME arguments before mutating anything.
+      # `az stack sub validate` exercises the real path — authorization, template
+      # compilation, and the .bicepparam-plus-inline-override parameter syntax — without
+      # deploying, so a missing RBAC grant surfaces here with remediation attached rather
+      # than as a raw AuthorizationFailed part-way through an unattended
+      # --action-on-unmanage deleteResources run.
+      #
+      # This is deliberately a capability probe, not a role-name lookup: checking for
+      # "Owner" would assert a proxy for the permission instead of the permission itself,
+      # and would pass or fail for reasons unrelated to whether the operation can actually
+      # run. Validate answers the only question that matters.
+      #
+      # KNOWN: as of this commit the OIDC service principal has NO subscription-scope role
+      # assignment, so this step is expected to fail until the grant below is applied. That
+      # is why it fails loudly with instructions rather than letting the create attempt it.
+      - name: Preflight the deployment stack (validate only)
+        run: |
+          if ! az stack sub validate \
+            --name "pinwiz-shared-dev" \
+            --location eastus2 \
+            --template-file infra/main-shared.bicep \
+            --parameters infra/main-shared.dev.bicepparam \
+              wizardImageTag="${{ steps.imgs.outputs.wizard }}" \
+              apiImageTag="${{ steps.imgs.outputs.api }}" \
+              ragIndexerImageTag="${{ steps.imgs.outputs.ragindexer }}" \
+              cliImageTag="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}" \
+              developerObjectId="${{ secrets.DEVELOPER_OBJECT_ID }}" \
+            --action-on-unmanage deleteResources \
+            --deny-settings-mode none; then
+            echo "::error::Deployment stack validation failed — NOT running the stack."
+            echo "::error::"
+            echo "::error::If this is an authorization failure, the GitHub OIDC service"
+            echo "::error::principal needs Owner at subscription scope. az stack sub create"
+            echo "::error::operates at subscription scope and the template writes role"
+            echo "::error::assignments, which require Microsoft.Authorization/*/write —"
+            echo "::error::Contributor is NOT sufficient:"
+            echo "::error::"
+            echo "::error::  az role assignment create --role Owner \\"
+            echo "::error::    --assignee c8466e83-9470-4cad-92a1-2d4149263fdc \\"
+            echo "::error::    --scope /subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840"
+            echo "::error::"
+            echo "::error::Otherwise it is a template or parameter error — see the output above."
+            exit 1
+          fi
+          echo "Stack validation passed — proceeding to the live run."
+
       - name: Run deployment stack (repoints 20 ACA jobs to pinwiz-cli:${{ github.sha }})
         run: |
           az stack sub create \
