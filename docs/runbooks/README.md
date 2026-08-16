@@ -22,7 +22,7 @@ Each runbook carries a `Last walked:` date in its header. Runbooks older than 6 
 
 ## Pre-launch gate
 
-All six runbooks must exist and have a `Last walked:` date within 30 days of the public launch date. This is item 6 of the `guardrails.md` § Pre-public-launch gate and Phase 6 scope item 1.
+All seven runbooks must exist and have a `Last walked:` date within 30 days of the public launch date. This is item 6 of the `guardrails.md` § Pre-public-launch gate and Phase 6 scope item 1.
 
 ## Existing operational runbooks
 
