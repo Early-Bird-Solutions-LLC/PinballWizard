@@ -14,7 +14,6 @@ Read alongside [`docs/observability.md`](../observability.md) (metric and instru
 | [`04-ai-search-rebuild.md`](04-ai-search-rebuild.md) | AI Search index corrupt, out of sync, or schema-breaking change | Dead-letter depth alarm, index schema migration, or DR drill |
 | [`05-secret-rotation.md`](05-secret-rotation.md) | Rotate AI keys, Cosmos keys, Cloudflare token, OPDB token | 90-day rotation cadence or key compromise |
 | [`06-source-site-outage.md`](06-source-site-outage.md) | Upstream scraper source returns 403/429/5xx or changes `robots.txt` | Source error rate spike or `robots.txt` change detected |
-| [`07-job-missing-run.md`](07-job-missing-run.md) | A scheduled ACA job has not produced a successful run within its expected window | `pinwiz-alert-aca-job-missing-run` fires |
 
 ## Freshness requirement
 
