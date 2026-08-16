@@ -108,14 +108,13 @@ All `pinwiz-job-*` entries should show `<acr>.azurecr.io/pinwiz-cli:<sha>` for t
 
 **Application Insights workbook** (`infra/dashboards/pinwiz-ops-workbook.json`): 7 tiles covering p95 answer latency, 5xx error rate, scraper job success rate, RAG indexing throughput, Cosmos RU consumption, cost attribution, and dead-letter queue depth.
 
-**Alert rules** (7, all in Bicep Phase 2 deploy):
+**Alert rules** (6, all in Bicep Phase 2 deploy):
 - Latency p95 > 3s (rolling 5-min window)
 - 5xx error rate > 1% (rolling 5-min window)
 - Azure cost anomaly > $300/mo
 - Dead-letter queue depth > 100
 - Availability < 99%
 - ACA job failure — any `pinwiz-job-*` run completes with `condition: Failed`
-- ACA job missing run — a `pinwiz-job-*` job produces no successful completion within its cadence window (25 h daily / 192 h weekly)
 
 All alerts route to the operator email configured in Bicep `alertEmailAddress` parameter.
 
