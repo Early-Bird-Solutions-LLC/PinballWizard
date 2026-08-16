@@ -67,6 +67,8 @@ No staging / pre-prod separation at current scale. `dev` is the live showcase en
 
 The stack run is gated on CLI or infra path changes to avoid triggering the Azure CognitiveServices RTFP throttle (error 715-123420) that fires after ~3–5 rapid Foundry model-deployment cycles. This is a CognitiveServices-specific throttle, not a Deployment Stack limit (which has no documented per-day cap per Microsoft Learn).
 
+**Operator prerequisites for `deploy-jobs`.** Two one-time setups gate the automated repoint: the GitHub OIDC service principal needs **Owner at subscription scope** (`az stack sub create` operates at subscription scope and the template writes role assignments — Contributor is not sufficient), and the repository secret **`DEVELOPER_OBJECT_ID`** must hold the developer's Entra Object ID (an empty value would strip developer data-plane RBAC under `--action-on-unmanage deleteResources` — issue #744). If either is missing the job fails loudly — at the secret guard or at the `az stack sub validate` preflight, before anything is mutated — and the 20 jobs stay on their previous image until it is fixed. Exact remediation commands are in the `deploy.yml` header comment.
+
 ### Manual (infra-only changes / emergency redeploy)
 
 All Azure resource deployments use `az stack sub create` (subscription-scoped Deployment Stacks). Never `az deployment sub create` — Deployment Stacks automatically delete resources removed from Bicep ([CLAUDE.md locked invariant #16](../CLAUDE.md)).
