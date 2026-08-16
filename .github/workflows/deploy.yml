@@ -73,6 +73,11 @@ on:
       - 'src/PinballWizard.ServiceDefaults/**'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
+      # infra/** matters because detect-changes gates the deployment stack on it.
+      # Without it an infra-only change never triggers this workflow at all, so the
+      # ^infra/ branch of that gate was unreachable and Bicep edits reached production
+      # only via a manual stack run — the gap #859 exists to close.
+      - 'infra/**'
       - 'docs/**'
 
   # Allow manual trigger from the Actions tab (useful for re-deploying
@@ -150,12 +155,16 @@ jobs:
             exit 0
           fi
 
-          if ! CHANGED=$(git diff --name-only "$BEFORE" HEAD 2>&1); then
+          DIFF_ERR=$(mktemp)
+          if ! CHANGED=$(git diff --name-only "$BEFORE" HEAD 2>"$DIFF_ERR"); then
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::git diff against $BEFORE failed: $CHANGED"
+            echo "::warning::git diff against $BEFORE failed:"
+            sed 's/^/::warning::  /' "$DIFF_ERR"
+            rm -f "$DIFF_ERR"
             echo "::warning::Running the deployment stack rather than skipping it."
             exit 0
           fi
+          rm -f "$DIFF_ERR"
 
           if printf '%s\n' "$CHANGED" | grep -qE \
             '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/)'; then
@@ -346,15 +355,26 @@ jobs:
           #
           # Fail loudly instead. The apps are already on the new SHA by this point (build-deploy
           # completed), so aborting here costs only the job repoint, which the next run redoes.
+          # stderr goes to its own file, never merged into stdout with 2>&1. az writes
+          # deprecation and extension warnings to stderr even on SUCCESS, and merging
+          # them would splice that text into the image tag — which is then handed to the
+          # stack and written onto the live app. That is the same defect as the
+          # placeholder fallback this function replaced, just arriving by a different
+          # route, so the capture has to keep the streams apart.
           discover_image() {
-            local app="$1" out
-            if ! out=$(az containerapp show -n "$app" -g "$RG" \
-                 --query 'properties.template.containers[0].image' -o tsv 2>&1); then
-              echo "::error::Could not read the current image for '$app': $out"
+            local app="$1" out err rc
+            err=$(mktemp)
+            out=$(az containerapp show -n "$app" -g "$RG" \
+                  --query 'properties.template.containers[0].image' -o tsv 2>"$err")
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::Could not read the current image for '$app': $(tr '\n' ' ' < "$err")"
               echo "::error::Refusing to run the deployment stack — passing a guessed image here"
               echo "::error::would rewrite the live app with it."
+              rm -f "$err"
               return 1
             fi
+            rm -f "$err"
             if [ -z "$out" ]; then
               echo "::error::Current image for '$app' came back empty. Refusing to run the"
               echo "::error::deployment stack rather than substitute a placeholder."
@@ -430,6 +450,13 @@ jobs:
     # the Api app for answers, so probing before both are updated would pass
     # against a mixed-version pair.
     #
+    # Also waits on deploy-jobs. The stack run re-applies the whole subscription
+    # template, which can churn app revisions while smoke is probing — a race that
+    # yields an arbitrary pass or fail rather than a verdict about the deployment.
+    # `!cancelled()` is what keeps this from becoming a new gate: smoke still runs
+    # when deploy-jobs is SKIPPED (the common web-only merge) or FAILS, so a stack
+    # problem never suppresses the app verification that would reveal its impact.
+    #
     # `if: !cancelled()` overrides the default GHA behavior where any failed
     # matrix leg causes downstream jobs to be SKIPPED. Without it, a failure in
     # an unrelated leg (e.g., pinwiz-rag-indexer RBAC, pinwiz-cli linker) silently
@@ -441,7 +468,7 @@ jobs:
     name: Smoke test /alive
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: build-deploy
+    needs: [build-deploy, deploy-jobs]
     if: ${{ !cancelled() }}
 
     permissions:
