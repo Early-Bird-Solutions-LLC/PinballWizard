@@ -63,6 +63,16 @@ param developerObjectId = ''
 //   az ad sp show --id 9bfa919b-d517-4ba8-a65f-a5d04025ddb1 --query id -o tsv
 param cicdDeployPrincipalId = 'c8466e83-9470-4cad-92a1-2d4149263fdc'
 
+// Azure Playwright Workspaces region-connection endpoint (#855, ADR-0056).
+// Intentionally empty: not a value this repo can default or guess (see the
+// top-level param's @description and ADR-0056's Consequences for why) — every
+// Stern Playwright scraper job keeps launching local Chromium exactly as it did
+// before #855 until this is filled in. Obtain the real value from the
+// playwrightWorkspace resource's "Get Started" page in the Azure portal AFTER
+// modules/shared.bicep has been deployed once (the resource must exist first),
+// then set it here and redeploy.
+param playwrightServiceUrl = ''
+
 // Entra OIDC sign-in for the Wizard web app (PR-B0 infra half).
 // The "PinballWizard Web" app registration's client ID — a public
 // identifier, safe to commit. The matching client SECRET lives only in

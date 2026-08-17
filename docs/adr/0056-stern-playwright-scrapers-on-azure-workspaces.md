@@ -121,10 +121,11 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   references `RotationTimer`/`TimerCallback`, suggesting the client may own ongoing
   Entra token rotation for the session it authenticates — a detail Microsoft's docs
   don't state and that isn't verifiable without a live workspace to test disposal
-  timing against. Per `no-guessing.md`, the client is disposed alongside the browser
-  (`RecycleBrowserAsync`/`DisposeAsync`) rather than risk cutting short whatever keeps
-  a ~35–45 minute full-catalog run's connection alive. This can be revisited once the
-  actual contract is confirmed against a real run.
+  timing against. Per `no-guessing.md`, the client is held for the browser connection's
+  full lifetime rather than risk cutting short whatever keeps a ~35–45 minute
+  full-catalog run's connection alive — in practice this means `DisposeAsync` is what
+  disposes it, since `RecycleBrowserAsync` is itself a no-op in workspace mode (see
+  below). This can be revisited once the actual contract is confirmed against a real run.
 - **The per-page-count recycle is a no-op once connected to a workspace.** It exists to
   reclaim *local* container memory, which doesn't apply once Chromium runs remotely —
   recycling anyway would spend billed connection minutes and reconnect latency for
@@ -147,6 +148,8 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   project's existing fail-loud posture (#857) rather than a gap in it — but it is a
   real trade-off, not a non-issue, and worth revisiting once real run data exists to
   show whether mid-run drops are common enough to justify the added complexity.
+  Tracked as [#905](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/905)
+  rather than left as only this bullet, so it doesn't decay into a silent gap.
 - **No alert rule was added for the new `pinwiz.scraper.workspace_connect_total`
   counter in this PR.** ADR-0055's own history — an alert that silently never fired for
   weeks because its filter was subtly wrong — is exactly the failure mode a *new*,

@@ -264,6 +264,7 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             _browser = null;
         }
 
+        _isWorkspaceConnection = false;
         _workspaceClient?.Dispose();
         _workspaceClient = null;
         _playwright?.Dispose();

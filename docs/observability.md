@@ -294,6 +294,18 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.chromium_descendant_rss_bytes` | Histogram | `scraper`, `phase` | Combined resident-set memory of every live descendant process (the Playwright Node.js driver, Chromium, its renderer/GPU children), summed via `/proc` on Linux. Reads the "≈ Chromium" row above instead of only inferring it by subtracting `UsageBytes − process_working_set_bytes` — but as an **upper bound**, not an exact match: per-process VmRSS double-counts pages Chromium's own processes share with each other (IPC buffers, V8 snapshot, shared libraries), which the cgroup-backed `UsageBytes` does not. Linux-only — absent (not zero) on a non-Linux dev run. |
 | `pinwiz.scraper.workspace_connect_total` | Counter | `outcome` (`success`/`failure`) | Azure Playwright Workspaces connection attempts from `PlaywrightFactory.GetBrowserAsync`. Emitted **only** when `PLAYWRIGHT_SERVICE_URL` is configured and a connection is genuinely attempted — absent means either the job never ran or it's running local Chromium (no workspace configured yet), same absent-series convention as `links_discovered_total` below, not a failure signal on its own. On a job execution window where the workspace IS expected, a `failure` tag — or `success` tags going silent where they were previously present — is the signal to check. No alert rule wired to this yet; see ADR-0056. |
 
+`phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
+browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
+that do not implement `ISourceScraper`), carried identically by all four probes so they join
+to one another. The two yield instruments below also carry `scraper` (there, always
+`ISourceScraper.Name`), so they join to these probes for any scraper that implements the
+interface. `stern_edition_nav_fallback_total` (#855) carries `scraper` too — also
+`ISourceScraper.Name`, emitted from `GamePageScraper` — so it joins to these probes as well.
+The remaining `pinwiz.scraper.*` instruments do not carry it —
+`politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
+two series cannot be joined on `scraper`. `workspace_connect_total` above carries neither
+`scraper` nor `phase` (just `outcome`) — it is process-wide, not per-page.
+
 > **#855 resolved 2026-08-17 (pending rollout verification).** Direct measurement via
 > `chromium_descendant_rss_bytes` showed the existing per-page-count browser recycle
 > genuinely freed memory (595→161 MiB in one observed cycle) but each subsequent cycle
@@ -306,17 +318,6 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 > configured, `chromium_descendant_rss_bytes` correctly reads near-zero: there's no local
 > Chromium descendant process for `ProcTreeMemoryReader` to find. That's expected, not a
 > broken probe. See [ADR-0056](adr/0056-stern-playwright-scrapers-on-azure-workspaces.md).
-
-`phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
-browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
-that do not implement `ISourceScraper`), carried identically by all four probes so they join
-to one another. The two yield instruments below also carry `scraper` (there, always
-`ISourceScraper.Name`), so they join to these probes for any scraper that implements the
-interface. `stern_edition_nav_fallback_total` (#855) carries `scraper` too — also
-`ISourceScraper.Name`, emitted from `GamePageScraper` — so it joins to these probes as well.
-The remaining `pinwiz.scraper.*` instruments do not carry it —
-`politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
-two series cannot be joined on `scraper`.
 
 > **Re-derive this from the emit sites before trusting it.** The passage above has been
 > wrong in both directions inside a single day: #894 claimed *every* `pinwiz.scraper.*`
