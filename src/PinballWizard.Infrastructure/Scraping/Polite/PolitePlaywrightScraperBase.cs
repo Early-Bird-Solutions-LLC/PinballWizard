@@ -225,6 +225,15 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     /// depending on a real Linux /proc filesystem or a real Chromium process — the same
     /// seam already used by <see cref="CreateContextAsync"/> and <see cref="RecycleBrowserAsync"/>.
     /// </para>
+    /// <para>
+    /// When deployed (see <see cref="PlaywrightFactory.ShouldConnectToWorkspace"/>),
+    /// Chromium runs on Azure Playwright Workspaces, not as a local child process — so
+    /// this correctly reads near-zero there. That is a true zero under invariant #17
+    /// (degrade visibly), not a broken probe: there is no local Chromium descendant
+    /// for <see cref="ProcTreeMemoryReader"/> to find. The probe and the local-recycle
+    /// machinery around it remain fully meaningful in Development, where Chromium still
+    /// runs locally.
+    /// </para>
     /// </remarks>
     protected virtual long? SampleChromiumDescendantRssBytes()
         => ProcTreeMemoryReader.GetDescendantResidentSetBytes(Environment.ProcessId);
