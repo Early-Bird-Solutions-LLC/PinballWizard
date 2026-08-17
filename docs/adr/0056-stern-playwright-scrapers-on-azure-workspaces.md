@@ -99,11 +99,19 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
 
 ## Consequences
 
-- **`ProcTreeMemoryReader`/`chromium_descendant_rss_bytes` reads near-zero when
-  deployed.** There is no local Chromium descendant for it to find. This is a true zero
-  under invariant #17 (degrade visibly), not a broken probe — the probe and the
-  local-recycle machinery around it remain fully meaningful in Development, where
-  Chromium still runs locally.
+- **`ProcTreeMemoryReader`/`chromium_descendant_rss_bytes` reads much lower once a
+  workspace is configured — but not literally zero.** `Microsoft.Playwright.Playwright.CreateAsync()`
+  always spawns the Node.js Playwright driver as a local child process, in both modes —
+  that's how every Playwright language binding talks to a browser, local or remote, and
+  it doesn't change based on `LaunchAsync` vs `ConnectAsync`. What's actually removed
+  from the local descendant tree is Chromium itself and its renderer/GPU children — the
+  multi-hundred-MiB majority of what this instrument was measuring — not the driver
+  process, whose own RSS (tens of MiB) is still a real, measured value under invariant
+  #17 (degrade visibly, never fabricate), not a broken probe. Don't read a small number
+  here as "the probe found nothing"; read it as "Chromium isn't local anymore, but the
+  driver still is." The probe and the local-recycle machinery around it remain fully
+  meaningful whenever Chromium runs locally — Development, or before a workspace is
+  configured.
 - **A new external dependency exists once a workspace is configured.** From that point
   on, the scrape depends on Azure Playwright Workspaces being reachable; an outage
   fails the scrape loudly rather than degrading it (see above).

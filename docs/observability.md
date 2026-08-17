@@ -315,9 +315,13 @@ two series cannot be joined on `scraper`. `workspace_connect_total` above carrie
 > whenever `PLAYWRIGHT_SERVICE_URL` is configured (Development, and any environment
 > without that variable set, is unaffected — still local Chromium; see ADR-0056 for why
 > this is gated on the URL rather than on being deployed). When a workspace is
-> configured, `chromium_descendant_rss_bytes` correctly reads near-zero: there's no local
-> Chromium descendant process for `ProcTreeMemoryReader` to find. That's expected, not a
-> broken probe. See [ADR-0056](adr/0056-stern-playwright-scrapers-on-azure-workspaces.md).
+> configured, `chromium_descendant_rss_bytes` correctly reads much lower — but not
+> literally zero: the Node.js Playwright driver process still runs locally in both modes
+> (that's how every Playwright language binding talks to a browser, local or remote), so
+> its own RSS (tens of MiB) is still a real, measured value. What's actually gone from the
+> local descendant tree is Chromium itself and its renderer/GPU children, not the driver.
+> That's expected, not a broken probe — see [ADR-0056](adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)
+> for the full explanation.
 
 > **Re-derive this from the emit sites before trusting it.** The passage above has been
 > wrong in both directions inside a single day: #894 claimed *every* `pinwiz.scraper.*`

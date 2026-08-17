@@ -127,7 +127,19 @@ public sealed class PlaywrightFactory : IAsyncDisposable
                 // driver process started successfully even though the browser didn't).
                 // Without this, the next GetBrowserAsync() call overwrites _playwright
                 // with a fresh instance, orphaning the driver process from this attempt.
-                _playwright.Dispose();
+                //
+                // Dispose() itself can throw (driver already exited, pipe closed) — suppress
+                // that the same way every other disposal path in this class does, so a
+                // cleanup failure never replaces the original, actionable exception this
+                // catch exists to preserve (ADR-0056 §D: fail loudly, operator sees why).
+                try
+                {
+                    _playwright.Dispose();
+                }
+                catch (Exception disposeEx) when (disposeEx is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+                {
+                    _logger.LogDebug(disposeEx, "Suppressed error disposing IPlaywright after a failed browser acquisition.");
+                }
                 _playwright = null;
                 throw;
             }
@@ -212,11 +224,20 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "success" } });
             return browser;
         }
-        catch
+        catch (Exception ex)
         {
             _workspaceClient?.Dispose();
             _workspaceClient = null;
-            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "failure" } });
+
+            // Cancellation (job shutdown/SIGTERM mid-await) is not a workspace failure —
+            // tagging it "failure" would seed the counter ADR-0056 and observability.md
+            // both describe as "the signal to check" with false positives from ordinary
+            // shutdown, matching the ex-is-not-OperationCanceledException pattern
+            // ScraperOrchestrator already uses for the same distinction.
+            if (ex is not OperationCanceledException)
+            {
+                PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "failure" } });
+            }
             throw;
         }
     }
@@ -304,7 +325,22 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     {
         if (_browser is not null)
         {
-            await _browser.DisposeAsync();
+            // Suppressed the same way RecycleBrowserAsync's own _browser.DisposeAsync
+            // call is (crashed/closed/already-disposed) — unlike that path, this one is
+            // NOT allowed to return early on the exception: _workspaceClient, _playwright,
+            // and _initLock still need disposing below regardless of what happens here.
+            // A dropped remote connection (the case _workspaceClient's own comments flag
+            // as owning live Entra token-rotation state) is exactly the kind of disposal
+            // that's likely to throw, and skipping the rest of this method on that throw
+            // would leak all three.
+            try
+            {
+                await _browser.DisposeAsync();
+            }
+            catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+            {
+                _logger.LogDebug(ex, "Suppressed error disposing Playwright browser in DisposeAsync.");
+            }
             _browser = null;
         }
 
