@@ -394,6 +394,62 @@ public sealed class StaticMetadataExtractorTests
     }
 
     [Fact]
+    public void ExtractEditionsFromSubpageLinks_RejectsTheUndefinedTemplateArtifact()
+    {
+        // Confirmed on the live beatles page (2026-08-17): a real
+        // <a href="/game/beatles/undefined"> rendered by a broken client-side
+        // template, styled identically to the two genuine editions. There is
+        // no DOM signal that distinguishes it from a real edition link.
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/beatles/Diamond">Diamond</a>
+              <a href="/game/beatles/Gold">Gold</a>
+              <a href="/game/beatles/undefined">undefined</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "beatles");
+
+        Assert.Equal(2, editions.Count);
+        Assert.DoesNotContain(editions, e => e.Name.Equals("Undefined", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_AcceptsTrailingSlash()
+    {
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/aerosmith/pro/">Pro</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith");
+
+        Assert.Equal("Pro", Assert.Single(editions).Name);
+    }
+
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_AcceptsAbsoluteHrefOnSternHost()
+    {
+        // Mirrors the tolerance ExtractEditionsFromContactLinks already has
+        // for an absolute shop.sternpinball.com URL — the nav could plausibly
+        // render either form.
+        var doc = Parse("""
+            <html><body>
+              <a href="https://sternpinball.com/game/aerosmith/pro">Pro</a>
+              <a href="https://www.sternpinball.com/game/aerosmith/premium">Premium</a>
+              <a href="https://example.com/game/aerosmith/decoy">Decoy on a different host</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith");
+
+        Assert.Equal(2, editions.Count);
+        Assert.Equal("Pro", editions[0].Name);
+        Assert.Equal("Premium", editions[1].Name);
+    }
+
+    [Fact]
     public void ExtractEditionsFromSubpageLinks_DedupesRepeatedSubpageLinks()
     {
         // The same edition sub-page is often linked twice (header nav + hero CTA).

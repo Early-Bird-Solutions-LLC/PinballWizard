@@ -7,6 +7,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
@@ -174,6 +175,20 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
 
             var title = GamePageExtractors.SanitizeGameTitle(
                 titleCandidates, doc.Title, game.Slug);
+
+            if (staticMeta.EditionsFromNavFallback)
+            {
+                // OBS-04: a degraded path executed — surface it even when it
+                // DID recover editions, because the recovered editions carry
+                // Name only (Msrp/Availability are unavailable on this path)
+                // and a site-wide contact-link pattern change would silently
+                // drop that data for every game without this being visible.
+                PinballWizardTelemetry.SternEditionNavFallbackUsed.Add(
+                    1, new System.Diagnostics.TagList { { "scraper", Name } });
+                Logger.LogInformation(
+                    "Static metadata extraction for {Slug} fell back to game sub-page nav links ({EditionCount} editions recovered, Msrp/Availability unavailable) — the contact-to-buy variant links found none.",
+                    game.Slug, staticMeta.Editions.Count);
+            }
 
             if (staticMeta.Editions.Count == 0)
             {

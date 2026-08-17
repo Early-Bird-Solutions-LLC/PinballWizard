@@ -49,7 +49,8 @@ public static class StaticMetadataExtractor
     public static StaticGameMetadata Extract(IDocument document, string slug)
     {
         var editions = ExtractEditionsFromContactLinks(document);
-        if (editions.Count == 0)
+        var usedFallback = editions.Count == 0;
+        if (usedFallback)
         {
             // Some games (aerosmith, batman-66, beatles, ...) publish only the
             // generic page-wide contact-to-buy link — no per-edition variant=
@@ -65,6 +66,7 @@ public static class StaticMetadataExtractor
             DatePublished = ExtractDatePublished(document),
             CanonicalUrl = ExtractCanonicalUrl(document),
             Editions = editions,
+            EditionsFromNavFallback = usedFallback,
         };
     }
 
@@ -177,6 +179,16 @@ public static class StaticMetadataExtractor
     }
 
     /// <summary>
+    /// The literal string a broken client-side template emits when an edition
+    /// slot's data failed to populate. Confirmed on the live
+    /// <c>sternpinball.com/game/beatles/</c> page (2026-08-17): a genuine
+    /// <c>&lt;a href="/game/beatles/undefined"&gt;</c>, styled identically to
+    /// the real Diamond/Gold edition links — there is no DOM signal that
+    /// distinguishes it, only this exact value.
+    /// </summary>
+    private const string UndefinedEditionArtifact = "undefined";
+
+    /// <summary>
     /// Fallback for games whose page carries no per-edition contact link at
     /// all (only the generic page-wide "Where To Buy" button) but that still
     /// link to per-edition sub-pages in their own nav, of the form
@@ -185,6 +197,16 @@ public static class StaticMetadataExtractor
     /// zero editions, so a game whose contact links already work is never
     /// double-counted against its own nav.
     /// </summary>
+    /// <remarks>
+    /// Matching tolerance mirrors <see cref="ExtractEditionsFromContactLinks"/>:
+    /// both a root-relative href (<c>/game/{slug}/pro</c>) and an absolute one
+    /// on the same host, and both with and without a trailing slash, resolve
+    /// to the same path. Verified live against 7 real Stern game pages
+    /// (2026-08-17): edition names are NOT a fixed vocabulary — aerosmith uses
+    /// pro/premium/limited-edition, beatles uses Diamond/Gold — so this
+    /// deliberately does not filter by an edition-name allow-list, only by
+    /// path shape plus the one confirmed non-edition artifact above.
+    /// </remarks>
     public static List<EditionInfo> ExtractEditionsFromSubpageLinks(IDocument document, string slug)
     {
         var prefix = $"/game/{slug}/";
@@ -194,30 +216,49 @@ public static class StaticMetadataExtractor
         {
             var href = anchor.GetAttribute("href");
             if (string.IsNullOrEmpty(href)) continue;
-            if (!href.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
 
-            var editionSlug = href[prefix.Length..];
+            var path = ExtractPath(href);
+            if (path is null || !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Path decoding happens BEFORE the structural checks below, so an
+            // encoded '/', '?', or '#' cannot smuggle a nested path or query
+            // past the single-segment check by hiding inside a percent-escape.
+            var editionSlug = Uri.UnescapeDataString(path[prefix.Length..].TrimEnd('/'));
+
             // Reject anything but a single path segment — a nested path (a
             // linked PDF under a documents/ sub-path), a query string, or a
             // fragment (an in-page anchor like #overview) is not an edition
-            // slug.
+            // slug. Also reject the one confirmed non-edition value.
             if (editionSlug.Length == 0
                 || editionSlug.Contains('/', StringComparison.Ordinal)
                 || editionSlug.Contains('?', StringComparison.Ordinal)
-                || editionSlug.Contains('#', StringComparison.Ordinal))
+                || editionSlug.Contains('#', StringComparison.Ordinal)
+                || string.Equals(editionSlug, UndefinedEditionArtifact, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            // The contact-link path decodes percent-escapes via
-            // HttpUtility.ParseQueryString; do the same here so a slug with
-            // an encoded character (observed sub-page hrefs are plain ASCII
-            // today, but the site controls this, not us) title-cases from
-            // the real character, not from "%xx" literals.
-            editions.Add(new EditionInfo { Name = TitleCaseSlug(Uri.UnescapeDataString(editionSlug)) });
+            editions.Add(new EditionInfo { Name = TitleCaseSlug(editionSlug) });
         }
 
         return GamePageExtractors.DeduplicateEditions(editions);
+    }
+
+    /// <summary>
+    /// Resolves an anchor href — root-relative or absolute-on-sternpinball.com
+    /// — down to its path component, so the caller can compare against a
+    /// <c>/game/{slug}/...</c> prefix regardless of which form the page used.
+    /// Returns null for anything else (a different host, a mailto: link, ...).
+    /// </summary>
+    private static string? ExtractPath(string href)
+    {
+        if (href.StartsWith('/')) return href;
+
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var uri)) return null;
+        return uri.Host.Equals("sternpinball.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".sternpinball.com", StringComparison.OrdinalIgnoreCase)
+            ? uri.AbsolutePath
+            : null;
     }
 
     /// <summary>
@@ -410,4 +451,16 @@ public sealed class StaticGameMetadata
     public DateTime? DatePublished { get; init; }
     public string? CanonicalUrl { get; init; }
     public List<EditionInfo> Editions { get; init; } = [];
+
+    /// <summary>
+    /// True when <see cref="Editions"/> came from
+    /// <see cref="StaticMetadataExtractor.ExtractEditionsFromSubpageLinks"/>
+    /// because the primary contact-link strategy found none — regardless of
+    /// whether the fallback itself recovered any editions. A degraded path
+    /// having executed is itself worth surfacing (OBS-04): if Stern changes
+    /// the contact-link pattern site-wide, every game silently loses Msrp/
+    /// Availability (only the name-only fallback carries a name) while the
+    /// run still looks healthy, unless this is visible somewhere.
+    /// </summary>
+    public bool EditionsFromNavFallback { get; init; }
 }
