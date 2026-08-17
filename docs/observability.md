@@ -293,6 +293,17 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
 | `pinwiz.scraper.chromium_descendant_rss_bytes` | Histogram | `scraper`, `phase` | Combined resident-set memory of every live descendant process (the Playwright Node.js driver, Chromium, its renderer/GPU children), summed via `/proc` on Linux. Reads the "≈ Chromium" row above instead of only inferring it by subtracting `UsageBytes − process_working_set_bytes` — but as an **upper bound**, not an exact match: per-process VmRSS double-counts pages Chromium's own processes share with each other (IPC buffers, V8 snapshot, shared libraries), which the cgroup-backed `UsageBytes` does not. Linux-only — absent (not zero) on a non-Linux dev run. |
 
+> **#855 resolved 2026-08-17 (pending rollout verification).** Direct measurement via
+> `chromium_descendant_rss_bytes` showed the existing per-page-count browser recycle
+> genuinely freed memory (595→161 MiB in one observed cycle) but each subsequent cycle
+> re-ballooned to a higher peak than the last (713 MiB by page 12 of cycle 2, vs. 595 MiB
+> by page 20 of cycle 1) — a curve no fixed recycle interval could stabilize. Chromium now
+> runs on Azure Playwright Workspaces instead of inside the 1 GiB ACA job container when
+> deployed (Development is unaffected — still local Chromium). In deployed mode,
+> `chromium_descendant_rss_bytes` correctly reads near-zero: there's no local Chromium
+> descendant process for `ProcTreeMemoryReader` to find. That's expected, not a broken
+> probe. See `docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md`.
+
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
 browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
 that do not implement `ISourceScraper`), carried identically by all four probes so they join
