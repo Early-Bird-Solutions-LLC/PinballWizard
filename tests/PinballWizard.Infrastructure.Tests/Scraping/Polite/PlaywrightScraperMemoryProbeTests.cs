@@ -126,6 +126,38 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
     }
 
     [Fact]
+    public async Task NewPolitePageAsync_WhenChromiumProbeAvailable_RecordsDescendantRssBytes()
+    {
+        const string name = "MemProbe_ChromiumAvailable";
+        // A fixed, made-up-but-positive value — SampleChromiumDescendantRssBytes is
+        // overridden below rather than depending on a real Linux /proc walk, mirroring
+        // how CreateContextAsync is overridden to avoid a real Chromium launch.
+        await using var scraper = BuildScraper(name, recycleInterval: 10, chromiumRssOverride: 123_456_789);
+
+        await using var _ = await scraper.OpenPageAsync("https://example.com/");
+
+        var chromium = For(name).Where(m => m.Instrument == "pinwiz.scraper.chromium_descendant_rss_bytes").ToList();
+        Assert.Single(chromium);
+        Assert.Equal(123_456_789, chromium[0].Value);
+    }
+
+    [Fact]
+    public async Task NewPolitePageAsync_WhenChromiumProbeUnavailable_RecordsNoDescendantRssMeasurement()
+    {
+        // Degrade-visibly check (invariant #17): an unmeasurable probe must produce NO
+        // data point, never a fabricated zero that would read as "Chromium used nothing".
+        const string name = "MemProbe_ChromiumUnavailable";
+        await using var scraper = BuildScraper(name, recycleInterval: 10, chromiumRssOverride: null);
+
+        await using var _ = await scraper.OpenPageAsync("https://example.com/");
+
+        Assert.DoesNotContain(For(name), m => m.Instrument == "pinwiz.scraper.chromium_descendant_rss_bytes");
+        // The other three instruments must still fire — the Chromium probe's absence
+        // must not take down the rest of the sample.
+        Assert.Contains(For(name), m => m.Instrument == "pinwiz.scraper.process_working_set_bytes");
+    }
+
+    [Fact]
     public async Task MemoryProbe_TagsScraperWithSourceScraperName_NotTheClrTypeName()
     {
         // The `scraper` tag must carry ISourceScraper.Name — the same value the scraper
@@ -148,7 +180,8 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
 
     // -------- Helpers --------
 
-    private static NamedProbeScraper BuildScraper(string sourceName, int recycleInterval)
+    private static NamedProbeScraper BuildScraper(
+        string sourceName, int recycleInterval, long? chromiumRssOverride = null)
     {
         var gate = Substitute.For<IPolitenessGate>();
         gate.AcquireForRequestAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>())
@@ -162,7 +195,10 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
         };
 
         var factory = new PlaywrightFactory(NullLogger<PlaywrightFactory>.Instance);
-        return new NamedProbeScraper(factory, gate, options, recycleInterval, sourceName);
+        return new NamedProbeScraper(factory, gate, options, recycleInterval, sourceName)
+        {
+            ChromiumRssOverride = chromiumRssOverride,
+        };
     }
 
     private static IBrowserContext MakeMockContext()
@@ -214,6 +250,14 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
 
         // Counted rather than executed — there is no real browser in a unit test.
         protected override Task RecycleBrowserAsync() => Task.CompletedTask;
+
+        // Overridden unconditionally (not just when a test sets it) so every test in
+        // this class is deterministic and independent of whether a real Linux /proc
+        // filesystem happens to be present on whatever machine runs the suite — the
+        // same reason CreateContextAsync above never launches a real Chromium.
+        public long? ChromiumRssOverride { get; init; }
+
+        protected override long? SampleChromiumDescendantRssBytes() => ChromiumRssOverride;
 
         public Task<PolitePage> OpenPageAsync(string url, CancellationToken ct = default)
             => NewPolitePageAsync(url, ct);

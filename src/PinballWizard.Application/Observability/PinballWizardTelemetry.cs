@@ -786,7 +786,13 @@ public static class PinballWizardTelemetry
     //     UsageBytes - process_working_set  ≈ Chromium (browser + renderers)
     //     process_working_set - managed_heap ≈ native allocation inside .NET
     //
-    // Tags (all three instruments):
+    // pinwiz.scraper.chromium_descendant_rss_bytes (added below, #855 follow-up)
+    // measures the Chromium side of that first subtraction DIRECTLY — the
+    // subtraction above was, until this instrument existed, the only way to
+    // attribute memory to Chromium at all; it is inference from two container-
+    // and process-level numbers, not a measurement of Chromium itself.
+    //
+    // Tags (all three .NET-process instruments):
     //   scraper — ISourceScraper.Name
     //   phase   — "page" (after a page navigation), "pre_recycle" / "post_recycle"
     //             (bracketing the browser-process recycle). The pre/post pair is
@@ -809,6 +815,11 @@ public static class PinballWizardTelemetry
         "pinwiz.scraper.gen2_collections",
         unit: "{collection}",
         description: "Cumulative gen-2 GC count at each memory sample, tagged with scraper and phase. Context for the other two probes: a managed heap that climbs while gen-2 collections also climb means the GC is running and cannot reclaim (live references retained); a heap that climbs with no gen-2 activity means collection pressure never triggered. Distinguishes 'leak' from 'GC simply had no reason to run yet'.");
+
+    public static readonly Histogram<long> ScraperChromiumDescendantRssBytes = Meter.CreateHistogram<long>(
+        "pinwiz.scraper.chromium_descendant_rss_bytes",
+        unit: "By",
+        description: "Combined resident-set memory of every live descendant of the scraper process (the Playwright Node.js driver, the Chromium browser it launches, and that browser's renderer/GPU children), sampled alongside pinwiz.scraper.process_working_set_bytes via /proc on Linux. Tagged with scraper and phase. Linux-only — every ACA job this covers runs the Linux container image, but a local Windows/macOS dev run reports no data point for this instrument at all rather than a fabricated zero (a probe that cannot measure must say so, not read as 'Chromium used nothing'). Directly measures the quantity pinwiz.scraper.process_working_set_bytes's own description could previously only infer by subtracting it from ACA's container-level UsageBytes.");
     // ── Scraper yield instrumentation (#857) ─────────────────────────────
     // Emitted by ScraperOrchestrator once per ISourceScraper run. Two instruments:
     //   links_discovered_total — the raw count of link items yielded. Emitted from

@@ -290,10 +290,11 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.process_working_set_bytes` | Histogram | `scraper`, `phase` | Resident working set of the .NET scraper process. Excludes Chromium child processes by construction — subtract from ACA `UsageBytes` to attribute memory to the browser. |
 | `pinwiz.scraper.managed_heap_bytes` | Histogram | `scraper`, `phase` | Managed heap (`GC.GetTotalMemory`, no forced collection). Rising in step with working set implicates retained managed state (`ScrapedItem` / `DocumentRecord` / catalog); flat while working set climbs implicates native or child-process memory. |
 | `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
+| `pinwiz.scraper.chromium_descendant_rss_bytes` | Histogram | `scraper`, `phase` | Combined resident-set memory of every live descendant process (the Playwright Node.js driver, Chromium, its renderer/GPU children), summed via `/proc` on Linux. Measures the "≈ Chromium" row above **directly** rather than only by subtracting `UsageBytes − process_working_set_bytes`. Linux-only — absent (not zero) on a non-Linux dev run. |
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
 browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
-that do not implement `ISourceScraper`), carried identically by all three probes so they join
+that do not implement `ISourceScraper`), carried identically by all four probes so they join
 to one another. The two yield instruments below also carry `scraper` (there, always
 `ISourceScraper.Name`), so they join to these probes for any scraper that implements the
 interface. The remaining `pinwiz.scraper.*` instruments do not carry it —
@@ -313,12 +314,22 @@ Query the per-page log line (sub-second timestamps, finer than the metric export
 ```kusto
 ContainerAppConsoleLogs_CL
 | where ContainerJobName_s startswith "pinwiz-job-stern-games"
-| where Log_s startswith "Memory probe"
+| where Log_s contains "Memory probe"
 | project TimeGenerated, Log_s
 | order by TimeGenerated asc
 ```
 
-> `startswith`, not `==`. ACA job names carry a five-character environment suffix —
+> **`Log_s contains`, not `startswith`.** The .NET console logger indents the message
+> body under its category line, so `Log_s` for a probe row starts with whitespace, not
+> `"Memory"`. `startswith "Memory probe"` returns **zero rows with no error** even when
+> the probes fired correctly and ingested — verified live 2026-08-17: 198 rows ingested
+> from a probe-carrying run, 0 matched `startswith`, all matched `contains`. Reads
+> exactly like "the probe never fired," the same silent-failure shape as the job-name
+> suffix trap below. The log line carries `chromiumRss=N MiB` as its final field only
+> when the Chromium probe measured something — absent (not `chromiumRss=0`) on a non-
+> Linux run or a genuine read failure.
+>
+> `startswith`, not `==`, for `ContainerJobName_s`. ACA job names carry a five-character environment suffix —
 > `substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)`, see
 > `infra/modules/shared.bicep`. It is *deterministic* per subscription + resource group
 > (so it is stable across stack runs, and `pinwiz-job-stern-games-buutj` is correct for
