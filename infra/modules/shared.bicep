@@ -3128,7 +3128,9 @@ resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@202
     // Entra-only — matches Cosmos/App Insights DisableLocalAuth convention elsewhere
     // in this file. No access-token secret to manage or rotate.
     localAuth: 'Disabled'
-    // Single-region deployment — no need for closest-region routing.
+    // 'Disabled' pins connections to the workspace's own creation region rather than
+    // routing each worker to whichever region is closest to it — the single-region
+    // deployment this project runs has only one region for "closest" to mean anyway.
     regionalAffinity: 'Disabled'
   }
 }

@@ -36,14 +36,19 @@ Full incident evidence and the options considered:
 
 ## Decision
 
-`PlaywrightFactory.GetBrowserAsync()` branches on the same dev-vs-deployed check
-`SharedAzureCredential` already makes (`ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT` ==
-`Development`):
+`PlaywrightFactory.GetBrowserAsync()` branches on whether `PLAYWRIGHT_SERVICE_URL` is
+configured (`PlaywrightFactory.IsWorkspaceUrlConfigured`) — **not** on
+`ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT` == `Development`, which an earlier
+revision used and which pre-push review correctly rejected (see Consequences: it broke
+the documented standalone-CLI scrape path and made the rollout itself unsafe):
 
-- **Local dev:** unchanged — `_playwright.Chromium.LaunchAsync(...)`, local Chromium.
-- **Deployed:** connects to a remote Chromium instance on **Azure Playwright
-  Workspaces** (`Microsoft.LoadTestService/playwrightWorkspaces`) via
-  `PlaywrightServiceBrowserClient.GetConnectOptionsAsync()` +
+- **`PLAYWRIGHT_SERVICE_URL` unset** (local dev, a bare CLI invocation, CI, or a
+  deployed environment before the manual portal step below has been completed):
+  unchanged — `_playwright.Chromium.LaunchAsync(...)`, local Chromium, exactly the
+  pre-#855-fix behavior.
+- **`PLAYWRIGHT_SERVICE_URL` set:** connects to a remote Chromium instance on
+  **Azure Playwright Workspaces** (`Microsoft.LoadTestService/playwrightWorkspaces`)
+  via `PlaywrightServiceBrowserClient.GetConnectOptionsAsync()` +
   `BrowserType.ConnectAsync`. Auth is Entra-only (`SharedAzureCredential.Instance`,
   the project's single shared `TokenCredential`) — the workspace resource sets
   `localAuth: 'Disabled'`, matching the Cosmos/App Insights `DisableLocalAuth`
@@ -51,15 +56,22 @@ Full incident evidence and the options considered:
 
 This applies uniformly to all three scrapers and all four jobs that reach
 `PlaywrightFactory` (`stern-games`, `stern-bulletins`, `stern-refresh`, and the
-`GameListingScraper` path they share) — there is no per-job toggle. The container's
-Chromium footprint (the multi-hundred-MiB part) is removed entirely rather than
-managed; the ACA job process now holds only the .NET process and a thin CDP client
-connection.
+`GameListingScraper` path they share) — there is no per-job toggle, and once the
+endpoint is supplied the container's Chromium footprint (the multi-hundred-MiB part) is
+removed entirely rather than managed; the ACA job process then holds only the .NET
+process and a thin CDP client connection.
 
-No local-Chromium fallback exists on a Workspace connection failure. The exception
-propagates, composing with #857's existing "fail a run that collects nothing rather than
-exit 0" behavior. A silent fallback would reintroduce exactly the OOM risk this decision
-exists to eliminate, on whatever night the Workspace happens to be unavailable.
+**The two failure modes are handled differently, deliberately.** "No workspace
+configured" (§ above) is not a failure — it's the default, and it behaves exactly as
+this project did before #855. "Workspace configured but the connection attempt
+fails" is a real failure, and there is no local-Chromium fallback for it: the exception
+propagates, composing with #857's existing "fail a run that collects nothing rather
+than exit 0" behavior. Falling back to `LaunchAsync` *after a configured attempt fails*
+would mask a real outage (Azure Playwright Workspaces down on a night it was
+supposed to be used) behind data that looks like a clean local run — exactly what
+invariant #17 forbids. Conflating these two states — as an earlier revision did, by
+gating on `SharedAzureCredential.IsDevelopment` instead of the URL itself — was the
+defect pre-push review caught: it turned "not configured yet" into a hard failure too.
 
 ### Why not tune the recycle instead
 
@@ -92,18 +104,44 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   under invariant #17 (degrade visibly), not a broken probe — the probe and the
   local-recycle machinery around it remain fully meaningful in Development, where
   Chromium still runs locally.
-- **A new external dependency exists in the deployed path.** Every deployed scrape now
-  depends on Azure Playwright Workspaces being reachable. There is no fallback by
-  design (see above); an outage there fails the scrape loudly rather than degrading it.
+- **A new external dependency exists once a workspace is configured.** From that point
+  on, the scrape depends on Azure Playwright Workspaces being reachable; an outage
+  fails the scrape loudly rather than degrading it (see above).
 - **The workspace's region-connection endpoint (`PLAYWRIGHT_SERVICE_URL`) is not
   computable from the ARM resource or its provider's operations** — Microsoft's own
   documentation instructs copying it from the Azure portal after the workspace exists.
-  The Bicep parameter defaults to an empty string so the resource can be created on a
-  first deploy; supplying the real value is a documented manual follow-up, not a code
-  gap.
+  The Bicep parameter defaults to an empty string, and — because the code gates on the
+  URL's presence rather than on being deployed — an empty value means every job keeps
+  running exactly as it did before this change (local Chromium, existing recycle) until
+  someone supplies the real value. Merging and deploying this PR is therefore safe on
+  its own; the manual portal step is what *activates* the fix, not a prerequisite for
+  the deploy not to break something that was working.
+- **`PlaywrightServiceBrowserClient` is held for the browser connection's lifetime, not
+  disposed immediately after use.** The installed 1.0.0 assembly's own string table
+  references `RotationTimer`/`TimerCallback`, suggesting the client may own ongoing
+  Entra token rotation for the session it authenticates — a detail Microsoft's docs
+  don't state and that isn't verifiable without a live workspace to test disposal
+  timing against. Per `no-guessing.md`, the client is disposed alongside the browser
+  (`RecycleBrowserAsync`/`DisposeAsync`) rather than risk cutting short whatever keeps
+  a ~35–45 minute full-catalog run's connection alive. This can be revisited once the
+  actual contract is confirmed against a real run.
+- **The per-page-count recycle is a no-op once connected to a workspace.** It exists to
+  reclaim *local* container memory, which doesn't apply once Chromium runs remotely —
+  recycling anyway would spend billed connection minutes and reconnect latency for
+  nothing. `PlaywrightFactory` tracks which mode produced the current browser and skips
+  the teardown/reconnect in workspace mode; the recycle is unchanged in local-Chromium
+  mode (Development, or before the endpoint is configured).
+- **No alert rule was added for the new `pinwiz.scraper.workspace_connect_total`
+  counter in this PR.** ADR-0055's own history — an alert that silently never fired for
+  weeks because its filter was subtly wrong — is exactly the failure mode a *new*,
+  untested alert risks reproducing, and there is no live workspace connection failure
+  to verify one against yet. The counter itself ships now (observability from day one,
+  matching #855's own "9 nights undiagnosed" lesson); the alert rule is a deliberate,
+  tracked follow-up once real connect/failure data exists to write and verify a query
+  against, not a silent gap.
 - **ADR-0003 stands.** This does not change the choice of Playwright over
   Puppeteer-Sharp — it changes *where* the browser Playwright drives actually runs, only
-  in deployed environments.
+  once a workspace endpoint is configured.
 
 ## References
 

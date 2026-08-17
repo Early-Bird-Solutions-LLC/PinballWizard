@@ -4,6 +4,28 @@
 **Issue:** [#855](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/855)
 **Status:** implemented — see [ADR-0056](../../adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)
 
+> **Revision, 2026-08-17 (pre-push review).** §A and §D below describe gating
+> `PlaywrightFactory` on `SharedAzureCredential.IsDevelopment`
+> (`ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT` == `Development`). That was wrong, for
+> two compounding reasons the review caught: (1) `src/PinballWizard.Cli/` has no
+> `Properties/launchSettings.json`, so the documented standalone-CLI scrape path
+> (`dotnet run --project src/PinballWizard.Cli -- --source stern-games`) has neither
+> variable set and was silently routed onto the workspace path with no fallback; (2)
+> the Bicep's empty-by-default `playwrightServiceUrl` meant the very first deploy after
+> merge — before the endpoint had been manually obtained from the portal — would have
+> turned the then-currently-green `stern-bulletins` job into a guaranteed hard failure,
+> with nothing sequencing the rollout to prevent it.
+>
+> The shipped code instead gates on whether `PLAYWRIGHT_SERVICE_URL` is configured
+> (`PlaywrightFactory.IsWorkspaceUrlConfigured`), not on the Development check. An
+> unconfigured environment — local dev, a bare CLI run, CI, or a deployed job before the
+> manual portal step — now behaves exactly as it did before this change (local Chromium,
+> existing recycle) rather than failing. This is a strictly safer rollout: merging and
+> deploying the code is inert until someone supplies the real endpoint, at which point
+> (and only then) the workspace path activates. [ADR-0056](../../adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)
+> is the corrected, authoritative record — recorded as a revision here rather than
+> silently rewritten, because a spec's revision history is part of its evidence.
+
 ## Problem
 
 `pinwiz-job-stern-games` (0.5 vCPU / 1 GiB ACA job) has OOMKilled 9 consecutive nights.

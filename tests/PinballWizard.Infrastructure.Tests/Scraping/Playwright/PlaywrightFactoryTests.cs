@@ -58,34 +58,19 @@ public sealed class PlaywrightFactoryTests
     // neither belongs in a unit test. The manual trigger against the real
     // service (see the design doc's Rollout section) is what verifies the
     // actual connection succeeds.
-    [Fact]
-    public void ShouldConnectToWorkspace_InDevelopment_ReturnsFalse()
-    {
-        var result = PlaywrightFactory.ShouldConnectToWorkspace(isDevelopment: true);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void ShouldConnectToWorkspace_WhenDeployed_ReturnsTrue()
-    {
-        var result = PlaywrightFactory.ShouldConnectToWorkspace(isDevelopment: false);
-
-        Assert.True(result);
-    }
-
-    // Pre-push review on #855 flagged that an empty PLAYWRIGHT_SERVICE_URL (the state
-    // between "workspace resource deployed" and "endpoint copied from the portal" — see
-    // ADR-0056's Consequences) previously surfaced as whatever internal exception the
-    // SDK happened to throw, rather than a message naming what's actually missing.
-    // IsWorkspaceUrlConfigured is the guard that turns that into an actionable error
-    // before the SDK is ever called — parameterized the same way as
-    // ShouldConnectToWorkspace, so it's testable without mutating process-global
-    // environment state.
+    //
+    // Gated on the PLAYWRIGHT_SERVICE_URL value itself, not on
+    // SharedAzureCredential.IsDevelopment — an earlier revision gated on "is this
+    // Development", which broke the documented standalone-CLI scrape path (no
+    // launchSettings.json exists for the CLI project, so ASPNETCORE_ENVIRONMENT is
+    // simply unset there) and meant an unconfigured deployed environment hard-failed
+    // instead of behaving exactly as it did before this change. Pre-push review on
+    // #855 caught both.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public void IsWorkspaceUrlConfigured_WhenNullOrEmpty_ReturnsFalse(string? playwrightServiceUrl)
+    [InlineData("   ")]
+    public void IsWorkspaceUrlConfigured_WhenNullOrWhitespace_ReturnsFalse(string? playwrightServiceUrl)
     {
         var result = PlaywrightFactory.IsWorkspaceUrlConfigured(playwrightServiceUrl);
 
