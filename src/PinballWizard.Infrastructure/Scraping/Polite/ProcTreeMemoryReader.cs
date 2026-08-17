@@ -132,6 +132,7 @@ internal static class ProcTreeMemoryReader
     {
         var result = new List<int>();
         var queue = new Queue<int>();
+        var seen = new HashSet<int> { rootPid };
         queue.Enqueue(rootPid);
 
         while (queue.Count > 0)
@@ -140,6 +141,15 @@ internal static class ProcTreeMemoryReader
 
             foreach (var child in children)
             {
+                // A PID recycled mid-scan (process A exits, its PID is reassigned as a
+                // child of process B, while B's own PID is simultaneously recycled
+                // elsewhere) could otherwise form a cycle in childrenByParent. This walk
+                // runs inside SampleMemory, which SampleMemory's caller holds
+                // _contextInitLock for — an infinite loop here would deadlock every
+                // future page open, not just this one sample. `seen` makes that
+                // structurally impossible regardless of how implausible the race is.
+                if (!seen.Add(child)) continue;
+
                 result.Add(child);
                 queue.Enqueue(child);
             }

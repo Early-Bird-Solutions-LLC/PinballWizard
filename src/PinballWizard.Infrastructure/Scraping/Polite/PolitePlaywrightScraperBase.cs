@@ -318,10 +318,6 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         if (chromiumRss is not null)
         {
             PinballWizardTelemetry.ScraperChromiumDescendantRssBytes.Record(chromiumRss.Value, tags);
-        }
-
-        if (chromiumRss is not null)
-        {
             Logger.LogInformation(
                 "Memory probe [{Phase}] {Scraper} page {PageCount}: workingSet={WorkingSetMiB} MiB, managedHeap={ManagedHeapMiB} MiB, gen2={Gen2}, chromiumRss={ChromiumRssMiB} MiB",
                 phase, ScraperTag, _pageCount, workingSet / 1048576, managedHeap / 1048576, gen2, chromiumRss.Value / 1048576);
