@@ -214,13 +214,24 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         internal const string PostRecycle = "post_recycle";
     }
 
-    // The `scraper` tag must match the value every other pinwiz.scraper.* instrument
-    // uses, or a dashboard cannot join them. That value is ISourceScraper.Name, which
-    // lives on the derived scraper rather than on this base — so resolve it through the
-    // interface when the subclass implements it, and fall back to the concrete type name
-    // when it does not (test doubles, future non-ISourceScraper subclasses). The fallback
-    // is a real, identifying value, never a placeholder that would silently merge two
-    // scrapers into one series.
+    // The `scraper` tag carries ISourceScraper.Name, which is what the other
+    // scraper-identified instruments use, so those series join on it:
+    //   links_discovered_total, yield_guard_failures_total  → tag `scraper`
+    //   process_working_set_bytes, managed_heap_bytes, gen2_collections → `scraper` + `phase`
+    //
+    // It is NOT a universal convention of the pinwiz.scraper.* prefix, and an earlier
+    // version of this comment wrongly said it was. Two instruments under the same prefix
+    // carry no `scraper` tag at all and cannot be joined on it:
+    //   politeness_fallback_active — untagged
+    //   jsonld_missing_total       — tags `source` + `url`
+    // Verified at the emit sites, not from the instrument descriptions. Check the emit
+    // site before assuming a shared prefix implies a shared tag.
+    //
+    // ISourceScraper.Name lives on the derived scraper rather than on this base, so
+    // resolve it through the interface when the subclass implements it, and fall back to
+    // the concrete type name when it does not (test doubles, future non-ISourceScraper
+    // subclasses). The fallback is a real, identifying value, never a placeholder that
+    // would silently merge two scrapers into one series.
     private string ScraperTag => (this as ISourceScraper)?.Name ?? GetType().Name;
 
     /// <summary>

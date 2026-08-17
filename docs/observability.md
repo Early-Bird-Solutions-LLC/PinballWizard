@@ -300,6 +300,14 @@ interface. The remaining `pinwiz.scraper.*` instruments do not carry it —
 `politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
 series cannot be joined on `scraper`.
 
+> **Re-derive this from the emit sites before trusting it.** The passage above has been
+> wrong in both directions inside a single day: #894 claimed *every* `pinwiz.scraper.*`
+> instrument shared the tag (false — two never have), #895 corrected that to "the other
+> instruments do not carry it", which was true when written and became false hours later
+> when #864 merged two that do. A shared instrument prefix does not imply a shared tag,
+> and a correct statement here expires silently when the next instrument lands. Read the
+> `.Add(...)` / `.Record(...)` call sites, not the instrument descriptions.
+
 Query the per-page log line (sub-second timestamps, finer than the metric export):
 
 ```kusto

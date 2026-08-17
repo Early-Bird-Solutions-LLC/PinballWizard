@@ -128,9 +128,15 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
     [Fact]
     public async Task MemoryProbe_TagsScraperWithSourceScraperName_NotTheClrTypeName()
     {
-        // The `scraper` tag has to match what every other pinwiz.scraper.* instrument
-        // emits (ISourceScraper.Name), or the probes cannot be joined against them on a
-        // dashboard — which would make this whole diagnosis harder, not easier.
+        // The `scraper` tag must carry ISourceScraper.Name — the same value the scraper
+        // orchestrator puts on links_discovered_total and yield_guard_failures_total — so
+        // a dashboard can join yield against memory for one scraper. Emitting the CLR type
+        // name instead would produce "GamePageScraper" where those series say "Game Pages",
+        // and the join would silently return nothing.
+        //
+        // Note this is a join across *those* instruments specifically, not a property of
+        // the pinwiz.scraper.* prefix: politeness_fallback_active is untagged and
+        // jsonld_missing_total tags `source`, so neither joins on `scraper`.
         const string name = "MemProbe_NamedSource";
         await using var scraper = BuildScraper(name, recycleInterval: 10);
 
