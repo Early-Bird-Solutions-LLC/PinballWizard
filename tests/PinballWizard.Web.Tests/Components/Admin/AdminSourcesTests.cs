@@ -290,11 +290,29 @@ public sealed class AdminSourcesLoadingStateTests : AsyncBunitContext
 
         Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
 
-        // Release the gate — the load completes and SafeStateHasChanged re-renders.
+        // Release the gate, then drain the renderer dispatcher deterministically:
+        // SetResult completes the IAsyncEnumerable's WaitAsync, which posts the stream's
+        // MoveNextAsync continuation onto the dispatcher; that continuation's await foreach
+        // exit posts a second continuation (LoadAsync's finally: _loading = false +
+        // SafeStateHasChanged). Two InvokeAsync flushes run both, so the assertion never
+        // races thread-pool scheduling in the common case. WaitForAssertion's wall-clock
+        // poll was the flake under CI load (#898) — same root cause as #822, fixed the
+        // same way in 4a25752.
+        //
+        // The determinism argument depends on every await in that chain staying on the
+        // renderer's dispatcher (neither ConfigureAwait(false) nor a
+        // RunContinuationsAsynchronously TaskCompletionSource appears anywhere in it —
+        // verified against LoadAsync/SlowStream/_dataGate above; both would break the
+        // capture-and-resume-on-dispatcher assumption this relies on). A short
+        // WaitForAssertion after the flushes is a bounded safety net, not the primary
+        // mechanism: it should resolve immediately once the two flushes have run, and
+        // only pays its timeout if that assumption is ever violated by a future change.
         _dataGate.SetResult();
-        cut.WaitForAssertion(() =>
-            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => Task.CompletedTask);
 
-        await Task.CompletedTask;
+        cut.WaitForAssertion(
+            () => Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal),
+            timeout: TimeSpan.FromSeconds(1));
     }
 }

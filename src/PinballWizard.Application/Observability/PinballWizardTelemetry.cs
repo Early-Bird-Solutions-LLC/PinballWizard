@@ -850,6 +850,11 @@ public static class PinballWizardTelemetry
         unit: "{run}",
         description: "Scraper runs that failed the per-scraper yield guard — the scraper yielded fewer link items than the configured minimum (Scraper:MinimumYieldPerScraper). Tagged with scraper. A non-zero rate means a scraper collected nothing when it was expected to collect something; the run exits 1. This is the observability-layer signal for the silent-green-job failure class that hid Playwright-not-installed for 45+ days on pinwiz-job-stern-games (#857).");
 
+    public static readonly Counter<long> SternEditionNavFallbackUsed = Meter.CreateCounter<long>(
+        "pinwiz.scraper.stern_edition_nav_fallback_total",
+        unit: "{page}",
+        description: "Stern game pages where StaticMetadataExtractor.Extract fell back from contact-to-buy links to game sub-page nav links because the primary strategy found zero editions (#855). Tagged with scraper only (not slug — per-game cardinality on a counter is unbounded and the per-slug detail already lives in the accompanying log line at Information). The fallback recovers a bare edition Name; Msrp and Availability are unavailable on that path. A rate that jumps toward Stern's total game count means the contact-to-buy pattern changed site-wide, not that a handful of pages are quirky.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

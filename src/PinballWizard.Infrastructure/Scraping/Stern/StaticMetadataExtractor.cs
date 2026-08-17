@@ -41,14 +41,32 @@ public static class StaticMetadataExtractor
     /// One-shot convenience: extract every machine-readable field from a
     /// parsed Stern game page in a single pass.
     /// </summary>
-    public static StaticGameMetadata Extract(IDocument document)
+    /// <param name="document">The parsed game page.</param>
+    /// <param name="slug">
+    /// The game's slug (e.g. <c>"aerosmith"</c>), used only as the fallback
+    /// path prefix — see <see cref="ExtractEditionsFromSubpageLinks"/>.
+    /// </param>
+    public static StaticGameMetadata Extract(IDocument document, string slug)
     {
+        var editions = ExtractEditionsFromContactLinks(document);
+        var usedFallback = editions.Count == 0;
+        if (usedFallback)
+        {
+            // Some games (aerosmith, batman-66, beatles, ...) publish only the
+            // generic page-wide contact-to-buy link — no per-edition variant=
+            // links at all — but still expose per-edition sub-pages in the
+            // game's own nav. Fall back to those rather than record zero
+            // editions for a game that plainly has more than one.
+            editions = ExtractEditionsFromSubpageLinks(document, slug);
+        }
+
         return new StaticGameMetadata
         {
             Title = ExtractTitle(document),
             DatePublished = ExtractDatePublished(document),
             CanonicalUrl = ExtractCanonicalUrl(document),
-            Editions = ExtractEditionsFromContactLinks(document),
+            Editions = editions,
+            EditionsFromNavFallback = usedFallback,
         };
     }
 
@@ -158,6 +176,89 @@ public static class StaticMetadataExtractor
         // contact button in multiple cards. Reuse the existing dedupe so we
         // get one EditionInfo per unique name with non-null fields merged.
         return GamePageExtractors.DeduplicateEditions(editions);
+    }
+
+    /// <summary>
+    /// The literal string a broken client-side template emits when an edition
+    /// slot's data failed to populate. Confirmed on the live
+    /// <c>sternpinball.com/game/beatles/</c> page (2026-08-17): a genuine
+    /// <c>&lt;a href="/game/beatles/undefined"&gt;</c>, styled identically to
+    /// the real Diamond/Gold edition links — there is no DOM signal that
+    /// distinguishes it, only this exact value.
+    /// </summary>
+    private const string UndefinedEditionArtifact = "undefined";
+
+    /// <summary>
+    /// Fallback for games whose page carries no per-edition contact link at
+    /// all (only the generic page-wide "Where To Buy" button) but that still
+    /// link to per-edition sub-pages in their own nav, of the form
+    /// <c>/game/{slug}/{edition}</c> — e.g. <c>/game/aerosmith/pro</c>.
+    /// Only called when <see cref="ExtractEditionsFromContactLinks"/> returns
+    /// zero editions, so a game whose contact links already work is never
+    /// double-counted against its own nav.
+    /// </summary>
+    /// <remarks>
+    /// Matching tolerance mirrors <see cref="ExtractEditionsFromContactLinks"/>:
+    /// both a root-relative href (<c>/game/{slug}/pro</c>) and an absolute one
+    /// on the same host, and both with and without a trailing slash, resolve
+    /// to the same path. Verified live against 7 real Stern game pages
+    /// (2026-08-17): edition names are NOT a fixed vocabulary — aerosmith uses
+    /// pro/premium/limited-edition, beatles uses Diamond/Gold — so this
+    /// deliberately does not filter by an edition-name allow-list, only by
+    /// path shape plus the one confirmed non-edition artifact above.
+    /// </remarks>
+    public static List<EditionInfo> ExtractEditionsFromSubpageLinks(IDocument document, string slug)
+    {
+        var prefix = $"/game/{slug}/";
+        var editions = new List<EditionInfo>();
+
+        foreach (var anchor in document.QuerySelectorAll("a[href]"))
+        {
+            var href = anchor.GetAttribute("href");
+            if (string.IsNullOrEmpty(href)) continue;
+
+            var path = ExtractPath(href);
+            if (path is null || !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Path decoding happens BEFORE the structural checks below, so an
+            // encoded '/', '?', or '#' cannot smuggle a nested path or query
+            // past the single-segment check by hiding inside a percent-escape.
+            var editionSlug = Uri.UnescapeDataString(path[prefix.Length..].TrimEnd('/'));
+
+            // Reject anything but a single path segment — a nested path (a
+            // linked PDF under a documents/ sub-path), a query string, or a
+            // fragment (an in-page anchor like #overview) is not an edition
+            // slug. Also reject the one confirmed non-edition value.
+            if (editionSlug.Length == 0
+                || editionSlug.Contains('/', StringComparison.Ordinal)
+                || editionSlug.Contains('?', StringComparison.Ordinal)
+                || editionSlug.Contains('#', StringComparison.Ordinal)
+                || string.Equals(editionSlug, UndefinedEditionArtifact, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            editions.Add(new EditionInfo { Name = TitleCaseSlug(editionSlug) });
+        }
+
+        return GamePageExtractors.DeduplicateEditions(editions);
+    }
+
+    /// <summary>
+    /// Resolves an anchor href — root-relative or absolute-on-sternpinball.com
+    /// — down to its path component, so the caller can compare against a
+    /// <c>/game/{slug}/...</c> prefix regardless of which form the page used.
+    /// Returns null for anything else (a different host, a mailto: link, ...).
+    /// </summary>
+    private static string? ExtractPath(string href)
+    {
+        if (href.StartsWith('/')) return href;
+
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var uri)) return null;
+        return uri.Host.Equals("sternpinball.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".sternpinball.com", StringComparison.OrdinalIgnoreCase)
+            ? uri.AbsolutePath
+            : null;
     }
 
     /// <summary>
@@ -350,4 +451,16 @@ public sealed class StaticGameMetadata
     public DateTime? DatePublished { get; init; }
     public string? CanonicalUrl { get; init; }
     public List<EditionInfo> Editions { get; init; } = [];
+
+    /// <summary>
+    /// True when <see cref="Editions"/> came from
+    /// <see cref="StaticMetadataExtractor.ExtractEditionsFromSubpageLinks"/>
+    /// because the primary contact-link strategy found none — regardless of
+    /// whether the fallback itself recovered any editions. A degraded path
+    /// having executed is itself worth surfacing (OBS-04): if Stern changes
+    /// the contact-link pattern site-wide, every game silently loses Msrp/
+    /// Availability (only the name-only fallback carries a name) while the
+    /// run still looks healthy, unless this is visible somewhere.
+    /// </summary>
+    public bool EditionsFromNavFallback { get; init; }
 }
