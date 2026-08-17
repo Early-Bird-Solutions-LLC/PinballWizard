@@ -295,7 +295,10 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.workspace_connect_total` | Counter | `outcome` (`success`/`failure`) | Azure Playwright Workspaces connection attempts from `PlaywrightFactory.GetBrowserAsync`. Emitted **only** when `PLAYWRIGHT_SERVICE_URL` is configured and a connection is genuinely attempted — absent means either the job never ran or it's running local Chromium (no workspace configured yet), same absent-series convention as `links_discovered_total` below, not a failure signal on its own. On a job execution window where the workspace IS expected, a `failure` tag — or `success` tags going silent where they were previously present — is the signal to check. No alert rule wired to this yet; see ADR-0056. |
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
-browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
+context recycle plus a browser recycle — the browser half is skipped when
+`PLAYWRIGHT_SERVICE_URL` is configured, since there is no local Chromium to reclaim there,
+so in workspace mode the pair brackets the context recycle only; see ADR-0056).
+`scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
 that do not implement `ISourceScraper`), carried identically by all four probes so they join
 to one another. The two yield instruments below also carry `scraper` (there, always
 `ISourceScraper.Name`), so they join to these probes for any scraper that implements the
