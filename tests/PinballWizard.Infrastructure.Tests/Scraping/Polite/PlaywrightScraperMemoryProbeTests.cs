@@ -158,6 +158,26 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
     }
 
     [Fact]
+    public async Task NewPolitePageAsync_WhenChromiumProbeThrows_TheOtherThreeInstrumentsStillRecord()
+    {
+        // SampleChromiumDescendantRssBytes is protected virtual — a buggy override
+        // (this test's, or a future one) must not be trusted to honor SampleMemory's own
+        // documented "never throws" contract on our behalf. Confirms the exception is
+        // caught, no data point is recorded for the failed probe, and — the actual
+        // point — opening the page doesn't throw and the other three probes are
+        // unaffected.
+        const string name = "MemProbe_ChromiumThrows";
+        await using var scraper = BuildScraper(name, recycleInterval: 10, chromiumRssThrows: true);
+
+        await using var _ = await scraper.OpenPageAsync("https://example.com/");
+
+        Assert.DoesNotContain(For(name), m => m.Instrument == "pinwiz.scraper.chromium_descendant_rss_bytes");
+        Assert.Contains(For(name), m => m.Instrument == "pinwiz.scraper.process_working_set_bytes");
+        Assert.Contains(For(name), m => m.Instrument == "pinwiz.scraper.managed_heap_bytes");
+        Assert.Contains(For(name), m => m.Instrument == "pinwiz.scraper.gen2_collections");
+    }
+
+    [Fact]
     public async Task MemoryProbe_TagsScraperWithSourceScraperName_NotTheClrTypeName()
     {
         // The `scraper` tag must carry ISourceScraper.Name — the same value the scraper
@@ -181,7 +201,7 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
     // -------- Helpers --------
 
     private static NamedProbeScraper BuildScraper(
-        string sourceName, int recycleInterval, long? chromiumRssOverride = null)
+        string sourceName, int recycleInterval, long? chromiumRssOverride = null, bool chromiumRssThrows = false)
     {
         var gate = Substitute.For<IPolitenessGate>();
         gate.AcquireForRequestAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>())
@@ -198,6 +218,7 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
         return new NamedProbeScraper(factory, gate, options, recycleInterval, sourceName)
         {
             ChromiumRssOverride = chromiumRssOverride,
+            ChromiumRssThrows = chromiumRssThrows,
         };
     }
 
@@ -257,7 +278,14 @@ public sealed class PlaywrightScraperMemoryProbeTests : IDisposable
         // same reason CreateContextAsync above never launches a real Chromium.
         public long? ChromiumRssOverride { get; init; }
 
-        protected override long? SampleChromiumDescendantRssBytes() => ChromiumRssOverride;
+        // Simulates a buggy override of this protected virtual seam, to prove
+        // SampleMemory's own never-throws contract does not depend on trusting it.
+        public bool ChromiumRssThrows { get; init; }
+
+        protected override long? SampleChromiumDescendantRssBytes()
+            => ChromiumRssThrows
+                ? throw new InvalidOperationException("simulated probe failure")
+                : ChromiumRssOverride;
 
         public Task<PolitePage> OpenPageAsync(string url, CancellationToken ct = default)
             => NewPolitePageAsync(url, ct);

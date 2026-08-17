@@ -314,7 +314,23 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         // both the metric and the log rather than recorded as zero (invariant #17). A
         // dev machine running this locally on Windows will simply never see this figure,
         // which is the correct degrade-visibly behavior, not a bug to chase.
-        var chromiumRss = SampleChromiumDescendantRssBytes();
+        //
+        // ProcTreeMemoryReader itself never throws, but SampleChromiumDescendantRssBytes
+        // is `protected virtual` — a subclass override (test doubles included) could.
+        // This method's own contract is "never throws"; honor it for this probe the same
+        // way the .NET-process read above is guarded, rather than trusting an overridable
+        // seam to uphold it on our behalf.
+        long? chromiumRss;
+        try
+        {
+            chromiumRss = SampleChromiumDescendantRssBytes();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Chromium descendant memory probe unavailable for {Scraper} at phase {Phase}.", ScraperTag, phase);
+            chromiumRss = null;
+        }
+
         if (chromiumRss is not null)
         {
             PinballWizardTelemetry.ScraperChromiumDescendantRssBytes.Record(chromiumRss.Value, tags);
