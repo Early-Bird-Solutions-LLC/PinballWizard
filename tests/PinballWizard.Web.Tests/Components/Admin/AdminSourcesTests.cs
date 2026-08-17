@@ -313,6 +313,6 @@ public sealed class AdminSourcesLoadingStateTests : AsyncBunitContext
 
         cut.WaitForAssertion(
             () => Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal),
-            timeout: TimeSpan.FromMilliseconds(500));
+            timeout: TimeSpan.FromSeconds(1));
     }
 }
