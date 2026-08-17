@@ -105,6 +105,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Azure.Developer.Playwright" />
     <!-- Microsoft.Azure.Cosmos uses Newtonsoft.Json internally for some
          connection-management paths. Our SystemTextJsonCosmosSerializer
          handles document (de)serialization, but the SDK's transitive check

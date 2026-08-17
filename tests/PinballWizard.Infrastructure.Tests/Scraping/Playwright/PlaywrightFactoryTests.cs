@@ -50,4 +50,27 @@ public sealed class PlaywrightFactoryTests
         Assert.DoesNotContain("firefox", args);
         Assert.DoesNotContain("webkit", args);
     }
+
+    // Mirrors SharedAzureCredentialTests' pattern for BuildOptions: a pure,
+    // internal-static decision function is the testable seam, rather than
+    // asserting on GetBrowserAsync() itself, which would require either a real
+    // Chromium launch or a real network call to Azure Playwright Workspaces —
+    // neither belongs in a unit test. The manual trigger against the real
+    // service (see the design doc's Rollout section) is what verifies the
+    // actual connection succeeds.
+    [Fact]
+    public void ShouldConnectToWorkspace_InDevelopment_ReturnsFalse()
+    {
+        var result = PlaywrightFactory.ShouldConnectToWorkspace(isDevelopment: true);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void ShouldConnectToWorkspace_WhenDeployed_ReturnsTrue()
+    {
+        var result = PlaywrightFactory.ShouldConnectToWorkspace(isDevelopment: false);
+
+        Assert.True(result);
+    }
 }

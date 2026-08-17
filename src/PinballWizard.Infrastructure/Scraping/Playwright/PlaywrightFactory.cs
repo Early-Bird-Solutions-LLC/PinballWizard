@@ -1,5 +1,7 @@
+using Azure.Developer.Playwright;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
+using PinballWizard.Infrastructure.Credentials;
 
 namespace PinballWizard.Infrastructure.Scraping.Playwright;
 
@@ -7,6 +9,15 @@ namespace PinballWizard.Infrastructure.Scraping.Playwright;
 /// Manages Playwright browser lifecycle. Creates a single browser instance
 /// shared across all Playwright-based scrapers for a given run.
 /// </summary>
+/// <remarks>
+/// In Development, launches a local Chromium process exactly as before. When
+/// deployed, connects to a remote browser on Azure Playwright Workspaces
+/// instead — see <see cref="ShouldConnectToWorkspace"/> and #855: a locally-
+/// launched Chromium OOMKilled the 1 GiB stern-games/bulletins/refresh ACA
+/// jobs 9 consecutive nights, and the existing per-page-count recycle could
+/// not stabilize it (each recycle cycle re-ballooned to a higher peak than the
+/// last). Moving Chromium off the container removes the ceiling entirely.
+/// </remarks>
 public sealed class PlaywrightFactory : IAsyncDisposable
 {
     private readonly ILogger<PlaywrightFactory> _logger;
@@ -18,6 +29,19 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     {
         _logger = logger;
     }
+
+    /// <summary>
+    /// Whether <see cref="GetBrowserAsync"/> should connect to a remote browser
+    /// on Azure Playwright Workspaces instead of launching a local one.
+    /// </summary>
+    /// <remarks>
+    /// <c>internal static</c> and parameterized — mirrors
+    /// <see cref="SharedAzureCredential.BuildOptions"/>'s pattern — so this
+    /// decision is unit-testable without an <c>ASPNETCORE_ENVIRONMENT</c>
+    /// env-var dance and without launching a real browser or making a real
+    /// network call.
+    /// </remarks>
+    internal static bool ShouldConnectToWorkspace(bool isDevelopment) => !isDevelopment;
 
     /// <summary>
     /// Gets or creates the shared browser instance.
@@ -34,21 +58,45 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             var browser = _browser;
             if (browser is not null) return browser;
 
-            _logger.LogInformation("Initializing Playwright and launching Chromium...");
             _playwright = await Microsoft.Playwright.Playwright.CreateAsync();
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-            {
-                Headless = true,
-                Args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
-            });
 
-            _logger.LogInformation("Chromium launched successfully");
+            if (ShouldConnectToWorkspace(SharedAzureCredential.IsDevelopment))
+            {
+                _logger.LogInformation("Connecting to remote Chromium on Azure Playwright Workspaces...");
+                _browser = await ConnectToWorkspaceAsync(_playwright);
+                _logger.LogInformation("Connected to Azure Playwright Workspaces browser");
+            }
+            else
+            {
+                _logger.LogInformation("Initializing Playwright and launching Chromium...");
+                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Headless = true,
+                    Args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+                });
+                _logger.LogInformation("Chromium launched successfully");
+            }
+
             return _browser;
         }
         finally
         {
             _initLock.Release();
         }
+    }
+
+    // Connects to a remote Chromium instance on Azure Playwright Workspaces rather
+    // than launching a local one. Entra-only auth via the project's single shared
+    // TokenCredential (SharedAzureCredential.Instance) — the deployed workspace sets
+    // localAuth: 'Disabled', so an access token is never an option here. No local
+    // fallback on failure: propagating the exception is deliberate (#855 design §D) —
+    // a silent fallback to LaunchAsync would reintroduce the exact OOM risk this
+    // change exists to eliminate, on whatever night the Workspace happens to be down.
+    private static async Task<IBrowser> ConnectToWorkspaceAsync(IPlaywright playwright)
+    {
+        var client = new PlaywrightServiceBrowserClient(credential: SharedAzureCredential.Instance);
+        var connectOptions = await client.GetConnectOptionsAsync<BrowserTypeConnectOptions>();
+        return await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options);
     }
 
     /// <summary>

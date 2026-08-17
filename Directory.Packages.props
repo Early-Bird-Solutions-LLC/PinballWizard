@@ -115,6 +115,12 @@
   <ItemGroup Label="Scraping / parsing / browser automation">
     <PackageVersion Include="AngleSharp" Version="1.7.0" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
+    <!-- Azure.Developer.Playwright 1.0.0 (GA stable) — connects to a remote Chromium
+         instance on Azure Playwright Workspaces via BrowserType.ConnectAsync, instead
+         of launching a local browser process. Introduced for #855: local Chromium was
+         OOMKilling the 1 GiB stern-games/bulletins/refresh ACA jobs. See
+         docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md. -->
+    <PackageVersion Include="Azure.Developer.Playwright" Version="1.0.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="System.CommandLine" Version="2.0.10" />
   </ItemGroup>

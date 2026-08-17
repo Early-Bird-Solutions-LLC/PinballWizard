@@ -32,7 +32,9 @@ public static class SharedAzureCredential
     // True when the host runs in the Development environment (local dev). Read
     // from the env var rather than IHostEnvironment so this stays a dependency-
     // free static usable from every host's DI wiring.
-    private static bool IsDevelopment =>
+    // internal, not private: PlaywrightFactory reuses this as the single source of
+    // truth for the dev-vs-deployed decision rather than re-reading the env var itself.
+    internal static bool IsDevelopment =>
         string.Equals(
             Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
                 ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
