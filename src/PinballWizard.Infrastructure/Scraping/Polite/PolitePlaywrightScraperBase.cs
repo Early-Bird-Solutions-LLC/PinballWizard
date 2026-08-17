@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
+using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
 
 namespace PinballWizard.Infrastructure.Scraping.Polite;
@@ -203,6 +205,84 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     protected virtual Task RecycleBrowserAsync()
         => _playwrightFactory.RecycleBrowserAsync();
 
+    // Phase tag values for the memory probes. Named rather than inline strings so a
+    // dashboard query and the emitting code cannot drift apart.
+    internal static class MemorySamplePhase
+    {
+        internal const string Page = "page";
+        internal const string PreRecycle = "pre_recycle";
+        internal const string PostRecycle = "post_recycle";
+    }
+
+    // The `scraper` tag must match the value every other pinwiz.scraper.* instrument
+    // uses, or a dashboard cannot join them. That value is ISourceScraper.Name, which
+    // lives on the derived scraper rather than on this base — so resolve it through the
+    // interface when the subclass implements it, and fall back to the concrete type name
+    // when it does not (test doubles, future non-ISourceScraper subclasses). The fallback
+    // is a real, identifying value, never a placeholder that would silently merge two
+    // scrapers into one series.
+    private string ScraperTag => (this as ISourceScraper)?.Name ?? GetType().Name;
+
+    /// <summary>
+    /// Records .NET-process memory at a point in the scrape and emits it to both the
+    /// log stream and the OTel histograms.
+    /// </summary>
+    /// <remarks>
+    /// Emitted to logs as well as metrics deliberately. The job runs for ~6 minutes and
+    /// the OTel export interval is coarser than the event being chased, so a metrics-only
+    /// probe would be sampled too sparsely to see the approach to death — the same reason
+    /// ACA's one-minute UsageBytes cannot resolve it. The log line carries a sub-second
+    /// timestamp and is queryable per page in Log Analytics.
+    /// <para>
+    /// <c>WorkingSet64</c> covers THIS process only. Chromium runs as separate child
+    /// processes, so their footprint is excluded here but included in the container-level
+    /// UsageBytes that ACA reports — subtracting the two attributes memory to Chromium.
+    /// </para>
+    /// <para>
+    /// <c>GC.GetTotalMemory(forceFullCollection: false)</c> — false is load-bearing. Forcing
+    /// a collection here would both perturb the very timing being measured and make the
+    /// managed heap look healthier than it is at the moment of interest.
+    /// </para>
+    /// <para>
+    /// Never throws. A diagnostic probe that can fail the scrape it is measuring would be
+    /// a worse defect than the one it exists to find.
+    /// </para>
+    /// </remarks>
+    private void SampleMemory(string phase)
+    {
+        long workingSet;
+        long managedHeap;
+        int gen2;
+        try
+        {
+            using var proc = System.Diagnostics.Process.GetCurrentProcess();
+            workingSet = proc.WorkingSet64;
+            managedHeap = GC.GetTotalMemory(forceFullCollection: false);
+            gen2 = GC.CollectionCount(2);
+        }
+        catch (Exception ex)
+        {
+            // Platform-dependent: reading process counters can fail in a constrained
+            // container. Report the gap rather than letting a measurement failure read
+            // as a measurement of zero (invariant #17 — degrade visibly).
+            Logger.LogWarning(ex, "Memory probe unavailable for {Scraper} at phase {Phase}.", ScraperTag, phase);
+            return;
+        }
+
+        var tags = new System.Diagnostics.TagList
+        {
+            { "scraper", ScraperTag },
+            { "phase", phase },
+        };
+        PinballWizardTelemetry.ScraperProcessWorkingSetBytes.Record(workingSet, tags);
+        PinballWizardTelemetry.ScraperManagedHeapBytes.Record(managedHeap, tags);
+        PinballWizardTelemetry.ScraperGen2Collections.Record(gen2, tags);
+
+        Logger.LogInformation(
+            "Memory probe [{Phase}] {Scraper} page {PageCount}: workingSet={WorkingSetMiB} MiB, managedHeap={ManagedHeapMiB} MiB, gen2={Gen2}",
+            phase, ScraperTag, _pageCount, workingSet / 1048576, managedHeap / 1048576, gen2);
+    }
+
     private async Task<IBrowserContext> GetOrCreateContextAsync()
     {
         await _contextInitLock.WaitAsync().ConfigureAwait(false);
@@ -215,6 +295,13 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                     "Recycling Playwright browser context after {PageCount} pages (interval={Interval}).",
                     _pageCount, _contextRecycleInterval);
 
+                // Bracket the recycle. This pair is the actual experiment for #855:
+                // if recycling releases what it is documented to release, working set
+                // must fall measurably between these two samples. If it does not, the
+                // retained memory is not the browser's and the recycle is treating a
+                // symptom that was never the cause.
+                SampleMemory(MemorySamplePhase.PreRecycle);
+
                 await RecycleContextSafelyAsync(_context).ConfigureAwait(false);
                 _context = null;
                 _pageCount = 0;
@@ -222,6 +309,8 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                 // Context disposal alone does not free browser-process memory. Recycle
                 // the browser process too so the next context starts at baseline footprint.
                 await RecycleBrowserAsync().ConfigureAwait(false);
+
+                SampleMemory(MemorySamplePhase.PostRecycle);
             }
 
             // Lazy-create on first call or after a recycle.
@@ -231,6 +320,7 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
             }
 
             _pageCount++;
+            SampleMemory(MemorySamplePhase.Page);
             return _context;
         }
         finally

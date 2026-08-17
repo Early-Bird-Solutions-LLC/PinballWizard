@@ -762,6 +762,53 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Documents permanently skipped during --download-documents because the origin returned HTTP 403 Forbidden, 404 Not Found, or 410 Gone. A non-zero steady-state rate is expected for access-controlled or removed files (e.g. Spooky S3 pkg files, #839); a spike in a new source_type means a previously-healthy origin is now rejecting requests. These are terminal skips — reported as skipped_permanent_rejection and excluded from the failed count, so they do NOT set a non-zero exit code. Pair with the 'Permanently rejected' log line to identify specific documents.");
 
+    // ── Playwright scraper memory probes (#855 diagnosis) ────────────────
+    //
+    // WHY THESE EXIST, and why ACA's own metrics are not enough.
+    //
+    // pinwiz-job-stern-games is killed mid-run with no exception in either the
+    // console log or the OTel trace stream — the SIGKILL signature. ACA exposes
+    // container memory as UsageBytes, but only at ONE-MINUTE granularity, which
+    // cannot resolve a terminal spike: the 2026-08-17 run peaked at a sampled
+    // 811 MiB against a 1 GiB limit and still died, while the 2026-08-15 run was
+    // caught at 1080 MiB (105%). A metric that plateaus at 79% on one run and
+    // exceeds the limit on another is not measuring what kills the process.
+    //
+    // These probes sample at PAGE granularity, written to the log stream (which
+    // carries sub-second timestamps and survives to Log Analytics) as well as to
+    // histograms.
+    //
+    // The decisive split this enables: ACA's UsageBytes covers the WHOLE
+    // container — the .NET process AND every Chromium child process. These
+    // instruments cover the .NET process only. Subtracting one from the other
+    // attributes the footprint to Chromium vs. managed code, which no single
+    // source can do alone. Concretely:
+    //     UsageBytes - process_working_set  ≈ Chromium (browser + renderers)
+    //     process_working_set - managed_heap ≈ native allocation inside .NET
+    //
+    // Tags (all three instruments):
+    //   scraper — ISourceScraper.Name
+    //   phase   — "page" (after a page navigation), "pre_recycle" / "post_recycle"
+    //             (bracketing the browser-process recycle). The pre/post pair is
+    //             the experiment: if recycling frees what it claims to, working
+    //             set must drop measurably across it. On the 2026-08-17 run the
+    //             container's sampled peak occurred in the minute AFTER the
+    //             recycle, which is the opposite of the expected behaviour.
+
+    public static readonly Histogram<long> ScraperProcessWorkingSetBytes = Meter.CreateHistogram<long>(
+        "pinwiz.scraper.process_working_set_bytes",
+        unit: "By",
+        description: "Resident working set of the .NET scraper process, sampled per page navigation and on both sides of a browser recycle. Tagged with scraper and phase. Covers the .NET process ONLY — Chromium runs as child processes and is excluded, so this is deliberately smaller than the container's UsageBytes. The difference between the two attributes memory to Chromium; see pinwiz.scraper.managed_heap_bytes to split managed from native within .NET.");
+
+    public static readonly Histogram<long> ScraperManagedHeapBytes = Meter.CreateHistogram<long>(
+        "pinwiz.scraper.managed_heap_bytes",
+        unit: "By",
+        description: "Managed heap size (GC.GetTotalMemory, no forced collection) of the scraper process, sampled alongside pinwiz.scraper.process_working_set_bytes. Rising in step with working set implicates accumulated managed state (ScrapedItem / DocumentRecord / catalog retention); staying flat while working set climbs implicates native or child-process memory instead. This is the measurement that separates a .NET retention bug from a Chromium leak.");
+
+    public static readonly Histogram<long> ScraperGen2Collections = Meter.CreateHistogram<long>(
+        "pinwiz.scraper.gen2_collections",
+        unit: "{collection}",
+        description: "Cumulative gen-2 GC count at each memory sample, tagged with scraper and phase. Context for the other two probes: a managed heap that climbs while gen-2 collections also climb means the GC is running and cannot reclaim (live references retained); a heap that climbs with no gen-2 activity means collection pressure never triggered. Distinguishes 'leak' from 'GC simply had no reason to run yet'.");
     // ── Scraper yield instrumentation (#857) ─────────────────────────────
     // Emitted by ScraperOrchestrator once per ISourceScraper run. Two instruments:
     //   links_discovered_total — the raw count of link items yielded. Emitted from

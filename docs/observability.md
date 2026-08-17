@@ -78,6 +78,7 @@ All counters carry a `pinwiz.opdb.sync.mode` attribute — `"apply"` for real ru
 | `pinwiz.opdb.sync.skipped` | Counter\<long> | `{record}` | OPDB records skipped because they failed validation or mapping |
 | `pinwiz.opdb.sync.failed` | Counter\<long> | `{run}` | OPDB sync runs that aborted with an exception |
 | `pinwiz.opdb.sync.duration_ms` | Histogram\<double> | `ms` | Wall-clock duration of an OPDB sync run |
+| `pinwiz.opdb.sync.stale_partitions_cleaned` | Counter\<long> | `{machine}` | Old-partition copies of a machine deleted after OPDB re-attributed it to a different manufacturer (e.g. `sega` → `segaenterprises`). A non-zero rate confirms the re-attribution cleanup path is removing stale Cosmos documents (#814). Only increments in `apply` mode — dry-run performs no writes |
 
 **Emission cadence:** all counters and the histogram emit a single observation **per run** (in the `finally` block of `OpdbSyncService.SyncAsync`). Per-record observations would multiply observation overhead and balloon cardinality without operational benefit at the current 9-source scale. When per-source metrics become valuable (Phase 3+), add a `pinwiz.source` attribute rather than fanning into per-source instruments.
 
@@ -261,6 +262,63 @@ Two histograms emitted at the SDK boundary inside [`CosmosRepository<T>`](../src
 | `pinwiz.scraper.politeness_fallback_active` | Counter | (none) | `IngestionSourcePolitenessResolver` fell back to global politeness defaults because the Cosmos repository threw during initialization. When non-zero, per-source politeness overrides are not applied — all scraping proceeds at the global default rate. Paired with an Error log (invariant #17 / OBS-01). |
 | `pinwiz.scraper.jsonld_missing_total` | Counter | `source`, `url` | Storefront product page where `JsonLdProductParser.FindFirstProduct` returned null and the extractor fell back to Open Graph / H1. Structured fields (editions, price, status) will be absent from the resulting `GameRecord`. `source` ∈ `JJP`/`BoF`/`Multimorphic`. Non-zero on BoF/Multimorphic indicates those sites have dropped JSON-LD; non-zero on JJP signals an unexpected Shopify theme regression. Paired with a `LogWarning` (invariant #17 / OBS-01). |
 
+### Playwright scraper memory probes (#855)
+
+Diagnostic instruments for the `pinwiz-job-stern-games` / `pinwiz-job-stern-refresh`
+mid-run kill. They exist because **ACA's own `UsageBytes` metric cannot answer the
+question**: it samples the whole container once a minute, which is too coarse to resolve
+the approach to death. Measured on the same job — 2026-08-15 was caught at **1080 MiB
+(105 % of the 1 GiB limit)**, while 2026-08-16 and 2026-08-17 both died having peaked at a
+sampled **~810 MiB (79 %)**. A metric that plateaus well under the limit on the runs that
+still die is not measuring the thing that kills the process.
+
+These sample the **.NET process only**, at page granularity, and bracket the browser
+recycle. Two subtractions make them diagnostic rather than merely informational:
+
+| Quantity | Meaning |
+| --- | --- |
+| ACA `UsageBytes` − `process_working_set_bytes` | ≈ Chromium (browser + renderer child processes) |
+| `process_working_set_bytes` − `managed_heap_bytes` | ≈ native allocation inside the .NET process |
+
+The `pre_recycle` / `post_recycle` pair is the experiment: recycling the browser process is
+*documented* to release accumulated renderer memory, and these two samples are what turn
+that into a measured claim. On the 2026-08-17 run the container's sampled peak fell in the
+minute **after** the recycle, which is the opposite of the expected behaviour — see #855.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.scraper.process_working_set_bytes` | Histogram | `scraper`, `phase` | Resident working set of the .NET scraper process. Excludes Chromium child processes by construction — subtract from ACA `UsageBytes` to attribute memory to the browser. |
+| `pinwiz.scraper.managed_heap_bytes` | Histogram | `scraper`, `phase` | Managed heap (`GC.GetTotalMemory`, no forced collection). Rising in step with working set implicates retained managed state (`ScrapedItem` / `DocumentRecord` / catalog); flat while working set climbs implicates native or child-process memory. |
+| `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
+
+`phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
+browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
+that do not implement `ISourceScraper`), carried identically by all three probes so they join
+to one another. The other `pinwiz.scraper.*` instruments do not carry it —
+`politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
+series cannot be joined on `scraper`.
+
+Query the per-page log line (sub-second timestamps, finer than the metric export):
+
+```kusto
+ContainerAppConsoleLogs_CL
+| where ContainerJobName_s startswith "pinwiz-job-stern-games"
+| where Log_s startswith "Memory probe"
+| project TimeGenerated, Log_s
+| order by TimeGenerated asc
+```
+
+> `startswith`, not `==`. ACA job names carry a five-character environment suffix —
+> `substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)`, see
+> `infra/modules/shared.bicep`. It is *deterministic* per subscription + resource group
+> (so it is stable across stack runs, and `pinwiz-job-stern-games-buutj` is correct for
+> the current dev RG), but it differs in any other environment or if the resource group
+> is ever rebuilt. A hardcoded suffix returns **zero rows with no error** there, which
+> reads exactly like "the probe never fired."
+>
+> Job console logs also key on `ContainerJobName_s` — `ContainerAppName_s` is **empty**
+> for jobs, so filtering on it silently matches nothing.
+
 ### Web and streaming fallback signals (invariant #17 / OBS-01)
 
 | Instrument | Type | Tags | Purpose |
@@ -311,10 +369,11 @@ Emitted by `DocumentDownloadService.RunAsync` when a document is permanently ski
 
 ### Document linker instruments (`--link-documents`)
 
-Emitted by `DocumentLinker.LinkDocumentsAsync` during the page-tier extraction phase of the `--link-documents` verb. Honest-degradation skips are counted here and excluded from failure counts.
+Emitted by `DocumentLinker` during a `--link-documents` run — index initialization (`InitializeAsync`) and the page-tier extraction phase of `LinkDocumentsAsync`. Honest-degradation skips are counted here and excluded from failure counts.
 
 | Instrument | Type | Tags | Purpose |
 | --- | --- | --- | --- |
+| `pinwiz.linker.duplicate_machine_ids_total` | Counter | (none) | Duplicate machine ids collapsed during `InitializeAsync` deduplication. A non-zero value means a prior sync left stale old-partition copies (#814) — pair with `pinwiz.opdb.sync.stale_partitions_cleaned` to confirm the sync-side cleanup ran. The linker keeps the copy with the latest `LastSeenAt` and discards the rest, so linking proceeds rather than failing on the duplicate. |
 | `pinwiz.linker.extraction_skipped_total` | Counter | `reason` | Documents whose page-tier extraction was skipped during `--link-documents`. `reason` ∈ `size_exceeded` (blob larger than `Rag:PdfExtraction:MaxStreamBytes` — never downloaded; the #832 upstream guard), `blob_missing` (blob absent at size-check or open time), `extract_failed` (preview parse returned encrypted/malformed/oversize). Skips are honest degradation and do NOT increment failure counts — mirrors `pinwiz.download.too_large_skip_total` (#819). A spike in `size_exceeded` means a new class of oversized manuals; a spike in `extract_failed` means a scraper is downloading non-PDF or corrupt content. |
 
 ### RAG embedding token usage
