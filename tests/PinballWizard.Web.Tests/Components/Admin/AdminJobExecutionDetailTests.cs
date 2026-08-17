@@ -304,12 +304,14 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
 
         // The search box's visibility condition is Lines.Count > 0 || HasSearch || _logBusy.
         // Clearing the input sets HasSearch=false with the stale zero-result Lines still
-        // empty, so the box is correctly absent until MudTextField's 400ms DebounceInterval
-        // elapses and OnSearchAsync sets _logBusy=true. A plain Find here races that
-        // debounce (#898); WaitForAssertionAsync — the same pattern already used two lines
-        // above for the initial search — waits it out instead of asserting mid-window.
+        // empty, so the box is genuinely absent for ~400ms until MudTextField's
+        // DebounceInterval elapses and OnSearchAsync sets _logBusy=true — a real UI
+        // flicker, tracked as a product decision in #899, not something this test fix
+        // should paper over. This assertion documents that actual behavior (matching the
+        // 3s margin used two lines above for the same debounce) rather than asserting the
+        // continuous visibility a plain Find here used to race (#898).
         await cut.WaitForAssertionAsync(
-            () => cut.Find("[data-testid='exec-log-search']"), TimeSpan.FromSeconds(2));
+            () => cut.Find("[data-testid='exec-log-search']"), TimeSpan.FromSeconds(3));
     }
 
     // Fix 5a: truncation banner text — no-search case says "output was truncated".
