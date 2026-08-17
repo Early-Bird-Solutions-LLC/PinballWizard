@@ -313,12 +313,20 @@ Query the per-page log line (sub-second timestamps, finer than the metric export
 ```kusto
 ContainerAppConsoleLogs_CL
 | where ContainerJobName_s startswith "pinwiz-job-stern-games"
-| where Log_s startswith "Memory probe"
+| where Log_s contains "Memory probe"
 | project TimeGenerated, Log_s
 | order by TimeGenerated asc
 ```
 
-> `startswith`, not `==`. ACA job names carry a five-character environment suffix —
+> **`Log_s contains`, not `startswith`.** The .NET console logger indents the message
+> body under its category line, so `Log_s` for a probe row starts with whitespace, not
+> `"Memory"`. `startswith "Memory probe"` returns **zero rows with no error** even when
+> the probes fired correctly and ingested — verified live 2026-08-17: 198 rows ingested
+> from a probe-carrying run, 0 matched `startswith`, all matched `contains`. Reads
+> exactly like "the probe never fired," the same silent-failure shape as the job-name
+> suffix trap below.
+>
+> `startswith`, not `==`, for `ContainerJobName_s`. ACA job names carry a five-character environment suffix —
 > `substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)`, see
 > `infra/modules/shared.bicep`. It is *deterministic* per subscription + resource group
 > (so it is stable across stack runs, and `pinwiz-job-stern-games-buutj` is correct for
