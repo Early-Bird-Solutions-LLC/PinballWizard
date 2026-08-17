@@ -292,8 +292,11 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
-browser recycle). `scraper` is `ISourceScraper.Name`, matching every other `pinwiz.scraper.*`
-instrument so the series can be joined.
+browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
+that do not implement `ISourceScraper`), carried identically by all three probes so they join
+to one another. The other `pinwiz.scraper.*` instruments do not carry it —
+`politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
+series cannot be joined on `scraper`.
 
 Query the per-page log line (sub-second timestamps, finer than the metric export):
 
