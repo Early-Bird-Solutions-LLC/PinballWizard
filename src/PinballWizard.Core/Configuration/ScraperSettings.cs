@@ -72,6 +72,39 @@ public sealed class ScraperSettings
     // How this run was invoked (e.g. "scheduled" from an ACA job). Null = manual.
     public string? Trigger { get; set; }
 
+    /// <summary>
+    /// Per-scraper minimum number of link items expected from a single
+    /// <see cref="PinballWizard.Core.Scraping.ISourceScraper.ScrapeAsync"/> run.
+    /// Key: <see cref="PinballWizard.Core.Scraping.ISourceScraper.Name"/>
+    /// (e.g. <c>"Manuals"</c>, <c>"Game Pages"</c>).
+    /// Value semantics (opt-OUT design, #857):
+    /// <list type="bullet">
+    ///   <item>Missing entry — default minimum of 1 enforced. A scraper that discovers
+    ///     zero links fails the run unless it is explicitly opted out. This catches the
+    ///     production silent-green scenario where a scraper swallows its own exception
+    ///     (e.g. <c>PlaywrightException</c> when Chromium is not installed) and returns
+    ///     0 items without propagating the error. Write an explicit 0 to allow zero yield.</item>
+    ///   <item>0 — explicit opt-out; zero-yield is allowed for sources that have no
+    ///     documents yet or that run through a non-scraper path (e.g. OPDB).</item>
+    ///   <item>N &gt; 0 — the scraper must yield at least N link items or the run is
+    ///     recorded as failed.</item>
+    ///   <item>negative — disables the guard exactly as 0 does (no count can fall below
+    ///     it), but is logged as a warning at run time because it is almost certainly a
+    ///     typo rather than an intended opt-out. Use 0.</item>
+    /// </list>
+    /// Configure via <c>appsettings.json</c>:
+    /// <code>
+    /// "Scraper": {
+    ///   "MinimumYieldPerScraper": {
+    ///     "Manuals": 10,
+    ///     "Game Pages": 20,
+    ///     "JJP": 0
+    ///   }
+    /// }
+    /// </code>
+    /// </summary>
+    public Dictionary<string, int> MinimumYieldPerScraper { get; set; } = [];
+
     // Derived paths
     public string DownloadsPath => Path.Combine(DataPath, "downloads");
     public string MetadataPath => Path.Combine(DataPath, "metadata");

@@ -262,6 +262,25 @@ public sealed class ScraperOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task YieldGuard_ZeroYield_SourceRecordMarkedFailed()
+    {
+        // Every other yield-guard test runs with dryRun: true, which skips run-history
+        // entirely — so nothing covered the guard's `sourceFailed = true` reaching the
+        // ScrapeRunRecord. The run history is what an operator reads after the fact;
+        // a guard that fails the exit code but reports the run as succeeded would send
+        // them looking in the wrong place.
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var empty = new StubScraper("Manuals", [], sourceId: "stern");   // default minimum = 1
+        var orch = CreateOrchestrator([empty], scrapeRuns: scrapeRuns);
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(
+            Arg.Is<ScrapeRunRecord>(r => r.SourceId == "stern" && !r.Succeeded && r.ErrorMessage != null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ScrapeAsync_DryRun_WritesNoRunHistory()
     {
         var scrapeRuns = Substitute.For<IScrapeRunRepository>();
@@ -479,6 +498,160 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Assert.Equal(2, capturedIds.Distinct().Count()); // both are distinct DocumentIds
     }
 
+    // -------- Yield guard (#857) --------
+
+    [Fact]
+    public async Task YieldGuard_ZeroYield_WithMinimumConfigured_RecordsError()
+    {
+        // Scraper discovers nothing. With a configured minimum > 0 the orchestrator
+        // must add an error to ScrapeResult so the CLI exits 1 (invariant #17).
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int> { ["Manuals"] = 5 }
+        };
+        var scraper = new StubScraper("Manuals", []);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("Manuals", error);
+        Assert.Contains("0", error);     // actual yield
+        Assert.Contains("5", error);     // expected minimum
+    }
+
+    [Fact]
+    public async Task YieldGuard_ExplicitZeroMinimum_AllowsZeroYield()
+    {
+        // A minimum of 0 is the per-scraper opt-out for sources that legitimately
+        // produce no documents (e.g. a manufacturer with no PDF library yet).
+        // Explicit 0 must never produce a false failure.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int> { ["Manuals"] = 0 }
+        };
+        var scraper = new StubScraper("Manuals", []);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task YieldGuard_DefaultConfiguration_ZeroYield_RecordsError()
+    {
+        // THE critical regression test (#857): with DEFAULT configuration
+        // (MinimumYieldPerScraper empty — as shipped in production), a scraper that
+        // discovers zero links must fail the run. Missing-key defaults to minimum=1.
+        // This is the exact production scenario: pinwiz-job-stern-games runs with no
+        // explicit minimums configured; GameListingScraper swallows PlaywrightException
+        // → 0 items yielded → exits 0 silently. This test would have caught the bug.
+        var settings = new ScraperSettings { DataPath = _tempDir };  // empty — default config
+        var scraper = new StubScraper("Manuals", []);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("Manuals", error);
+    }
+
+    [Fact]
+    public async Task YieldGuard_DefaultConfiguration_NonZeroYield_NoError()
+    {
+        // A scraper that finds at least one link passes the default guard of 1.
+        // Ensures opt-out inversion does not false-fail normal production scrapers.
+        var settings = new ScraperSettings { DataPath = _tempDir };  // empty — default config
+        var scraper = new StubScraper("Manuals", [LinkItem()]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task YieldGuard_PositiveYieldAboveMinimum_NoError()
+    {
+        // A scraper that finds documents should not trip the guard.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int> { ["Manuals"] = 3 }
+        };
+        var scraper = new StubScraper("Manuals", [LinkItem(), LinkItem(), LinkItem(), LinkItem()]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task YieldGuard_InternallySwallowedException_DetectedViaMinimum()
+    {
+        // A scraper that catches its own exception (like GameListingScraper swallowing
+        // PlaywrightException when Chromium isn't installed) returns 0 items — the
+        // orchestrator never sees an exception. The yield guard is the only signal.
+        // Uses DEFAULT config (no explicit minimum) to prove that zero-yield is caught
+        // without any operator-side configuration. This simulates the exact production
+        // failure (#857).
+        var settings = new ScraperSettings { DataPath = _tempDir };  // default config — no explicit minimum
+        var scraper = new InternallySwallowingZeroYieldScraper("Manuals");
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        Assert.Single(result.Errors);
+        Assert.Contains("Manuals", result.Errors.First());
+    }
+
+    [Fact]
+    public async Task YieldGuard_PerScraper_OneFailsOtherRuns()
+    {
+        // The guard is per-scraper: one scraper below its minimum must not
+        // suppress or fail the sibling scraper that meets its minimum.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int>
+            {
+                ["Manuals"] = 3,       // will fail — yields 0
+                ["Game Pages"] = 1,    // will pass — yields 2
+            }
+        };
+        var failingScraper = new StubScraper("Manuals", [], sourceId: "stern");
+        var passingScraper = new StubScraper("Game Pages", [LinkItem(), LinkItem()], sourceId: "stern");
+        var orch = CreateOrchestrator([failingScraper, passingScraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        // Exactly one error (Manuals); Game Pages runs and is clean.
+        Assert.True(passingScraper.WasInvoked, "Game Pages scraper must still run");
+        Assert.Single(result.Errors);
+        Assert.Contains("Manuals", result.Errors.First());
+        Assert.DoesNotContain("Game Pages", result.Errors.First());
+    }
+
+    [Fact]
+    public async Task YieldGuard_ExternallyThrowingScraper_ErrorReachesResultErrors()
+    {
+        // The other failure route, kept distinct from the yield guard: an exception that
+        // propagates OUT of a scraper's ScrapeAsync enumerable is caught by the orchestrator and added to
+        // result.Errors — verified independently of the yield guard so the test
+        // name is precise about which mechanism fires.
+        var bad = new ThrowingScraper("Manuals", new InvalidOperationException("playwright missing"));
+        var orch = CreateOrchestrator([bad]);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("playwright missing", error);
+    }
+
     // -------- Helpers --------
 
     private static ScrapedItem LinkItem() => new()
@@ -561,6 +734,31 @@ public sealed class ScraperOrchestratorTests : IDisposable
             // is reachable only if the throw is somehow skipped.
             await Task.Yield();
             if (_exception is not null) throw _exception;
+            yield break;
+        }
+    }
+
+    // Simulates a scraper that catches its own exception internally and returns 0 items —
+    // the exact pattern observed with GameListingScraper when Playwright browsers are not
+    // installed (PlaywrightException caught per-listing-page, 0 games discovered, 0 links
+    // yielded). The orchestrator sees no exception; the yield guard is the only signal.
+    private sealed class InternallySwallowingZeroYieldScraper : ISourceScraper
+    {
+        public InternallySwallowingZeroYieldScraper(string name, string sourceId = "stern")
+        {
+            Name = name;
+            SourceId = sourceId;
+        }
+
+        public string Name { get; }
+        public string Manufacturer => "Stub";
+        public string SourceId { get; }
+
+        public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            // Simulates: try { scrape } catch (Exception) { log; } return [];
+            await Task.Yield();
             yield break;
         }
     }
