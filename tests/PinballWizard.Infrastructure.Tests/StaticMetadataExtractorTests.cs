@@ -368,6 +368,76 @@ public sealed class StaticMetadataExtractorTests
         Assert.Equal("MSRP $6,999", pro.Msrp);
     }
 
+    // ---------- ExtractEditionsFromSubpageLinks (fallback, #855) ----------
+
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_DerivesEditionsFromGameSubpageNavLinks()
+    {
+        // Mirrors the aerosmith/batman-66/beatles/... pattern: the page has only
+        // a generic /contact-to-buy link (no variant=) but links to per-edition
+        // sub-pages in the game's own nav — /game/{slug}/{edition}.
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/aerosmith/pro">Pro</a>
+              <a href="/game/aerosmith/premium">Premium</a>
+              <a href="/game/aerosmith/limited-edition">Limited Edition</a>
+              <a href="/contact-to-buy?ip-family=Aerosmith&product-name=Aerosmith">Where To Buy</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith");
+
+        Assert.Equal(3, editions.Count);
+        Assert.Equal("Pro", editions[0].Name);
+        Assert.Equal("Premium", editions[1].Name);
+        Assert.Equal("Limited Edition", editions[2].Name);
+    }
+
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_DedupesRepeatedSubpageLinks()
+    {
+        // The same edition sub-page is often linked twice (header nav + hero CTA).
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/aerosmith/pro">Pro</a>
+              <a href="/game/aerosmith/pro">Buy the Pro edition</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith");
+
+        Assert.Equal("Pro", Assert.Single(editions).Name);
+    }
+
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_IgnoresNonEditionSubpaths()
+    {
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/aerosmith/pro">Pro</a>
+              <a href="/game/aerosmith/documents/manual.pdf">Manual</a>
+              <a href="/game/aerosmith?ref=nav">Aerosmith</a>
+              <a href="/game/beatles/premium">A different game's edition</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith");
+
+        Assert.Equal("Pro", Assert.Single(editions).Name);
+    }
+
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_ReturnsEmptyWhenNoMatchingLinks()
+    {
+        var doc = Parse("""
+            <html><body>
+              <a href="/contact-to-buy?ip-family=Aerosmith&product-name=Aerosmith">Where To Buy</a>
+            </body></html>
+            """);
+
+        Assert.Empty(StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith"));
+    }
+
     // ---------- Extract (one-shot) ----------
 
     [Fact]
@@ -386,12 +456,50 @@ public sealed class StaticMetadataExtractorTests
             </body></html>
             """);
 
-        var meta = StaticMetadataExtractor.Extract(doc);
+        var meta = StaticMetadataExtractor.Extract(doc, "stranger-things");
 
         Assert.Equal("Stranger Things", meta.Title);
         Assert.Equal("https://sternpinball.com/game/stranger-things/", meta.CanonicalUrl);
         Assert.NotNull(meta.DatePublished);
         Assert.Equal(2019, meta.DatePublished!.Value.Year);
+        Assert.Equal("Pro", Assert.Single(meta.Editions).Name);
+    }
+
+    [Fact]
+    public void Extract_FallsBackToSubpageLinksWhenContactLinksYieldZero()
+    {
+        // aerosmith-shaped page: only a generic contact-to-buy link, but
+        // per-edition sub-page nav links are present.
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/aerosmith/pro">Pro</a>
+              <a href="/game/aerosmith/premium">Premium</a>
+              <a href="/contact-to-buy?ip-family=Aerosmith&product-name=Aerosmith">Where To Buy</a>
+            </body></html>
+            """);
+
+        var meta = StaticMetadataExtractor.Extract(doc, "aerosmith");
+
+        Assert.Equal(2, meta.Editions.Count);
+        Assert.Equal("Pro", meta.Editions[0].Name);
+        Assert.Equal("Premium", meta.Editions[1].Name);
+    }
+
+    [Fact]
+    public void Extract_DoesNotUseSubpageFallbackWhenContactLinksAlreadyYieldEditions()
+    {
+        // JAWS-shaped page: contact-to-buy links already carry variant= and
+        // succeed. Unrelated /game/{slug}/... links must not be double-counted.
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/jaws/some-other-nav-link">Not an edition</a>
+              <a href="/contact-to-buy?ip-family=JAWS&product-name=JAWS&variant=pro"
+                 data-track-id="Buy Now button for: pro; in Game Card on the Game Page: jaws">Buy Now</a>
+            </body></html>
+            """);
+
+        var meta = StaticMetadataExtractor.Extract(doc, "jaws");
+
         Assert.Equal("Pro", Assert.Single(meta.Editions).Name);
     }
 }

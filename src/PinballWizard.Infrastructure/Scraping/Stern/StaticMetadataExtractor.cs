@@ -41,14 +41,30 @@ public static class StaticMetadataExtractor
     /// One-shot convenience: extract every machine-readable field from a
     /// parsed Stern game page in a single pass.
     /// </summary>
-    public static StaticGameMetadata Extract(IDocument document)
+    /// <param name="document">The parsed game page.</param>
+    /// <param name="slug">
+    /// The game's slug (e.g. <c>"aerosmith"</c>), used only as the fallback
+    /// path prefix — see <see cref="ExtractEditionsFromSubpageLinks"/>.
+    /// </param>
+    public static StaticGameMetadata Extract(IDocument document, string slug)
     {
+        var editions = ExtractEditionsFromContactLinks(document);
+        if (editions.Count == 0)
+        {
+            // Some games (aerosmith, batman-66, beatles, ...) publish only the
+            // generic page-wide contact-to-buy link — no per-edition variant=
+            // links at all — but still expose per-edition sub-pages in the
+            // game's own nav. Fall back to those rather than record zero
+            // editions for a game that plainly has more than one.
+            editions = ExtractEditionsFromSubpageLinks(document, slug);
+        }
+
         return new StaticGameMetadata
         {
             Title = ExtractTitle(document),
             DatePublished = ExtractDatePublished(document),
             CanonicalUrl = ExtractCanonicalUrl(document),
-            Editions = ExtractEditionsFromContactLinks(document),
+            Editions = editions,
         };
     }
 
@@ -157,6 +173,43 @@ public static class StaticMetadataExtractor
         // The same edition can appear more than once if the page renders the
         // contact button in multiple cards. Reuse the existing dedupe so we
         // get one EditionInfo per unique name with non-null fields merged.
+        return GamePageExtractors.DeduplicateEditions(editions);
+    }
+
+    /// <summary>
+    /// Fallback for games whose page carries no per-edition contact link at
+    /// all (only the generic page-wide "Where To Buy" button) but that still
+    /// link to per-edition sub-pages in their own nav, of the form
+    /// <c>/game/{slug}/{edition}</c> — e.g. <c>/game/aerosmith/pro</c>.
+    /// Only called when <see cref="ExtractEditionsFromContactLinks"/> returns
+    /// zero editions, so a game whose contact links already work is never
+    /// double-counted against its own nav.
+    /// </summary>
+    public static List<EditionInfo> ExtractEditionsFromSubpageLinks(IDocument document, string slug)
+    {
+        var prefix = $"/game/{slug}/";
+        var editions = new List<EditionInfo>();
+
+        foreach (var anchor in document.QuerySelectorAll("a[href]"))
+        {
+            var href = anchor.GetAttribute("href");
+            if (string.IsNullOrEmpty(href)) continue;
+            if (!href.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var editionSlug = href[prefix.Length..];
+            // Reject anything but a single path segment — a nested path (a
+            // linked PDF under a documents/ sub-path) or a query string is
+            // not an edition slug.
+            if (editionSlug.Length == 0
+                || editionSlug.Contains('/', StringComparison.Ordinal)
+                || editionSlug.Contains('?', StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            editions.Add(new EditionInfo { Name = TitleCaseSlug(editionSlug) });
+        }
+
         return GamePageExtractors.DeduplicateEditions(editions);
     }
 

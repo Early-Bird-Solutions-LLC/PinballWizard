@@ -160,7 +160,7 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
             var parser = new HtmlParser();
             using var doc = parser.ParseDocument(html);
 
-            var staticMeta = StaticMetadataExtractor.Extract(doc);
+            var staticMeta = StaticMetadataExtractor.Extract(doc, game.Slug);
 
             // Title: prefer the static sources Stern publishes (form input,
             // og:title), fall back to rendered H1s, then page <title>, then
