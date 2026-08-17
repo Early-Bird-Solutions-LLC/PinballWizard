@@ -439,6 +439,26 @@ public sealed class StaticMetadataExtractorTests
         Assert.Empty(StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith"));
     }
 
+    [Fact]
+    public void ExtractEditionsFromSubpageLinks_DecodesPercentEscapesBeforeTitleCasing()
+    {
+        // Matches the decoding ParseEditionFromUrl already does via
+        // HttpUtility.ParseQueryString — a slug is not guaranteed plain ASCII.
+        // TitleCaseSlug splits on '-' and capitalizes each word's first
+        // character, so an encoded character belongs WITHIN a hyphenated word
+        // (real Stern slugs are hyphen-delimited: "limited-edition"), not as
+        // a substitute for the hyphen itself.
+        var doc = Parse("""
+            <html><body>
+              <a href="/game/aerosmith/%C3%A9dition-pro">Édition Pro</a>
+            </body></html>
+            """);
+
+        var editions = StaticMetadataExtractor.ExtractEditionsFromSubpageLinks(doc, "aerosmith");
+
+        Assert.Equal("Édition Pro", Assert.Single(editions).Name);
+    }
+
     // ---------- Extract (one-shot) ----------
 
     [Fact]

@@ -209,7 +209,12 @@ public static class StaticMetadataExtractor
                 continue;
             }
 
-            editions.Add(new EditionInfo { Name = TitleCaseSlug(editionSlug) });
+            // The contact-link path decodes percent-escapes via
+            // HttpUtility.ParseQueryString; do the same here so a slug with
+            // an encoded character (observed sub-page hrefs are plain ASCII
+            // today, but the site controls this, not us) title-cases from
+            // the real character, not from "%xx" literals.
+            editions.Add(new EditionInfo { Name = TitleCaseSlug(Uri.UnescapeDataString(editionSlug)) });
         }
 
         return GamePageExtractors.DeduplicateEditions(editions);
