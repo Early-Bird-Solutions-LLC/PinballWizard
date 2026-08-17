@@ -78,6 +78,7 @@ All counters carry a `pinwiz.opdb.sync.mode` attribute — `"apply"` for real ru
 | `pinwiz.opdb.sync.skipped` | Counter\<long> | `{record}` | OPDB records skipped because they failed validation or mapping |
 | `pinwiz.opdb.sync.failed` | Counter\<long> | `{run}` | OPDB sync runs that aborted with an exception |
 | `pinwiz.opdb.sync.duration_ms` | Histogram\<double> | `ms` | Wall-clock duration of an OPDB sync run |
+| `pinwiz.opdb.sync.stale_partitions_cleaned` | Counter\<long> | `{machine}` | Old-partition copies of a machine deleted after OPDB re-attributed it to a different manufacturer (e.g. `sega` → `segaenterprises`). A non-zero rate confirms the re-attribution cleanup path is removing stale Cosmos documents (#814). Only increments in `apply` mode — dry-run performs no writes |
 
 **Emission cadence:** all counters and the histogram emit a single observation **per run** (in the `finally` block of `OpdbSyncService.SyncAsync`). Per-record observations would multiply observation overhead and balloon cardinality without operational benefit at the current 9-source scale. When per-source metrics become valuable (Phase 3+), add a `pinwiz.source` attribute rather than fanning into per-source instruments.
 
@@ -311,10 +312,11 @@ Emitted by `DocumentDownloadService.RunAsync` when a document is permanently ski
 
 ### Document linker instruments (`--link-documents`)
 
-Emitted by `DocumentLinker.LinkDocumentsAsync` during the page-tier extraction phase of the `--link-documents` verb. Honest-degradation skips are counted here and excluded from failure counts.
+Emitted by `DocumentLinker` during a `--link-documents` run — index initialization (`InitializeAsync`) and the page-tier extraction phase of `LinkDocumentsAsync`. Honest-degradation skips are counted here and excluded from failure counts.
 
 | Instrument | Type | Tags | Purpose |
 | --- | --- | --- | --- |
+| `pinwiz.linker.duplicate_machine_ids_total` | Counter | (none) | Duplicate machine ids collapsed during `InitializeAsync` deduplication. A non-zero value means a prior sync left stale old-partition copies (#814) — pair with `pinwiz.opdb.sync.stale_partitions_cleaned` to confirm the sync-side cleanup ran. The linker keeps the copy with the latest `LastSeenAt` and discards the rest, so linking proceeds rather than failing on the duplicate. |
 | `pinwiz.linker.extraction_skipped_total` | Counter | `reason` | Documents whose page-tier extraction was skipped during `--link-documents`. `reason` ∈ `size_exceeded` (blob larger than `Rag:PdfExtraction:MaxStreamBytes` — never downloaded; the #832 upstream guard), `blob_missing` (blob absent at size-check or open time), `extract_failed` (preview parse returned encrypted/malformed/oversize). Skips are honest degradation and do NOT increment failure counts — mirrors `pinwiz.download.too_large_skip_total` (#819). A spike in `size_exceeded` means a new class of oversized manuals; a spike in `extract_failed` means a scraper is downloading non-PDF or corrupt content. |
 
 ### RAG embedding token usage
