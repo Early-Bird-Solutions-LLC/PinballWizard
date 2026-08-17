@@ -33,9 +33,11 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     private readonly ILogger<PlaywrightFactory> _logger;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-    // Disposed alongside _browser/_playwright rather than immediately after
-    // GetConnectOptionsAsync() returns — see ConnectToWorkspaceAsync's remarks
-    // on why early disposal is not provably safe here.
+    // Held for the browser connection's full lifetime rather than disposed
+    // immediately after GetConnectOptionsAsync() returns — see ConnectToWorkspaceAsync's
+    // remarks on why early disposal is not provably safe here. In practice DisposeAsync
+    // is what disposes this: RecycleBrowserAsync is itself a no-op in workspace mode
+    // (see _isWorkspaceConnection below), so it never reaches a disposal path.
     private PlaywrightServiceBrowserClient? _workspaceClient;
     // True when _browser is a remote Azure Playwright Workspaces connection, not a
     // local Chromium process — RecycleBrowserAsync uses this to skip the recycle
@@ -52,9 +54,18 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     /// <summary>
     /// Gets or creates the shared browser instance.
     /// </summary>
+    /// <remarks>
+    /// Checks <see cref="IBrowser.IsConnected"/> before returning a cached instance —
+    /// cheap, verifiable without a live Azure Playwright Workspaces connection (it's a
+    /// standard Playwright API), and it means a dropped remote connection gets
+    /// re-acquired on the next call instead of being handed out as if it still worked.
+    /// This does NOT fully replace the periodic recycle's incidental reconnect property
+    /// (nothing proactively notices a drop between calls — see #905) but it stops the
+    /// one guaranteed-bad outcome: knowingly returning a browser that is already dead.
+    /// </remarks>
     public async Task<IBrowser> GetBrowserAsync()
     {
-        if (_browser is not null) return _browser;
+        if (_browser is { IsConnected: true }) return _browser;
 
         await _initLock.WaitAsync();
         try
@@ -62,7 +73,29 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             // Re-read after acquiring the lock (async DCL pattern) — local variable
             // breaks the static-analysis alias that causes cs/constant-condition.
             var browser = _browser;
-            if (browser is not null) return browser;
+            if (browser is { IsConnected: true }) return browser;
+
+            if (browser is not null)
+            {
+                // browser is non-null but disconnected — clean up the stale state
+                // before re-acquiring, the same way a failed acquisition attempt does
+                // below. IBrowser.DisposeAsync on an already-dead connection is exactly
+                // the crashed/closed case RecycleBrowserAsync already suppresses.
+                try
+                {
+                    await browser.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+                {
+                    _logger.LogDebug(ex, "Suppressed error disposing a disconnected Playwright browser before reacquiring.");
+                }
+                _browser = null;
+                _workspaceClient?.Dispose();
+                _workspaceClient = null;
+                _playwright?.Dispose();
+                _playwright = null;
+                _logger.LogWarning("Cached browser was disconnected — reacquiring.");
+            }
 
             _playwright = await Microsoft.Playwright.Playwright.CreateAsync();
 
@@ -116,6 +149,16 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     internal static bool IsWorkspaceUrlConfigured(string? playwrightServiceUrl) =>
         !string.IsNullOrWhiteSpace(playwrightServiceUrl);
 
+    // Whether RecycleBrowserAsync should skip tearing down and re-establishing the
+    // current browser. internal static and parameterized — same pattern as
+    // IsWorkspaceUrlConfigured — so the decision itself is unit-testable, independent
+    // of the async dispatch around it (launching/connecting a real browser, which
+    // stays untested the same way GetBrowserAsync's branching does — see the design
+    // spec's Acceptance section for why). True in workspace mode: there is no local
+    // container memory for a recycle to reclaim there, so recycling would only spend
+    // billed connection minutes and reconnect latency for nothing.
+    internal static bool ShouldSkipRecycle(bool isWorkspaceConnection) => isWorkspaceConnection;
+
     // Connects to a remote Chromium instance on Azure Playwright Workspaces rather
     // than launching a local one. Entra-only auth via the project's single shared
     // TokenCredential (SharedAzureCredential.Instance) — the deployed workspace sets
@@ -159,9 +202,10 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             // lifetime contract, and there's no live workspace to test disposal timing
             // against. Per this repo's no-guessing.md, the unverified-but-safer choice
             // is to hold the client for as long as the browser connection it produced is
-            // in use — disposed alongside _browser/_playwright in RecycleBrowserAsync /
-            // DisposeAsync — rather than risk cutting short whatever keeps a ~35-45
-            // minute full-catalog run's connection alive.
+            // in use — disposed in DisposeAsync (RecycleBrowserAsync never reaches a
+            // disposal path here: it's itself a no-op in workspace mode) — rather than
+            // risk cutting short whatever keeps a ~35-45 minute full-catalog run's
+            // connection alive.
             _workspaceClient = new PlaywrightServiceBrowserClient(credential: SharedAzureCredential.Instance);
             var connectOptions = await _workspaceClient.GetConnectOptionsAsync<BrowserTypeConnectOptions>();
             var browser = await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options);
@@ -229,7 +273,7 @@ public sealed class PlaywrightFactory : IAsyncDisposable
         {
             if (_browser is null) return;
 
-            if (_isWorkspaceConnection)
+            if (ShouldSkipRecycle(_isWorkspaceConnection))
             {
                 // Information, not Debug: ACA jobs typically run at Information level, and
                 // this is exactly the kind of "did the expected thing happen" signal that

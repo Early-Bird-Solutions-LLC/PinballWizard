@@ -84,4 +84,29 @@ public sealed class PlaywrightFactoryTests
 
         Assert.True(result);
     }
+
+    // Same pattern, for the recycle becoming a no-op in workspace mode: real coverage
+    // for RecycleBrowserAsync's actual behavior would require either a real Chromium
+    // process or a real Workspace connection to recycle, neither of which belongs in a
+    // unit test — but the DECISION of whether to skip is a pure boolean this project's
+    // established pattern (IsWorkspaceUrlConfigured, SharedAzureCredential.BuildOptions)
+    // already extracts and tests directly. Pre-push review on #855 flagged that this
+    // behavior — a change that silently disables the #862 recycle mitigation for every
+    // job once a workspace is configured — had shipped with zero coverage; this closes
+    // that gap for the part that can be closed without a live browser or connection.
+    [Fact]
+    public void ShouldSkipRecycle_InWorkspaceMode_ReturnsTrue()
+    {
+        var result = PlaywrightFactory.ShouldSkipRecycle(isWorkspaceConnection: true);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void ShouldSkipRecycle_InLocalChromiumMode_ReturnsFalse()
+    {
+        var result = PlaywrightFactory.ShouldSkipRecycle(isWorkspaceConnection: false);
+
+        Assert.False(result);
+    }
 }
