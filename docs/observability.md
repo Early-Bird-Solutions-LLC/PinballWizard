@@ -261,6 +261,7 @@ Two histograms emitted at the SDK boundary inside [`CosmosRepository<T>`](../src
 | --- | --- | --- | --- |
 | `pinwiz.scraper.politeness_fallback_active` | Counter | (none) | `IngestionSourcePolitenessResolver` fell back to global politeness defaults because the Cosmos repository threw during initialization. When non-zero, per-source politeness overrides are not applied — all scraping proceeds at the global default rate. Paired with an Error log (invariant #17 / OBS-01). |
 | `pinwiz.scraper.jsonld_missing_total` | Counter | `source`, `url` | Storefront product page where `JsonLdProductParser.FindFirstProduct` returned null and the extractor fell back to Open Graph / H1. Structured fields (editions, price, status) will be absent from the resulting `GameRecord`. `source` ∈ `JJP`/`BoF`/`Multimorphic`. Non-zero on BoF/Multimorphic indicates those sites have dropped JSON-LD; non-zero on JJP signals an unexpected Shopify theme regression. Paired with a `LogWarning` (invariant #17 / OBS-01). |
+| `pinwiz.scraper.stern_edition_nav_fallback_total` | Counter | `scraper` | Stern game page where `StaticMetadataExtractor.Extract` fell back from contact-to-buy links to game sub-page nav links (`/game/{slug}/{edition}`) because the primary strategy found zero editions (#855). Increments whenever the degraded path runs, including when it recovers editions — recovered editions carry `Name` only, `Msrp` / `Availability` are unavailable on that path. Deliberately not tagged with slug (unbounded per-game cardinality); the per-game detail is in the paired Information log. A rate climbing toward Stern's total game count means the contact-to-buy pattern changed site-wide rather than a handful of pages being quirky (invariant #17 / OBS-01). |
 
 ### Playwright scraper memory probes (#855)
 
@@ -297,9 +298,11 @@ browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for
 that do not implement `ISourceScraper`), carried identically by all four probes so they join
 to one another. The two yield instruments below also carry `scraper` (there, always
 `ISourceScraper.Name`), so they join to these probes for any scraper that implements the
-interface. The remaining `pinwiz.scraper.*` instruments do not carry it —
+interface. `stern_edition_nav_fallback_total` (#855) carries `scraper` too — also
+`ISourceScraper.Name`, emitted from `GamePageScraper` — so it joins to these probes as well.
+The remaining `pinwiz.scraper.*` instruments do not carry it —
 `politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
-series cannot be joined on `scraper`.
+two series cannot be joined on `scraper`.
 
 > **Re-derive this from the emit sites before trusting it.** The passage above has been
 > wrong in both directions inside a single day: #894 claimed *every* `pinwiz.scraper.*`
