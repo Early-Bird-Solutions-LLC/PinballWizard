@@ -294,7 +294,9 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
 browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
 that do not implement `ISourceScraper`), carried identically by all three probes so they join
-to one another. The other `pinwiz.scraper.*` instruments do not carry it —
+to one another. The two yield instruments below also carry `scraper` (there, always
+`ISourceScraper.Name`), so they join to these probes for any scraper that implements the
+interface. The remaining `pinwiz.scraper.*` instruments do not carry it —
 `politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
 series cannot be joined on `scraper`.
 
@@ -318,6 +320,21 @@ ContainerAppConsoleLogs_CL
 >
 > Job console logs also key on `ContainerJobName_s` — `ContainerAppName_s` is **empty**
 > for jobs, so filtering on it silently matches nothing.
+
+### Scraper yield instruments (#857)
+
+Emitted by `ScraperOrchestrator.ScrapeAsync` once per `ISourceScraper` run, from the
+per-scraper `finally` block — so a scraper that threw part-way still reports the count it
+reached. An **absent** series means the scraper was never invoked, never that it failed. A
+real `0` has two causes: the scraper ran and found nothing (`yield_guard_failures_total`
+also increments), or it threw before finding anything (the exception lands in
+`ScrapeResult.Errors` and is logged at Error; the throw bypasses the guard, so the guard
+counter does not increment).
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.scraper.links_discovered_total` | Counter | `scraper` | Link items yielded by a single `ISourceScraper.ScrapeAsync` run, counted before in-run `DocumentId` deduplication. Tracks per-scraper throughput; a sustained drop against baseline is a leading indicator of a broken URL pattern or a removed manufacturer listing. |
+| `pinwiz.scraper.yield_guard_failures_total` | Counter | `scraper` | Runs that failed the per-scraper yield guard — fewer link items than `Scraper:MinimumYieldPerScraper[<ISourceScraper.Name>]`, which defaults to **1** when the key is absent (write an explicit `0` to opt a source out; a negative value disables the guard as `0` does but logs a Warning). The guard appends to `ScrapeResult.Errors` and marks the source run failed, so the CLI exits 1. A non-zero rate means a scraper completed without an unhandled exception yet collected nothing — the silent-green-job class (invariant #17 / OBS-01). Paired with an Error log naming the scraper, the actual count, and the minimum. |
 
 ### Web and streaming fallback signals (invariant #17 / OBS-01)
 
@@ -424,7 +441,7 @@ Aggregate-monthly view (alerting on the $300/mo threshold) sums per-day rows × 
 
 ## Deferred to later phases
 
-- **Per-scraper run metrics** (`pinwiz.scrape.<source>.*`) — Phase 3+. Lands when manufacturer scrapers gain ACA Job execution and the orchestrator-from-IngestionSource path comes online.
+- **Per-scraper run metrics** (`pinwiz.scrape.<source>.*`) — Phase 3+. Lands when manufacturer scrapers gain ACA Job execution and the orchestrator-from-IngestionSource path comes online. Partially delivered: [`pinwiz.scraper.links_discovered_total`](#scraper-yield-instruments-857) emits one per-scraper observation per run (#857), tagged rather than fanned into per-source instruments (rule 3 above). Per-source run outcome and duration remain deferred — they live in the persisted `ScrapeRunRecord` history, not in metrics.
 - **Real `ITokenUsageReader` impl** — pending Microsoft Agent Framework exposing a Usage surface on `AgentResponse` (issue #2688). `NullTokenUsageReader` is the default; cost telemetry stays at 0 cents until the impl swap. The pricing + ceiling enforcement machinery is in place (this PR) so the swap is a one-class change.
 - **AI Search index size + document count** (`pinwiz.search.index_size_bytes`, `pinwiz.search.index_documents_total`) — Phase 4 follow-up. Periodic-sampler emission rather than hot-path; drives the §7.1 AI Search Basic-vs-Standard 1.5 GB trip-wire trigger.
 - **Community outbound-click counter** (`pinwiz.ai.community_outbound_clicks_total`, tagged `resource_name` / `category`) — planned, GitHub issue #518, [ADR-0044](adr/0044-outbound-contribution-transparency-and-privacy-preserving-uniques.md). Increments on each outbound click to a community resource; aggregate-only, never per-user. Backed by a Tier-3 change-feed projection (per ADR-0036, same shape as `catalog_stats`) that also holds a per-`(destination, UTC-day)` HyperLogLog sketch for the **distinct-daily-visitor** estimate (daily-rotating salted hash → HLL; no stored IP / cookie / per-user row — see ADR-0044 § 3). Capture must not block navigation; a metering failure is logged + counted, never silent (invariant #17).
