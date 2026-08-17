@@ -290,11 +290,17 @@ public sealed class AdminSourcesLoadingStateTests : AsyncBunitContext
 
         Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
 
-        // Release the gate — the load completes and SafeStateHasChanged re-renders.
+        // Release the gate, then drain the renderer dispatcher deterministically:
+        // SetResult completes the IAsyncEnumerable's WaitAsync, which posts the stream's
+        // MoveNextAsync continuation onto the dispatcher; that continuation's await foreach
+        // exit posts a second continuation (LoadAsync's finally: _loading = false +
+        // SafeStateHasChanged). Two InvokeAsync flushes run both, so the assertion never
+        // races thread-pool scheduling. WaitForAssertion's wall-clock poll is what flaked
+        // under CI load (#898) — same root cause as #822, fixed the same way in 4a25752.
         _dataGate.SetResult();
-        cut.WaitForAssertion(() =>
-            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => Task.CompletedTask);
 
-        await Task.CompletedTask;
+        Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
     }
 }
