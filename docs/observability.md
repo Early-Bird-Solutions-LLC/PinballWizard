@@ -293,10 +293,31 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
 browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
-that do not implement `ISourceScraper`), carried identically by all three probes so they join
-to one another. The other `pinwiz.scraper.*` instruments do not carry it —
-`politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
-series cannot be joined on `scraper`.
+that do not implement `ISourceScraper`).
+
+**What joins on `scraper`, and what does not.** The `pinwiz.scraper.*` prefix spans three
+different tagging schemes, so a shared prefix does **not** imply a joinable tag. Verified at
+the emit sites:
+
+| Instrument | Tags | Joins on `scraper`? |
+| --- | --- | --- |
+| `process_working_set_bytes` | `scraper`, `phase` | ✅ |
+| `managed_heap_bytes` | `scraper`, `phase` | ✅ |
+| `gen2_collections` | `scraper`, `phase` | ✅ |
+| `links_discovered_total` | `scraper` | ✅ |
+| `yield_guard_failures_total` | `scraper` | ✅ |
+| `politeness_fallback_active` | *(none)* | ❌ untagged |
+| `jsonld_missing_total` | `source`, `url` | ❌ tags `source` |
+
+So the five scraper-identified instruments join to one another — which is the useful case,
+letting a dashboard put a scraper's yield collapse next to its memory curve. The two legacy
+instruments do not, and no amount of tagging on the new probes changes that.
+
+> This table has been wrong in both directions and is worth re-deriving rather than trusting.
+> It first claimed *every* `pinwiz.scraper.*` instrument shared the tag (false — two never
+> did). #895 corrected that to "the other instruments do not carry it", which was true when
+> written and became false hours later when #864 merged two more that do. **Check the emit
+> sites, not the instrument descriptions, and not this table's last revision.**
 
 Query the per-page log line (sub-second timestamps, finer than the metric export):
 
