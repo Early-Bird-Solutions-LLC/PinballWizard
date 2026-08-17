@@ -291,10 +291,11 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.process_working_set_bytes` | Histogram | `scraper`, `phase` | Resident working set of the .NET scraper process. Excludes Chromium child processes by construction — subtract from ACA `UsageBytes` to attribute memory to the browser. |
 | `pinwiz.scraper.managed_heap_bytes` | Histogram | `scraper`, `phase` | Managed heap (`GC.GetTotalMemory`, no forced collection). Rising in step with working set implicates retained managed state (`ScrapedItem` / `DocumentRecord` / catalog); flat while working set climbs implicates native or child-process memory. |
 | `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
+| `pinwiz.scraper.chromium_descendant_rss_bytes` | Histogram | `scraper`, `phase` | Combined resident-set memory of every live descendant process (the Playwright Node.js driver, Chromium, its renderer/GPU children), summed via `/proc` on Linux. Reads the "≈ Chromium" row above instead of only inferring it by subtracting `UsageBytes − process_working_set_bytes` — but as an **upper bound**, not an exact match: per-process VmRSS double-counts pages Chromium's own processes share with each other (IPC buffers, V8 snapshot, shared libraries), which the cgroup-backed `UsageBytes` does not. Linux-only — absent (not zero) on a non-Linux dev run. |
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
 browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
-that do not implement `ISourceScraper`), carried identically by all three probes so they join
+that do not implement `ISourceScraper`), carried identically by all four probes so they join
 to one another. The two yield instruments below also carry `scraper` (there, always
 `ISourceScraper.Name`), so they join to these probes for any scraper that implements the
 interface. `stern_edition_nav_fallback_total` (#855) carries `scraper` too — also
@@ -327,7 +328,9 @@ ContainerAppConsoleLogs_CL
 > the probes fired correctly and ingested — verified live 2026-08-17: 198 rows ingested
 > from a probe-carrying run, 0 matched `startswith`, all matched `contains`. Reads
 > exactly like "the probe never fired," the same silent-failure shape as the job-name
-> suffix trap below.
+> suffix trap below. The log line carries `chromiumRss=N MiB` as its final field only
+> when the Chromium probe measured something — absent (not `chromiumRss=0`) on a non-
+> Linux run or a genuine read failure.
 >
 > `startswith`, not `==`, for `ContainerJobName_s`. ACA job names carry a five-character environment suffix —
 > `substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)`, see

@@ -205,6 +205,30 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     protected virtual Task RecycleBrowserAsync()
         => _playwrightFactory.RecycleBrowserAsync();
 
+    /// <summary>
+    /// Sums resident-set memory across every live descendant of this process
+    /// — the Node.js Playwright driver, the Chromium browser it launches, and
+    /// that browser's own renderer/GPU children — via <see cref="ProcTreeMemoryReader"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This measures the quantity <see cref="SampleMemory"/>'s own remarks describe as
+    /// only inferred by subtraction: <c>WorkingSet64</c> covers the .NET process only,
+    /// so the gap between it and the container's UsageBytes has so far only been
+    /// attributed to Chromium indirectly. This reads Chromium's own process tree
+    /// instead — but see <see cref="ProcTreeMemoryReader"/>'s remarks for why the
+    /// result is an upper bound, not an exact match to that subtraction (shared-page
+    /// double-counting across Chromium's own child processes).
+    /// </para>
+    /// <para>
+    /// <c>protected virtual</c> so tests can substitute a deterministic value without
+    /// depending on a real Linux /proc filesystem or a real Chromium process — the same
+    /// seam already used by <see cref="CreateContextAsync"/> and <see cref="RecycleBrowserAsync"/>.
+    /// </para>
+    /// </remarks>
+    protected virtual long? SampleChromiumDescendantRssBytes()
+        => ProcTreeMemoryReader.GetDescendantResidentSetBytes(Environment.ProcessId);
+
     // Phase tag values for the memory probes. Named rather than inline strings so a
     // dashboard query and the emitting code cannot drift apart.
     internal static class MemorySamplePhase
@@ -289,9 +313,40 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         PinballWizardTelemetry.ScraperManagedHeapBytes.Record(managedHeap, tags);
         PinballWizardTelemetry.ScraperGen2Collections.Record(gen2, tags);
 
-        Logger.LogInformation(
-            "Memory probe [{Phase}] {Scraper} page {PageCount}: workingSet={WorkingSetMiB} MiB, managedHeap={ManagedHeapMiB} MiB, gen2={Gen2}",
-            phase, ScraperTag, _pageCount, workingSet / 1048576, managedHeap / 1048576, gen2);
+        // Null on non-Linux (no /proc) or when the read genuinely fails — omitted from
+        // both the metric and the log rather than recorded as zero (invariant #17). A
+        // dev machine running this locally on Windows will simply never see this figure,
+        // which is the correct degrade-visibly behavior, not a bug to chase.
+        //
+        // ProcTreeMemoryReader itself never throws, but SampleChromiumDescendantRssBytes
+        // is `protected virtual` — a subclass override (test doubles included) could.
+        // This method's own contract is "never throws"; honor it for this probe the same
+        // way the .NET-process read above is guarded, rather than trusting an overridable
+        // seam to uphold it on our behalf.
+        long? chromiumRss;
+        try
+        {
+            chromiumRss = SampleChromiumDescendantRssBytes();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Chromium descendant memory probe unavailable for {Scraper} at phase {Phase}.", ScraperTag, phase);
+            chromiumRss = null;
+        }
+
+        if (chromiumRss is not null)
+        {
+            PinballWizardTelemetry.ScraperChromiumDescendantRssBytes.Record(chromiumRss.Value, tags);
+            Logger.LogInformation(
+                "Memory probe [{Phase}] {Scraper} page {PageCount}: workingSet={WorkingSetMiB} MiB, managedHeap={ManagedHeapMiB} MiB, gen2={Gen2}, chromiumRss={ChromiumRssMiB} MiB",
+                phase, ScraperTag, _pageCount, workingSet / 1048576, managedHeap / 1048576, gen2, chromiumRss.Value / 1048576);
+        }
+        else
+        {
+            Logger.LogInformation(
+                "Memory probe [{Phase}] {Scraper} page {PageCount}: workingSet={WorkingSetMiB} MiB, managedHeap={ManagedHeapMiB} MiB, gen2={Gen2}",
+                phase, ScraperTag, _pageCount, workingSet / 1048576, managedHeap / 1048576, gen2);
+        }
     }
 
     private async Task<IBrowserContext> GetOrCreateContextAsync()

@@ -786,7 +786,18 @@ public static class PinballWizardTelemetry
     //     UsageBytes - process_working_set  ≈ Chromium (browser + renderers)
     //     process_working_set - managed_heap ≈ native allocation inside .NET
     //
-    // Tags (all three instruments):
+    // pinwiz.scraper.chromium_descendant_rss_bytes (added below, #855 follow-up)
+    // reads Chromium's own process tree instead of inferring it from the
+    // subtraction above. It is an UPPER BOUND on that quantity, not an exact
+    // match — VmRSS is per-process, Chromium shares memory across its own
+    // processes (IPC buffers, the V8 snapshot, shared libraries), and summing
+    // double-counts every page more than one sharer maps. The cgroup-backed
+    // UsageBytes does not have this problem (a page is charged to the cgroup
+    // once, however many of its processes map it), so this sum can plausibly
+    // exceed the true Chromium share of UsageBytes - process_working_set. See
+    // ProcTreeMemoryReader's remarks for the full explanation.
+    //
+    // Tags (all three .NET-process instruments):
     //   scraper — ISourceScraper.Name
     //   phase   — "page" (after a page navigation), "pre_recycle" / "post_recycle"
     //             (bracketing the browser-process recycle). The pre/post pair is
@@ -809,6 +820,11 @@ public static class PinballWizardTelemetry
         "pinwiz.scraper.gen2_collections",
         unit: "{collection}",
         description: "Cumulative gen-2 GC count at each memory sample, tagged with scraper and phase. Context for the other two probes: a managed heap that climbs while gen-2 collections also climb means the GC is running and cannot reclaim (live references retained); a heap that climbs with no gen-2 activity means collection pressure never triggered. Distinguishes 'leak' from 'GC simply had no reason to run yet'.");
+
+    public static readonly Histogram<long> ScraperChromiumDescendantRssBytes = Meter.CreateHistogram<long>(
+        "pinwiz.scraper.chromium_descendant_rss_bytes",
+        unit: "By",
+        description: "Combined resident-set memory of every live descendant of the scraper process (the Playwright Node.js driver, the Chromium browser it launches, and that browser's renderer/GPU children), sampled alongside pinwiz.scraper.process_working_set_bytes via /proc on Linux. Tagged with scraper and phase. Linux-only — every ACA job this covers runs the Linux container image, but a local Windows/macOS dev run reports no data point for this instrument at all rather than a fabricated zero (a probe that cannot measure must say so, not read as 'Chromium used nothing'). Reads the quantity pinwiz.scraper.process_working_set_bytes's own description could previously only infer by subtracting it from ACA's container-level UsageBytes -- but read this as an UPPER BOUND on that quantity, not an exact match: summing per-process VmRSS across Chromium's own process tree double-counts every page more than one of its processes shares, which the cgroup-backed UsageBytes does not.");
     // ── Scraper yield instrumentation (#857) ─────────────────────────────
     // Emitted by ScraperOrchestrator once per ISourceScraper run. Two instruments:
     //   links_discovered_total — the raw count of link items yielded. Emitted from
