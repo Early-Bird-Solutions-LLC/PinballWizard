@@ -3121,7 +3121,7 @@ resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAc
 // re-ballooned to a higher peak than the last). See
 // docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
 resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@2025-09-01' = if (deployPhase2) {
-  name: 'pinwiz-playwright-${environment}-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+  name: '${namePrefix}-playwright-${environment}-${uniqueSuffix}'
   location: location
   tags: tags
   properties: {

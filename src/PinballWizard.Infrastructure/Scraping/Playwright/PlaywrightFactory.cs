@@ -60,21 +60,34 @@ public sealed class PlaywrightFactory : IAsyncDisposable
 
             _playwright = await Microsoft.Playwright.Playwright.CreateAsync();
 
-            if (ShouldConnectToWorkspace(SharedAzureCredential.IsDevelopment))
+            try
             {
-                _logger.LogInformation("Connecting to remote Chromium on Azure Playwright Workspaces...");
-                _browser = await ConnectToWorkspaceAsync(_playwright);
-                _logger.LogInformation("Connected to Azure Playwright Workspaces browser");
-            }
-            else
-            {
-                _logger.LogInformation("Initializing Playwright and launching Chromium...");
-                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                if (ShouldConnectToWorkspace(SharedAzureCredential.IsDevelopment))
                 {
-                    Headless = true,
-                    Args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
-                });
-                _logger.LogInformation("Chromium launched successfully");
+                    _logger.LogInformation("Connecting to remote Chromium on Azure Playwright Workspaces...");
+                    _browser = await ConnectToWorkspaceAsync(_playwright);
+                    _logger.LogInformation("Connected to Azure Playwright Workspaces browser");
+                }
+                else
+                {
+                    _logger.LogInformation("Initializing Playwright and launching Chromium...");
+                    _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    {
+                        Headless = true,
+                        Args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+                    });
+                    _logger.LogInformation("Chromium launched successfully");
+                }
+            }
+            catch
+            {
+                // A failed connect/launch still leaves _playwright assigned (the Node.js
+                // driver process started successfully even though the browser didn't).
+                // Without this, the next GetBrowserAsync() call overwrites _playwright
+                // with a fresh instance, orphaning the driver process from this attempt.
+                _playwright.Dispose();
+                _playwright = null;
+                throw;
             }
 
             return _browser;
