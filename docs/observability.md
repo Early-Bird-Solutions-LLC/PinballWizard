@@ -299,11 +299,22 @@ Query the per-page log line (sub-second timestamps, finer than the metric export
 
 ```kusto
 ContainerAppConsoleLogs_CL
-| where ContainerJobName_s == "pinwiz-job-stern-games-buutj"
+| where ContainerJobName_s startswith "pinwiz-job-stern-games"
 | where Log_s startswith "Memory probe"
 | project TimeGenerated, Log_s
 | order by TimeGenerated asc
 ```
+
+> `startswith`, not `==`. ACA job names carry a five-character environment suffix —
+> `substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)`, see
+> `infra/modules/shared.bicep`. It is *deterministic* per subscription + resource group
+> (so it is stable across stack runs, and `pinwiz-job-stern-games-buutj` is correct for
+> the current dev RG), but it differs in any other environment or if the resource group
+> is ever rebuilt. A hardcoded suffix returns **zero rows with no error** there, which
+> reads exactly like "the probe never fired."
+>
+> Job console logs also key on `ContainerJobName_s` — `ContainerAppName_s` is **empty**
+> for jobs, so filtering on it silently matches nothing.
 
 ### Web and streaming fallback signals (invariant #17 / OBS-01)
 
