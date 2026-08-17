@@ -65,7 +65,12 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     /// </remarks>
     public async Task<IBrowser> GetBrowserAsync()
     {
-        if (_browser is { IsConnected: true }) return _browser;
+        // Local variable, not two reads of _browser: a concurrent RecycleBrowserAsync (or
+        // the disconnected-cleanup block below) could null the field between the pattern
+        // test and the return, handing a caller null from this non-nullable Task<IBrowser>.
+        // Same reason the in-lock re-read below already uses a local.
+        var cachedBrowser = _browser;
+        if (cachedBrowser is { IsConnected: true }) return cachedBrowser;
 
         await _initLock.WaitAsync();
         try
