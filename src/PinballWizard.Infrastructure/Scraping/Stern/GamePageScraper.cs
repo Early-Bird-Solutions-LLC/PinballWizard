@@ -178,7 +178,7 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
             if (staticMeta.Editions.Count == 0)
             {
                 Logger.LogWarning(
-                    "Static metadata extraction yielded 0 editions for {Slug} — Stern may have changed the contact-for-availability URL pattern. Catalog will record zero editions for this game.",
+                    "Static metadata extraction yielded 0 editions for {Slug} — neither contact-to-buy variant links nor game sub-page nav links found any editions. Catalog will record zero editions for this game.",
                     game.Slug);
             }
 

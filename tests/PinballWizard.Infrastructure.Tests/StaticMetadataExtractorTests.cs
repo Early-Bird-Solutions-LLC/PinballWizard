@@ -417,6 +417,7 @@ public sealed class StaticMetadataExtractorTests
               <a href="/game/aerosmith/pro">Pro</a>
               <a href="/game/aerosmith/documents/manual.pdf">Manual</a>
               <a href="/game/aerosmith?ref=nav">Aerosmith</a>
+              <a href="/game/aerosmith/premium#overview">In-page anchor on a real subpage</a>
               <a href="/game/beatles/premium">A different game's edition</a>
             </body></html>
             """);

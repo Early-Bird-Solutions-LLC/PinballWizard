@@ -198,11 +198,13 @@ public static class StaticMetadataExtractor
 
             var editionSlug = href[prefix.Length..];
             // Reject anything but a single path segment — a nested path (a
-            // linked PDF under a documents/ sub-path) or a query string is
-            // not an edition slug.
+            // linked PDF under a documents/ sub-path), a query string, or a
+            // fragment (an in-page anchor like #overview) is not an edition
+            // slug.
             if (editionSlug.Length == 0
                 || editionSlug.Contains('/', StringComparison.Ordinal)
-                || editionSlug.Contains('?', StringComparison.Ordinal))
+                || editionSlug.Contains('?', StringComparison.Ordinal)
+                || editionSlug.Contains('#', StringComparison.Ordinal))
             {
                 continue;
             }
