@@ -1,6 +1,7 @@
 using Azure.Developer.Playwright;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
+using PinballWizard.Application.Observability;
 using PinballWizard.Infrastructure.Credentials;
 
 namespace PinballWizard.Infrastructure.Scraping.Playwright;
@@ -102,14 +103,46 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     // than launching a local one. Entra-only auth via the project's single shared
     // TokenCredential (SharedAzureCredential.Instance) — the deployed workspace sets
     // localAuth: 'Disabled', so an access token is never an option here. No local
-    // fallback on failure: propagating the exception is deliberate (#855 design §D) —
-    // a silent fallback to LaunchAsync would reintroduce the exact OOM risk this
-    // change exists to eliminate, on whatever night the Workspace happens to be down.
+    // fallback on failure: propagating the exception is deliberate (#855 design §D,
+    // ADR-0056) — a silent fallback to LaunchAsync would reintroduce the exact OOM
+    // risk this change exists to eliminate, on whatever night the Workspace happens
+    // to be down.
+    // PlaywrightServiceBrowserClient itself reads PLAYWRIGHT_SERVICE_URL from the
+    // process environment (verified 2026-08-17 against the installed 1.0.0 assembly's
+    // string literals) — it does not accept the endpoint as a parameter. Parameterized
+    // (mirrors ShouldConnectToWorkspace / SharedAzureCredential.BuildOptions) so the
+    // guard is unit-testable without mutating process-global environment state.
+    internal static bool IsWorkspaceUrlConfigured(string? playwrightServiceUrl) =>
+        !string.IsNullOrEmpty(playwrightServiceUrl);
+
     private static async Task<IBrowser> ConnectToWorkspaceAsync(IPlaywright playwright)
     {
-        var client = new PlaywrightServiceBrowserClient(credential: SharedAzureCredential.Instance);
-        var connectOptions = await client.GetConnectOptionsAsync<BrowserTypeConnectOptions>();
-        return await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options);
+        // Checking for the missing env var BEFORE the client call turns "the SDK threw
+        // some internal exception" into an actionable message naming exactly what's
+        // missing, rather than making an operator trace a stack frame back to ADR-0056.
+        if (!IsWorkspaceUrlConfigured(Environment.GetEnvironmentVariable("PLAYWRIGHT_SERVICE_URL")))
+        {
+            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "unconfigured" } });
+            throw new InvalidOperationException(
+                "PLAYWRIGHT_SERVICE_URL is not set. This deployed environment must connect to Azure " +
+                "Playwright Workspaces (ADR-0056) — the endpoint value is obtained from the workspace's " +
+                "'Get Started' page in the Azure portal after infra/modules/shared.bicep is deployed, " +
+                "and cannot be computed. See docs/adr/0056-stern-playwright-scrapers-on-azure-workspaces.md.");
+        }
+
+        try
+        {
+            using var client = new PlaywrightServiceBrowserClient(credential: SharedAzureCredential.Instance);
+            var connectOptions = await client.GetConnectOptionsAsync<BrowserTypeConnectOptions>();
+            var browser = await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options);
+            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "success" } });
+            return browser;
+        }
+        catch
+        {
+            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "failure" } });
+            throw;
+        }
     }
 
     /// <summary>

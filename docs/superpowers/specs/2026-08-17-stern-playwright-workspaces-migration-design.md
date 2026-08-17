@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-17
 **Issue:** [#855](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/855)
-**Status:** proposed
+**Status:** implemented — see [ADR-0056](../../adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)
 
 ## Problem
 
@@ -186,13 +186,10 @@ NUnit-integration docs) vs. requires it to be passed explicitly needs confirming
 against `Azure.Developer.Playwright`'s actual `PlaywrightServiceBrowserClientOptions`
 at implementation time — flagged here rather than guessed.
 
-> **Remaining placeholder for implementation:** the exact configuration surface (env var
-> name(s)) `Azure.Developer.Playwright` expects for the workspace region endpoint. This is
-> a mechanical lookup (reading the installed package's `PlaywrightServiceBrowserClientOptions`
-> source once it's added as a dependency) rather than a design decision — captured here so
-> the implementation plan has an explicit "verify, then fill in" step rather than a guessed
-> value shipping into Bicep. The role-definition GUID above is already resolved (verified
-> live against this subscription, not guessed).
+> **Resolved during implementation:** `PLAYWRIGHT_SERVICE_URL` — confirmed by reading the
+> installed `Azure.Developer.Playwright` 1.0.0 assembly's own string literals directly (not
+> documentation, which does not publish the env var's name). The role-definition GUID above
+> was already resolved (verified live against this subscription, not guessed).
 
 ### D. Error handling — fail loud, no local-Chromium fallback
 
@@ -270,6 +267,12 @@ implementation time.
 - `pinwiz-job-stern-refresh` completes its next run without OOM, resolving the prior
   handoff's unverified suspicion rather than leaving it open until 2026-08-23.
 - No local-Chromium fallback code path exists in the deployed branch of
-  `PlaywrightFactory` (verified by the unit test in Testing above, and by code review).
+  `PlaywrightFactory` — verified by code review (`ConnectToWorkspaceAsync` has no
+  catch-and-retry to `LaunchAsync`). The unit tests verify the `ShouldConnectToWorkspace`
+  and `IsWorkspaceUrlConfigured` decision predicates return the correct values for their
+  inputs; they do not and cannot verify `GetBrowserAsync`'s actual branching or the
+  absence of a fallback path, since neither `LaunchAsync` nor `ConnectAsync` is behind a
+  seam a unit test can intercept. Don't overclaim what the tests cover — this was a real
+  gap flagged by pre-push review and left corrected here rather than silently fixed.
 - Actual Workspace cost for the first billing period is checked against the $10–14/mo
   estimate above and reconciled in a follow-up note if materially different.

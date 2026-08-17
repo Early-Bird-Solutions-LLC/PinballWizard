@@ -825,6 +825,17 @@ public static class PinballWizardTelemetry
         "pinwiz.scraper.chromium_descendant_rss_bytes",
         unit: "By",
         description: "Combined resident-set memory of every live descendant of the scraper process (the Playwright Node.js driver, the Chromium browser it launches, and that browser's renderer/GPU children), sampled alongside pinwiz.scraper.process_working_set_bytes via /proc on Linux. Tagged with scraper and phase. Linux-only — every ACA job this covers runs the Linux container image, but a local Windows/macOS dev run reports no data point for this instrument at all rather than a fabricated zero (a probe that cannot measure must say so, not read as 'Chromium used nothing'). Reads the quantity pinwiz.scraper.process_working_set_bytes's own description could previously only infer by subtracting it from ACA's container-level UsageBytes -- but read this as an UPPER BOUND on that quantity, not an exact match: summing per-process VmRSS across Chromium's own process tree double-counts every page more than one of its processes shares, which the cgroup-backed UsageBytes does not.");
+
+    // Emitted by PlaywrightFactory.GetBrowserAsync when deployed (#855 — ADR-0056):
+    // the ACA job container no longer runs Chromium locally, so its own crash/OOM is
+    // no longer the failure mode to watch. Connecting to Azure Playwright Workspaces
+    // is a new external dependency in that path, and #855's own history (a silent
+    // capability regression running undiagnosed for 9 nights) is exactly why this one
+    // gets a counter from day one instead of waiting for the next incident to add it.
+    public static readonly Counter<long> ScraperWorkspaceConnectTotal = Meter.CreateCounter<long>(
+        "pinwiz.scraper.workspace_connect_total",
+        unit: "{connection}",
+        description: "Azure Playwright Workspaces connection attempts from PlaywrightFactory.GetBrowserAsync, tagged with outcome (\"success\", \"failure\", or \"unconfigured\" — PLAYWRIGHT_SERVICE_URL absent). Deployed-mode only; Development never emits this (it launches local Chromium instead). A sustained absence of \"success\" tags on a job execution window that should have run scrapers is the signal that the workspace connection silently stopped working.");
     // ── Scraper yield instrumentation (#857) ─────────────────────────────
     // Emitted by ScraperOrchestrator once per ISourceScraper run. Two instruments:
     //   links_discovered_total — the raw count of link items yielded. Emitted from

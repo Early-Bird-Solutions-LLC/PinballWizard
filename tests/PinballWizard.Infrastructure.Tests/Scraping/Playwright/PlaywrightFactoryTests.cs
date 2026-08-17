@@ -73,4 +73,30 @@ public sealed class PlaywrightFactoryTests
 
         Assert.True(result);
     }
+
+    // Pre-push review on #855 flagged that an empty PLAYWRIGHT_SERVICE_URL (the state
+    // between "workspace resource deployed" and "endpoint copied from the portal" — see
+    // ADR-0056's Consequences) previously surfaced as whatever internal exception the
+    // SDK happened to throw, rather than a message naming what's actually missing.
+    // IsWorkspaceUrlConfigured is the guard that turns that into an actionable error
+    // before the SDK is ever called — parameterized the same way as
+    // ShouldConnectToWorkspace, so it's testable without mutating process-global
+    // environment state.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void IsWorkspaceUrlConfigured_WhenNullOrEmpty_ReturnsFalse(string? playwrightServiceUrl)
+    {
+        var result = PlaywrightFactory.IsWorkspaceUrlConfigured(playwrightServiceUrl);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsWorkspaceUrlConfigured_WhenSet_ReturnsTrue()
+    {
+        var result = PlaywrightFactory.IsWorkspaceUrlConfigured("wss://eastus.example.playwright.microsoft.com/accounts/abc123/browsers");
+
+        Assert.True(result);
+    }
 }
