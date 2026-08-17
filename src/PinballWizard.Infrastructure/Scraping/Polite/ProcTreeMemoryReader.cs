@@ -36,6 +36,24 @@ namespace PinballWizard.Infrastructure.Scraping.Polite;
 /// contract <see cref="PolitePlaywrightScraperBase"/>'s existing memory probe
 /// already holds itself to.
 /// </para>
+/// <para>
+/// <b>This is an upper bound on Chromium's footprint, not a page-for-page
+/// match to the container-level figure it's compared against.</b> VmRSS is
+/// measured per-process; Chromium deliberately shares memory across its own
+/// processes (mmap'd IPC buffers, the V8 snapshot, shared libraries), and
+/// each sharer's VmRSS independently counts a shared page. Summing across
+/// the tree therefore double-counts every shared page once per additional
+/// sharer. A cgroup-level figure like ACA's <c>UsageBytes</c> does not have
+/// this problem — a physical page is charged to the cgroup once regardless
+/// of how many of its processes map it — so this sum can plausibly exceed
+/// (never merely equal) the true Chromium share of that number. Proportional
+/// Set Size (<c>/proc/[pid]/smaps_rollup</c>'s <c>Pss</c> field, which divides
+/// a shared page's cost across its sharers) would close this gap; that file
+/// is more expensive to read and its availability under ACA's container
+/// security context is unverified, so it's deliberately not what this reads.
+/// Read this instrument as "Chromium uses at least this much," not "exactly
+/// this much."
+/// </para>
 /// </remarks>
 internal static class ProcTreeMemoryReader
 {
@@ -43,12 +61,18 @@ internal static class ProcTreeMemoryReader
     /// Sums VmRSS across every live descendant of <paramref name="rootProcessId"/>
     /// (children, grandchildren, ...) — NOT including the root itself, since
     /// callers already measure that via <see cref="System.Diagnostics.Process.WorkingSet64"/>.
+    /// See the type-level remarks for why this is an upper bound, not an exact figure.
     /// </summary>
     /// <returns>
-    /// The summed resident-set bytes, or null when unavailable (non-Linux,
-    /// /proc unreadable, or the root process has no live descendants right
-    /// now). Null is never reported as zero — a probe that cannot measure
-    /// must say so, not fabricate an empty reading (invariant #17).
+    /// The summed resident-set bytes, or null when unavailable: non-Linux, /proc
+    /// unreadable, or zero descendants found. That last case is treated as
+    /// "unmeasurable" rather than "measured zero" deliberately — every real call
+    /// site (<see cref="PolitePlaywrightScraperBase"/>'s memory probe) only calls
+    /// this after the browser context already exists, so zero descendants there
+    /// means the walk failed to see a process that is actually running, not that
+    /// Chromium genuinely hasn't started yet. Null is never reported as zero — a
+    /// probe that cannot measure must say so, not fabricate an empty reading
+    /// (invariant #17).
     /// </returns>
     public static long? GetDescendantResidentSetBytes(int rootProcessId)
     {

@@ -212,10 +212,13 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the measurement <see cref="SampleMemory"/>'s own remarks describe as
-    /// missing: <c>WorkingSet64</c> covers the .NET process only, so the gap between
-    /// it and the container's UsageBytes has so far only been INFERRED to be Chromium
-    /// by subtraction. This probes that gap directly instead.
+    /// This measures the quantity <see cref="SampleMemory"/>'s own remarks describe as
+    /// only inferred by subtraction: <c>WorkingSet64</c> covers the .NET process only,
+    /// so the gap between it and the container's UsageBytes has so far only been
+    /// attributed to Chromium indirectly. This reads Chromium's own process tree
+    /// instead — but see <see cref="ProcTreeMemoryReader"/>'s remarks for why the
+    /// result is an upper bound, not an exact match to that subtraction (shared-page
+    /// double-counting across Chromium's own child processes).
     /// </para>
     /// <para>
     /// <c>protected virtual</c> so tests can substitute a deterministic value without
