@@ -129,8 +129,24 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   reclaim *local* container memory, which doesn't apply once Chromium runs remotely —
   recycling anyway would spend billed connection minutes and reconnect latency for
   nothing. `PlaywrightFactory` tracks which mode produced the current browser and skips
-  the teardown/reconnect in workspace mode; the recycle is unchanged in local-Chromium
-  mode (Development, or before the endpoint is configured).
+  the teardown/reconnect in workspace mode (logged at Information, not Debug, so the
+  skip is visible in a deployed job's normal log output); the recycle is unchanged in
+  local-Chromium mode (Development, or before the endpoint is configured).
+- **A consequence of that skip, acknowledged rather than left implicit: nothing
+  re-acquires the browser mid-run if the remote connection itself drops.** Before this
+  PR, the periodic recycle incidentally meant a dead connection would eventually get
+  torn down and re-established on its own schedule. In workspace mode there is no
+  periodic recycle to do that anymore — a transient network blip or a service-side
+  session timeout during a ~35–45 minute full-catalog run kills the whole run, with the
+  next scheduled fire being the only recovery. This is treated as acceptable, not
+  overlooked: building active drop-detection-and-reconnect logic under no ability to
+  test it against a live workspace connection would risk shipping an unverified
+  "recovery" mechanism with its own failure modes (e.g. reconnecting mid-navigation),
+  which is the same category of risk this ADR already declined for the alert rule
+  below. "Fail the run, let the next scheduled attempt retry" is consistent with this
+  project's existing fail-loud posture (#857) rather than a gap in it — but it is a
+  real trade-off, not a non-issue, and worth revisiting once real run data exists to
+  show whether mid-run drops are common enough to justify the added complexity.
 - **No alert rule was added for the new `pinwiz.scraper.workspace_connect_total`
   counter in this PR.** ADR-0055's own history — an alert that silently never fired for
   weeks because its filter was subtly wrong — is exactly the failure mode a *new*,

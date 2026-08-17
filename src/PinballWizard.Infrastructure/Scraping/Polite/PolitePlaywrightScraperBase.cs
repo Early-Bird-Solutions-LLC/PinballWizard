@@ -226,13 +226,13 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     /// seam already used by <see cref="CreateContextAsync"/> and <see cref="RecycleBrowserAsync"/>.
     /// </para>
     /// <para>
-    /// When deployed (see <see cref="PlaywrightFactory.ShouldConnectToWorkspace"/>),
-    /// Chromium runs on Azure Playwright Workspaces, not as a local child process — so
-    /// this correctly reads near-zero there. That is a true zero under invariant #17
-    /// (degrade visibly), not a broken probe: there is no local Chromium descendant
-    /// for <see cref="ProcTreeMemoryReader"/> to find. The probe and the local-recycle
-    /// machinery around it remain fully meaningful in Development, where Chromium still
-    /// runs locally.
+    /// When Azure Playwright Workspaces is configured (see
+    /// <see cref="PlaywrightFactory.IsWorkspaceUrlConfigured"/>), Chromium runs there,
+    /// not as a local child process — so this correctly reads near-zero. That is a true
+    /// zero under invariant #17 (degrade visibly), not a broken probe: there is no local
+    /// Chromium descendant for <see cref="ProcTreeMemoryReader"/> to find. The probe and
+    /// the local-recycle machinery around it remain fully meaningful whenever Chromium
+    /// runs locally — Development, or any environment without a configured workspace.
     /// </para>
     /// </remarks>
     protected virtual long? SampleChromiumDescendantRssBytes()
@@ -374,7 +374,13 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                 // if recycling releases what it is documented to release, working set
                 // must fall measurably between these two samples. If it does not, the
                 // retained memory is not the browser's and the recycle is treating a
-                // symptom that was never the cause.
+                // symptom that was never the cause. Still meaningful in Azure Playwright
+                // Workspaces mode, where RecycleBrowserAsync is a documented no-op
+                // (#855, ADR-0056): process_working_set_bytes still reflects real .NET
+                // process state at each sample regardless of what the browser did, and
+                // chromium_descendant_rss_bytes reads near-zero on both sides — a true,
+                // consistent measurement, not a fabricated one (see that instrument's
+                // own remarks on why a workspace-mode near-zero is correct, not broken).
                 SampleMemory(MemorySamplePhase.PreRecycle);
 
                 await RecycleContextSafelyAsync(_context).ConfigureAwait(false);
@@ -382,7 +388,8 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                 _pageCount = 0;
 
                 // Context disposal alone does not free browser-process memory. Recycle
-                // the browser process too so the next context starts at baseline footprint.
+                // the browser process too so the next context starts at baseline footprint
+                // — a no-op in workspace mode; see RecycleBrowserAsync's own remarks.
                 await RecycleBrowserAsync().ConfigureAwait(false);
 
                 SampleMemory(MemorySamplePhase.PostRecycle);

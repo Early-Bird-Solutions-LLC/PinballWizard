@@ -2,6 +2,25 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Revision, 2026-08-17 (pre-push review, after this plan's tasks were already
+> implemented and committed).** This plan describes gating `PlaywrightFactory` on
+> `SharedAzureCredential.IsDevelopment` (Task 1's brief, below) — that design was
+> rejected during pre-push review and does not match the shipped code. It broke the
+> documented standalone-CLI scrape path (no `launchSettings.json` exists for the CLI
+> project, so `ASPNETCORE_ENVIRONMENT` is simply unset there) and would have turned
+> the first deploy after merge into a guaranteed failure for the then-currently-green
+> `stern-bulletins` job, since the Bicep's empty-by-default `playwrightServiceUrl`
+> gave every job an unconfigured "deployed" state with no fallback. The shipped code
+> instead gates on `PlaywrightFactory.IsWorkspaceUrlConfigured(string?)` — whether
+> `PLAYWRIGHT_SERVICE_URL` is actually set — not on `SharedAzureCredential.IsDevelopment`
+> at all; that class's `IsDevelopment` was never widened to `internal` in the merged
+> code. [ADR-0056](../../adr/0056-stern-playwright-scrapers-on-azure-workspaces.md) is
+> the corrected, authoritative record of what was actually built. Left here rather than
+> silently rewritten, matching this repo's own convention for a plan or spec found wrong
+> during implementation — a merged plan that contradicted the merged code with no note
+> would itself be exactly the kind of authoritative-looking-but-false artifact this
+> project's `sdd-artifact-hygiene.md` rule exists to prevent.
+
 **Goal:** Stop `pinwiz-job-stern-games` (and its sibling jobs `stern-bulletins`, `stern-refresh`) OOMKilling by routing Chromium off the 1 GiB ACA job container and onto Azure Playwright Workspaces when deployed, while leaving local development untouched.
 
 **Architecture:** `PlaywrightFactory.GetBrowserAsync()` branches on the same dev-vs-deployed check `SharedAzureCredential` already makes: in Development, keep launching local Chromium exactly as today; when deployed, construct a `PlaywrightServiceBrowserClient` (Entra auth via the existing shared `TokenCredential`), fetch connect options, and `ConnectAsync` to the remote browser instead. No fallback — a connection failure propagates and fails the job loudly, composing with the existing #857 "fail a run that collects nothing" behavior.

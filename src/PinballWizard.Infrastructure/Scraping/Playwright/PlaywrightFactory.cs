@@ -131,13 +131,17 @@ public sealed class PlaywrightFactory : IAsyncDisposable
         // Checking for the missing env var BEFORE the client call turns "the SDK threw
         // some internal exception" into an actionable message naming exactly what's
         // missing, rather than making an operator trace a stack frame back to ADR-0056.
-        // (Reachable here only if the URL passed IsWorkspaceUrlConfigured at the
+        // Reachable here only if the URL passed IsWorkspaceUrlConfigured at the
         // GetBrowserAsync call site and then something cleared/mutated the env var in
-        // between — kept as a defensive re-check, not the primary gate.)
+        // between — a defensive re-check against an internal-consistency violation, not
+        // a normal operational outcome, so unlike the success/failure paths below it
+        // does NOT record ScraperWorkspaceConnectTotal: that counter's whole value is
+        // being a clean binary signal once a connection is genuinely attempted, and
+        // muddying it with a should-never-happen third state would only make dashboards
+        // built against it harder to read, not easier.
         var playwrightServiceUrl = Environment.GetEnvironmentVariable("PLAYWRIGHT_SERVICE_URL");
         if (!IsWorkspaceUrlConfigured(playwrightServiceUrl))
         {
-            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "unconfigured" } });
             throw new InvalidOperationException(
                 "PLAYWRIGHT_SERVICE_URL is not set. This environment attempted to connect to Azure " +
                 "Playwright Workspaces (ADR-0056) — the endpoint value is obtained from the workspace's " +
@@ -227,7 +231,10 @@ public sealed class PlaywrightFactory : IAsyncDisposable
 
             if (_isWorkspaceConnection)
             {
-                _logger.LogDebug("Skipping browser recycle: connected to Azure Playwright Workspaces, no local memory to reclaim.");
+                // Information, not Debug: ACA jobs typically run at Information level, and
+                // this is exactly the kind of "did the expected thing happen" signal that
+                // should be visible in production logs without turning on verbose logging.
+                _logger.LogInformation("Skipping browser recycle: connected to Azure Playwright Workspaces, no local memory to reclaim.");
                 return;
             }
 
