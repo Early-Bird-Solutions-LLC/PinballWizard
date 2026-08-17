@@ -61,6 +61,21 @@ param deployCohereRerank bool = false
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half — "PinballWizard Web" registration, GlobalAdmin app role per ADR-0009). Empty (default) leaves the Entra wiring entirely off: no AzureAd__* env vars, no ACA secret, and the app skips auth registration when AzureAd:TenantId is absent. The client secret is NOT a parameter — it lives in Key Vault (AzureAd-ClientSecret) and reaches the container only via the ACA secret keyVaultUrl reference.')
 param azureAdClientId string = ''
 
+// The Azure Playwright Workspaces region-connection endpoint (the value of the
+// PLAYWRIGHT_SERVICE_URL env var — verified 2026-08-17 by reading the installed
+// Azure.Developer.Playwright 1.0.0 assembly's string literals directly, not from
+// documentation, which does not publish the env var's name).
+//
+// This value is NOT computable from the workspace resource's own properties or ARM
+// outputs — verified against the Microsoft.LoadTestService provider's operations list
+// (no url/endpoint/connect operation exists) and the resource's PlaywrightWorkspaceProperties
+// schema (only localAuth, regionalAffinity). Microsoft's own quickstart instructs copying
+// it from the Azure portal's workspace "Get Started" page after the workspace is created —
+// see docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
+// Defaults to '' so a first deploy can create the playwrightWorkspace resource before this
+// value is known; a second deploy supplies it once obtained from the portal.
+param playwrightServiceUrl string = ''
+
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -2673,6 +2688,7 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrl }
     ]
   }
 }
@@ -3097,6 +3113,44 @@ resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAc
   }
 }
 
+// Azure Playwright Workspaces — runs Chromium remotely for the Stern Playwright
+// scrapers (stern-games, stern-bulletins, stern-refresh, and the GameListingScraper
+// path they share) instead of inside their 1 GiB ACA job containers. Fixes #855: a
+// locally-launched Chromium OOMKilled stern-games 9 consecutive nights, and the
+// existing per-page-count browser recycle could not stabilize it (each recycle cycle
+// re-ballooned to a higher peak than the last). See
+// docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
+resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@2025-09-01' = if (deployPhase2) {
+  name: '${namePrefix}-playwright-${environment}-${uniqueSuffix}'
+  location: location
+  tags: tags
+  properties: {
+    // Entra-only — matches Cosmos/App Insights DisableLocalAuth convention elsewhere
+    // in this file. No access-token secret to manage or rotate.
+    localAuth: 'Disabled'
+    // 'Disabled' pins connections to the workspace's own creation region rather than
+    // routing each worker to whichever region is closest to it — the single-region
+    // deployment this project runs has only one region for "closest" to mean anyway.
+    regionalAffinity: 'Disabled'
+  }
+}
+
+// Grants the shared acaIdentity UAMI (used by every ACA host, including all three
+// Stern Playwright jobs) permission to run browsers on the workspace. "Contributor",
+// not "Reader" — Reader explicitly cannot run browsers on the service, only view
+// results. Verified 2026-08-17 via `az role definition list` against this
+// subscription: role name "Playwright Workspace Contributor",
+// id 78cf819f-0969-4ebe-8759-015c6efcd5bf.
+resource playwrightWorkspaceContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: playwrightWorkspace
+  name: guid(playwrightWorkspace.id, '${namePrefix}-aca-id-${environment}', '78cf819f-0969-4ebe-8759-015c6efcd5bf')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '78cf819f-0969-4ebe-8759-015c6efcd5bf')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
 module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
   name: 'stern-games-scrape-job-${environment}'
   params: {
@@ -3119,6 +3173,7 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrl }
     ]
   }
 }
@@ -3155,6 +3210,7 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
       // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrl }
     ]
   }
 }

@@ -225,6 +225,21 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     /// depending on a real Linux /proc filesystem or a real Chromium process — the same
     /// seam already used by <see cref="CreateContextAsync"/> and <see cref="RecycleBrowserAsync"/>.
     /// </para>
+    /// <para>
+    /// When Azure Playwright Workspaces is configured (see
+    /// <see cref="PlaywrightFactory.IsWorkspaceUrlConfigured"/>), Chromium runs there, not
+    /// as a local child process — so this reads much lower, but NOT literally zero:
+    /// <c>Microsoft.Playwright.Playwright.CreateAsync()</c> always spawns the Node.js
+    /// Playwright driver locally, in both modes (every Playwright language binding talks
+    /// to a browser, local or remote, through that same local driver process) — its own
+    /// RSS (tens of MiB) is a real, measured value under invariant #17 (degrade visibly,
+    /// never fabricate), not a broken probe. What's actually gone from the local
+    /// descendant tree is Chromium itself and its renderer/GPU children — the
+    /// multi-hundred-MiB majority this probe used to measure — not the driver. The probe
+    /// and the local-recycle machinery around it remain fully meaningful whenever Chromium
+    /// itself runs locally — Development, or any environment without a configured
+    /// workspace.
+    /// </para>
     /// </remarks>
     protected virtual long? SampleChromiumDescendantRssBytes()
         => ProcTreeMemoryReader.GetDescendantResidentSetBytes(Environment.ProcessId);
@@ -365,7 +380,14 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                 // if recycling releases what it is documented to release, working set
                 // must fall measurably between these two samples. If it does not, the
                 // retained memory is not the browser's and the recycle is treating a
-                // symptom that was never the cause.
+                // symptom that was never the cause. Still meaningful in Azure Playwright
+                // Workspaces mode, where RecycleBrowserAsync is a documented no-op
+                // (#855, ADR-0056): process_working_set_bytes still reflects real .NET
+                // process state at each sample regardless of what the browser did, and
+                // chromium_descendant_rss_bytes reads consistently low (the local Node.js
+                // driver process's own RSS, not literally zero — Chromium itself is what's
+                // gone) on both sides — a true, consistent measurement, not a fabricated
+                // one (see that instrument's own remarks for the full explanation).
                 SampleMemory(MemorySamplePhase.PreRecycle);
 
                 await RecycleContextSafelyAsync(_context).ConfigureAwait(false);
@@ -373,7 +395,8 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
                 _pageCount = 0;
 
                 // Context disposal alone does not free browser-process memory. Recycle
-                // the browser process too so the next context starts at baseline footprint.
+                // the browser process too so the next context starts at baseline footprint
+                // — a no-op in workspace mode; see RecycleBrowserAsync's own remarks.
                 await RecycleBrowserAsync().ConfigureAwait(false);
 
                 SampleMemory(MemorySamplePhase.PostRecycle);

@@ -825,6 +825,19 @@ public static class PinballWizardTelemetry
         "pinwiz.scraper.chromium_descendant_rss_bytes",
         unit: "By",
         description: "Combined resident-set memory of every live descendant of the scraper process (the Playwright Node.js driver, the Chromium browser it launches, and that browser's renderer/GPU children), sampled alongside pinwiz.scraper.process_working_set_bytes via /proc on Linux. Tagged with scraper and phase. Linux-only — every ACA job this covers runs the Linux container image, but a local Windows/macOS dev run reports no data point for this instrument at all rather than a fabricated zero (a probe that cannot measure must say so, not read as 'Chromium used nothing'). Reads the quantity pinwiz.scraper.process_working_set_bytes's own description could previously only infer by subtracting it from ACA's container-level UsageBytes -- but read this as an UPPER BOUND on that quantity, not an exact match: summing per-process VmRSS across Chromium's own process tree double-counts every page more than one of its processes shares, which the cgroup-backed UsageBytes does not.");
+
+    // Emitted by PlaywrightFactory.GetBrowserAsync only when a workspace connection is
+    // actually attempted (PLAYWRIGHT_SERVICE_URL configured — #855, ADR-0056): the ACA
+    // job container no longer runs Chromium locally in that mode, so its own crash/OOM
+    // is no longer the failure mode to watch there. Connecting to Azure Playwright
+    // Workspaces is a new external dependency in that path, and #855's own history (a
+    // silent capability regression running undiagnosed for 9 nights) is exactly why
+    // this gets a counter from day one instead of waiting for the next incident to add
+    // it.
+    public static readonly Counter<long> ScraperWorkspaceConnectTotal = Meter.CreateCounter<long>(
+        "pinwiz.scraper.workspace_connect_total",
+        unit: "{connection}",
+        description: "Azure Playwright Workspaces connection attempts from PlaywrightFactory.GetBrowserAsync, tagged with outcome (\"success\" or \"failure\"). Emitted ONLY when PLAYWRIGHT_SERVICE_URL is configured and a connection is genuinely attempted -- an absent series means either the job never ran or it's running local Chromium (no workspace configured yet), matching this project's established absent-series convention (see pinwiz.scraper.links_discovered_total), not a failure signal on its own. \"failure\" excludes OperationCanceledException (job shutdown/SIGTERM mid-attempt is not a workspace failure) -- it never records at all for that case, rather than muddying the signal with cancellation noise. On a job execution window where the workspace IS configured and expected to be used, a \"failure\" tag appearing -- or \"success\" tags going silent where they were previously present -- is the signal to check.");
     // ── Scraper yield instrumentation (#857) ─────────────────────────────
     // Emitted by ScraperOrchestrator once per ISourceScraper run. Two instruments:
     //   links_discovered_total — the raw count of link items yielded. Emitted from

@@ -292,6 +292,7 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.managed_heap_bytes` | Histogram | `scraper`, `phase` | Managed heap (`GC.GetTotalMemory`, no forced collection). Rising in step with working set implicates retained managed state (`ScrapedItem` / `DocumentRecord` / catalog); flat while working set climbs implicates native or child-process memory. |
 | `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
 | `pinwiz.scraper.chromium_descendant_rss_bytes` | Histogram | `scraper`, `phase` | Combined resident-set memory of every live descendant process (the Playwright Node.js driver, Chromium, its renderer/GPU children), summed via `/proc` on Linux. Reads the "≈ Chromium" row above instead of only inferring it by subtracting `UsageBytes − process_working_set_bytes` — but as an **upper bound**, not an exact match: per-process VmRSS double-counts pages Chromium's own processes share with each other (IPC buffers, V8 snapshot, shared libraries), which the cgroup-backed `UsageBytes` does not. Linux-only — absent (not zero) on a non-Linux dev run. |
+| `pinwiz.scraper.workspace_connect_total` | Counter | `outcome` (`success`/`failure`) | Azure Playwright Workspaces connection attempts from `PlaywrightFactory.GetBrowserAsync`. Emitted **only** when `PLAYWRIGHT_SERVICE_URL` is configured and a connection is genuinely attempted — absent means either the job never ran or it's running local Chromium (no workspace configured yet), same absent-series convention as `links_discovered_total` below, not a failure signal on its own. On a job execution window where the workspace IS expected, a `failure` tag — or `success` tags going silent where they were previously present — is the signal to check. No alert rule wired to this yet; see ADR-0056. |
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
 browser recycle). `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
@@ -302,7 +303,25 @@ interface. `stern_edition_nav_fallback_total` (#855) carries `scraper` too — a
 `ISourceScraper.Name`, emitted from `GamePageScraper` — so it joins to these probes as well.
 The remaining `pinwiz.scraper.*` instruments do not carry it —
 `politeness_fallback_active` is untagged and `jsonld_missing_total` tags `source` — so those
-two series cannot be joined on `scraper`.
+two series cannot be joined on `scraper`. `workspace_connect_total` above carries neither
+`scraper` nor `phase` (just `outcome`) — it is process-wide, not per-page.
+
+> **#855 resolved 2026-08-17 (pending rollout verification).** Direct measurement via
+> `chromium_descendant_rss_bytes` showed the existing per-page-count browser recycle
+> genuinely freed memory (595→161 MiB in one observed cycle) but each subsequent cycle
+> re-ballooned to a higher peak than the last (713 MiB by page 12 of cycle 2, vs. 595 MiB
+> by page 20 of cycle 1) — a curve no fixed recycle interval could stabilize. Chromium now
+> runs on Azure Playwright Workspaces instead of inside the 1 GiB ACA job container
+> whenever `PLAYWRIGHT_SERVICE_URL` is configured (Development, and any environment
+> without that variable set, is unaffected — still local Chromium; see ADR-0056 for why
+> this is gated on the URL rather than on being deployed). When a workspace is
+> configured, `chromium_descendant_rss_bytes` correctly reads much lower — but not
+> literally zero: the Node.js Playwright driver process still runs locally in both modes
+> (that's how every Playwright language binding talks to a browser, local or remote), so
+> its own RSS (tens of MiB) is still a real, measured value. What's actually gone from the
+> local descendant tree is Chromium itself and its renderer/GPU children, not the driver.
+> That's expected, not a broken probe — see [ADR-0056](adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)
+> for the full explanation.
 
 > **Re-derive this from the emit sites before trusting it.** The passage above has been
 > wrong in both directions inside a single day: #894 claimed *every* `pinwiz.scraper.*`

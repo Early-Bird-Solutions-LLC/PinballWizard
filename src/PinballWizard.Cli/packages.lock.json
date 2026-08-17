@@ -532,6 +532,30 @@
         "resolved": "8.14.0",
         "contentHash": "iwbCpSjD3ehfTwBhtSNEtKPK0ICun6ov7Ibx6ISNA9bfwIyzI2Siwyi9eJFCJBwxowK9xcA1mj+jBWiigeqgcQ=="
       },
+      "Microsoft.IdentityModel.JsonWebTokens": {
+        "type": "Transitive",
+        "resolved": "6.35.0",
+        "contentHash": "9wxai3hKgZUb4/NjdRKfQd0QJvtXKDlvmGMYACbEC8DFaicMFCFhQFZq9ZET1kJLwZahf2lfY5Gtcpsx8zYzbg==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Tokens": "6.35.0"
+        }
+      },
+      "Microsoft.IdentityModel.Logging": {
+        "type": "Transitive",
+        "resolved": "6.35.0",
+        "contentHash": "jePrSfGAmqT81JDCNSY+fxVWoGuJKt9e6eJ+vT7+quVS55nWl//jGjUQn4eFtVKt4rt5dXaleZdHRB9J9AJZ7Q==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Abstractions": "6.35.0"
+        }
+      },
+      "Microsoft.IdentityModel.Tokens": {
+        "type": "Transitive",
+        "resolved": "6.35.0",
+        "contentHash": "RN7lvp7s3Boucg1NaNAbqDbxtlLj5Qeb+4uSS1TeK5FSBVM40P4DKaTKChT43sHyKfh7V0zkrMph6DdHvyA4bg==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Logging": "6.35.0"
+        }
+      },
       "Microsoft.SourceLink.Common": {
         "type": "Transitive",
         "resolved": "10.0.300",
@@ -650,6 +674,15 @@
           "Microsoft.Win32.SystemEvents": "6.0.0"
         }
       },
+      "System.IdentityModel.Tokens.Jwt": {
+        "type": "Transitive",
+        "resolved": "6.35.0",
+        "contentHash": "yxGIQd3BFK7F6S62/7RdZk3C/mfwyVxvh6ngd1VYMBmbJ1YZZA9+Ku6suylVtso0FjI0wbElpJ0d27CdsyLpBQ==",
+        "dependencies": {
+          "Microsoft.IdentityModel.JsonWebTokens": "6.35.0",
+          "Microsoft.IdentityModel.Tokens": "6.35.0"
+        }
+      },
       "System.IO.Hashing": {
         "type": "Transitive",
         "resolved": "10.0.8",
@@ -717,6 +750,7 @@
           "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
+          "Azure.Developer.Playwright": "[1.0.0, )",
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Query": "[1.7.1, )",
           "Azure.ResourceManager.AppContainers": "[1.5.0, )",
@@ -826,6 +860,16 @@
           "Microsoft.Identity.Client.Extensions.Msal": "4.84.2",
           "System.ClientModel": "1.14.0",
           "System.Memory.Data": "10.0.9"
+        }
+      },
+      "Azure.Developer.Playwright": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.0, )",
+        "resolved": "1.0.0",
+        "contentHash": "KpcTD1kqV/sxb5OvwvIKIbcKcZDBvFFH612dXibAsODrcUx8e9gJi4BsHCBDXPeMT9S42cF4kV2H8LtE4TDHRg==",
+        "dependencies": {
+          "Azure.Core": "1.47.3",
+          "System.IdentityModel.Tokens.Jwt": "6.35.0"
         }
       },
       "Azure.Identity": {
