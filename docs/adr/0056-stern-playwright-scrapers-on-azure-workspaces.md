@@ -124,6 +124,22 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   someone supplies the real value. Merging and deploying this PR is therefore safe on
   its own; the manual portal step is what *activates* the fix, not a prerequisite for
   the deploy not to break something that was working.
+- **`Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2**,
+  where every other resource in this stack lives (`location` param). This surfaced
+  post-merge: the deployment stack run for this PR's own merge commit never actually
+  executed (an unrelated deploy-workflow gap — a docs-only follow-up push landed before
+  the infra deploy completed and its diff-based skip logic saw no infra changes since
+  the *previous* push, missing that the prior push's own deploy had been cancelled), so
+  the resource was never created and the gap was caught by trying to deploy it directly
+  rather than by the pipeline. `az deployment group create` against `eastus2` fails
+  synchronously with `LocationNotAvailableForResourceType` — supported set
+  `eastus,westus3,westeurope,eastasia` (confirmed both via a live create attempt and via
+  `az provider show --namespace Microsoft.LoadTestService`; `what-if` does **not** catch
+  this, it reports the resource as creatable). Fixed by adding a dedicated
+  `playwrightWorkspaceLocation` param (default `eastus`) rather than reusing `location`
+  — the same sibling-region pattern this stack already uses for `searchLocation` (AI
+  Search Basic capacity exhaustion in East US 2, decision-log.md Phase 3 lesson 3), for
+  a harder reason: this is a fixed region restriction, not transient capacity.
 - **`PlaywrightServiceBrowserClient` is held for the browser connection's lifetime, not
   disposed immediately after use.** The installed 1.0.0 assembly's own string table
   references `RotationTimer`/`TimerCallback`, suggesting the client may own ongoing

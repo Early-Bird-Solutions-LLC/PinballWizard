@@ -63,6 +63,17 @@ param developerObjectId = ''
 //   az ad sp show --id 9bfa919b-d517-4ba8-a65f-a5d04025ddb1 --query id -o tsv
 param cicdDeployPrincipalId = 'c8466e83-9470-4cad-92a1-2d4149263fdc'
 
+// Region for the Azure Playwright Workspace. EAST US, deliberately — same
+// sibling-region move as searchLocation above, but for a harder reason: this
+// resource type does not support East US 2 at all (not a transient capacity
+// issue). Verified 2026-08-18 by attempting a real deploy of the resource
+// against 'eastus2': ARM rejected it synchronously with
+// `LocationNotAvailableForResourceType`, supported set
+// 'eastus,westus3,westeurope,eastasia'. `what-if` does NOT catch this — it
+// reported the resource as creatable; only a real `deployment group create`
+// surfaces the RP-side region check. Do not change this back to 'eastus2'.
+param playwrightWorkspaceLocation = 'eastus'
+
 // Azure Playwright Workspaces region-connection endpoint (#855, ADR-0056).
 // Intentionally empty: not a value this repo can default or guess (see the
 // top-level param's @description and ADR-0056's Consequences for why) — every
