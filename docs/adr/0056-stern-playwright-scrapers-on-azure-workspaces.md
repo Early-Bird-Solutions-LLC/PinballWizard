@@ -115,15 +115,33 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
 - **A new external dependency exists once a workspace is configured.** From that point
   on, the scrape depends on Azure Playwright Workspaces being reachable; an outage
   fails the scrape loudly rather than degrading it (see above).
-- **The workspace's region-connection endpoint (`PLAYWRIGHT_SERVICE_URL`) is not
-  computable from the ARM resource or its provider's operations** — Microsoft's own
-  documentation instructs copying it from the Azure portal after the workspace exists.
-  The Bicep parameter defaults to an empty string, and — because the code gates on the
-  URL's presence rather than on being deployed — an empty value means every job keeps
-  running exactly as it did before this change (local Chromium, existing recycle) until
-  someone supplies the real value. Merging and deploying this PR is therefore safe on
-  its own; the manual portal step is what *activates* the fix, not a prerequisite for
-  the deploy not to break something that was working.
+- **CORRECTED 2026-08-18 — the original claim here ("not computable from the ARM
+  resource or its provider's operations") was wrong, and shipped unverified.** It
+  described the create-time schema (`localAuth`, `regionalAffinity` only, per
+  Microsoft's Bicep/ARM-template reference page) but never checked the actual GET
+  response, which is a separate, undocumented-on-that-page surface. A live deploy
+  (2026-08-18) confirms the GET response includes `properties.dataplaneUri`
+  (`https://<region>.api.playwright.microsoft.com/playwrightworkspaces/<guid>`) and
+  `properties.workspaceId` — both real, populated, and now exposed as the
+  `playwrightWorkspaceDataplaneUri` Bicep output. **What remains genuinely
+  unverified** is whether `dataplaneUri` is, or deterministically transforms into,
+  the exact `PLAYWRIGHT_SERVICE_URL` value the SDK needs — the portal's documented
+  shape is `wss://<region>.api.playwright.microsoft.com/playwrightworkspaces/
+  <workspace-id>/browsers` (scheme swap + `/browsers` suffix vs. `dataplaneUri`).
+  An attempt to test this via `PlaywrightServiceBrowserClient.GetConnectOptionsAsync()`
+  against both the raw and transformed forms failed identically to a deliberately
+  garbage input string — inconclusive, not confirming either candidate, because the
+  failure was authorization-layer (no RBAC on the throwaway test resource used) and
+  never reached URL validation. Obtaining the value from the portal's "Get Started"
+  page remains the verified path until someone with a properly-RBAC'd identity (e.g.
+  the deployed ACA job's own managed identity, once this PR ships) confirms the
+  transform — or a human just compares the two strings once. The Bicep parameter
+  still defaults to an empty string, and — because the code gates on the URL's
+  presence rather than on being deployed — an empty value means every job keeps
+  running exactly as it did before this change (local Chromium, existing recycle)
+  until someone supplies the real value. Merging and deploying this PR is therefore
+  safe on its own; the manual portal step (for now) is what *activates* the fix, not
+  a prerequisite for the deploy not to break something that was working.
 - **`Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2**,
   where every other resource in this stack lives (`location` param). This surfaced
   post-merge: the deployment stack run for this PR's own merge commit never actually
@@ -140,6 +158,25 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   — the same sibling-region pattern this stack already uses for `searchLocation` (AI
   Search Basic capacity exhaustion in East US 2, decision-log.md Phase 3 lesson 3), for
   a harder reason: this is a fixed region restriction, not transient capacity.
+- **The resource name must be ≤24 characters, and the original one was 27.**
+  `playwrightWorkspaces` enforces `^[a-zA-Z0-9-]{3,24}$`, so
+  `pinwiz-playwright-dev-buutj` (27 chars; 28 with `environment: 'prod'`) is invalid.
+  ARM rejects this at **preflight**, which fails the entire `pinwiz-shared-dev` stack
+  run — every other resource in the template included — before anything is created. It
+  is not a truncation and not specific to this resource's own deployment. Fixed by
+  spelling the segment `-pw-` rather than `-playwright-`: worst case across the full
+  parameter domain (`namePrefix` at its `@maxLength(10)`, `environment: 'prod'`,
+  5-char `uniqueSuffix`) is exactly 24, whereas `-play-` (26) and `-pwright-` (29) both
+  overflow for a legal-but-longer `namePrefix` even though both fit today's `pinwiz`.
+  **Why this was not caught earlier is the more useful lesson:** the constraint is
+  stated plainly on the same Microsoft Learn reference page that was read while writing
+  this resource (`name | ... | Constraints:Pattern = ^[a-zA-Z0-9-]{3,24}$`), and
+  `az bicep build` does **not** check it — the pattern lives in the resource provider's
+  OpenAPI spec, not in the Bicep type, so every local validation gate this repo runs
+  passed a name ARM would always reject. The two failures compounded: the deploy-pipeline
+  gap (#910) meant the stack never ran for #907, and #911's own post-merge run was the
+  first time ARM ever saw this template at all — surfacing the region error and this one
+  only after two merges had already reported success.
 - **`PlaywrightServiceBrowserClient` is held for the browser connection's lifetime, not
   disposed immediately after use.** The installed 1.0.0 assembly's own string table
   references `RotationTimer`/`TimerCallback`, suggesting the client may own ongoing

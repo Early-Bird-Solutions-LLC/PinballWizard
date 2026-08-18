@@ -198,6 +198,24 @@ resource playwrightWorkspaceContributor 'Microsoft.Authorization/roleAssignments
 }
 ```
 
+> **Resolved during implementation, 2026-08-18:** `location: location` above is wrong —
+> `Microsoft.LoadTestService/playwrightWorkspaces` does not support this stack's region
+> (East US 2) at all, confirmed by a real `az deployment group create` attempt (ARM
+> rejected it synchronously with `LocationNotAvailableForResourceType`; supported set
+> `eastus,westus3,westeurope,eastasia`). The shipped code uses a dedicated
+> `playwrightWorkspaceLocation` param (default `eastus`, `@allowed`-constrained), the
+> same sibling-region pattern already used for `searchLocation`. The `regionalAffinity`
+> comment above ("no need for closest-region routing on a single-region deployment") is
+> also now inaccurate as a *justification* — the workspace and the rest of the stack are
+> two regions, not one — though `Disabled` is still the shipped, correct value for an
+> unrelated reason (a single workspace resource, so there's nothing to route between
+> regardless). The `name:` expression above is wrong too: this resource type caps names
+> at 24 characters (`^[a-zA-Z0-9-]{3,24}$`), and `pinwiz-playwright-dev-<suffix>` is 27
+> (28 for `prod`). That was not caught until the post-merge deploy of #911 failed at ARM
+> preflight; the shipped name uses `-pw-` instead of `-playwright-`. See
+> [ADR-0056](../../adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)
+> Consequences for the full account of both corrections.
+
 New env var on all four job container definitions that can reach a
 `PolitePlaywrightScraperBase` scraper — `stern-games`, `stern-bulletins`,
 `stern-refresh` (§ above), and the Stern listing path they share — with the
