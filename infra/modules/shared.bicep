@@ -61,10 +61,24 @@ param deployCohereRerank bool = false
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half — "PinballWizard Web" registration, GlobalAdmin app role per ADR-0009). Empty (default) leaves the Entra wiring entirely off: no AzureAd__* env vars, no ACA secret, and the app skips auth registration when AzureAd:TenantId is absent. The client secret is NOT a parameter — it lives in Key Vault (AzureAd-ClientSecret) and reaches the container only via the ACA secret keyVaultUrl reference.')
 param azureAdClientId string = ''
 
-// The Azure Playwright Workspaces region-connection endpoint (the value of the
-// PLAYWRIGHT_SERVICE_URL env var — verified 2026-08-17 by reading the installed
-// Azure.Developer.Playwright 1.0.0 assembly's string literals directly, not from
-// documentation, which does not publish the env var's name).
+@description('Azure region for the Azure Playwright Workspace. Deliberately NOT `location` (East US 2) — the resource type does not support East US 2 at all (fixed region list, not transient capacity). See the comment below for the verification and the full supported-region list.')
+// Same sibling-region pattern as `searchLocation` above, for a harder reason:
+// `Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2 at all —
+// this is not a transient capacity issue like AI Search's, it's a fixed region list.
+// Verified 2026-08-18 by attempting a real `az deployment group create` of this exact
+// resource type against location 'eastus2': ARM rejected it synchronously with
+// `LocationNotAvailableForResourceType`, reporting the full supported set as
+// 'eastus,westus3,westeurope,eastasia'. (`az provider show --namespace
+// Microsoft.LoadTestService` lists the same four under `resourceTypes[].locations`, but
+// a live create is the authoritative check — `what-if` did NOT catch this restriction,
+// reporting the resource as creatable.) 'eastus' is the closest of the four to East US 2
+// and matches the region `searchLocation` already relocated to.
+param playwrightWorkspaceLocation string = 'eastus'
+
+@description('The Azure Playwright Workspaces region-connection endpoint (PLAYWRIGHT_SERVICE_URL). NOT computable from the ARM resource or its provider operations — obtain it from the Azure portal workspace "Get Started" page after the workspace is created. See the comment below for how the env var name itself was verified.')
+// Verified 2026-08-17 by reading the installed Azure.Developer.Playwright 1.0.0
+// assembly's string literals directly, not from documentation, which does not
+// publish the env var's name.
 //
 // This value is NOT computable from the workspace resource's own properties or ARM
 // outputs — verified against the Microsoft.LoadTestService provider's operations list
@@ -3122,7 +3136,7 @@ resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAc
 // docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
 resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@2025-09-01' = if (deployPhase2) {
   name: '${namePrefix}-playwright-${environment}-${uniqueSuffix}'
-  location: location
+  location: playwrightWorkspaceLocation
   tags: tags
   properties: {
     // Entra-only — matches Cosmos/App Insights DisableLocalAuth convention elsewhere
@@ -3599,6 +3613,10 @@ output containerRegistryLoginServer string = containerRegistry.?properties.login
 
 output searchServiceName string = searchService.?name ?? ''
 output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'https://${searchService.name}.search.windows.net'
+
+// So an operator can locate the workspace to copy PLAYWRIGHT_SERVICE_URL from its
+// portal "Get Started" page without a manual `az resource list` (ADR-0056).
+output playwrightWorkspaceName string = playwrightWorkspace.?name ?? ''
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''

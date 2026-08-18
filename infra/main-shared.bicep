@@ -69,6 +69,15 @@ param wizardCustomDomain string = ''
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half). Empty default = Entra wiring off. See modules/shared.bicep azureAdClientId for the full contract; the client secret lives only in Key Vault.')
 param azureAdClientId string = ''
 
+@description('Azure region for the Azure Playwright Workspace. Defaults to `eastus`, NOT `location` — `Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2 at all (confirmed via a live deploy attempt: ARM rejects it with `LocationNotAvailableForResourceType`). The @allowed set below is that exact confirmed list, not a guess — ARM will reject any other value at deploy time regardless, so this just moves the failure from a live create attempt to template validation. Same sibling-region pattern as `searchLocation`. See modules/shared.bicep playwrightWorkspaceLocation for the full contract.')
+@allowed([
+  'eastus'
+  'westus3'
+  'westeurope'
+  'eastasia'
+])
+param playwrightWorkspaceLocation string = 'eastus'
+
 @description('Azure Playwright Workspaces region-connection endpoint (the PLAYWRIGHT_SERVICE_URL value the Stern Playwright scraper jobs read). Empty default = every job keeps launching local Chromium exactly as before #855 (ADR-0056) — this is NOT computable and cannot be defaulted meaningfully; obtain it from the workspace resource created by modules/shared.bicep, on its "Get Started" page in the Azure portal, then supply it here on a follow-up deploy. See modules/shared.bicep playwrightServiceUrl for the full contract.')
 param playwrightServiceUrl string = ''
 
@@ -143,6 +152,7 @@ module shared 'modules/shared.bicep' = {
     wizardCustomDomain: wizardCustomDomain
     wizardImageTag: wizardImageTag
     azureAdClientId: azureAdClientId
+    playwrightWorkspaceLocation: playwrightWorkspaceLocation
     playwrightServiceUrl: playwrightServiceUrl
     apiImageTag: apiImageTag
     ragIndexerImageTag: ragIndexerImageTag
@@ -170,6 +180,7 @@ output logAnalyticsWorkspaceName string = shared.outputs.logAnalyticsWorkspaceNa
 output keyVaultName string = shared.outputs.keyVaultName
 output containerRegistryName string = shared.outputs.containerRegistryName
 output searchServiceName string = shared.outputs.searchServiceName
+output playwrightWorkspaceName string = shared.outputs.playwrightWorkspaceName
 output openAiAccountName string = shared.outputs.openAiAccountName
 output documentIntelligenceName string = shared.outputs.documentIntelligenceName
 output documentIntelligenceEndpoint string = shared.outputs.documentIntelligenceEndpoint
