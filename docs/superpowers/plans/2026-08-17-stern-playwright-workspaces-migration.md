@@ -20,6 +20,29 @@
 > during implementation — a merged plan that contradicted the merged code with no note
 > would itself be exactly the kind of authoritative-looking-but-false artifact this
 > project's `sdd-artifact-hygiene.md` rule exists to prevent.
+>
+> **Revision, 2026-08-18.** Every claim below that the workspace's region-connection URL
+> value is "**not computable**" (in the Global Constraints bullet quoting that exact
+> phrase, and in the Task 2 Bicep snippet's comment further down) is also wrong as
+> stated, for the same reason as above: shipped unverified, corrected later. It
+> described only the create-time ARM schema; the actual GET response includes
+> `properties.dataplaneUri`/`properties.workspaceId`, both confirmed live and now
+> exposed as Bicep outputs. What's still unverified is whether `dataplaneUri` equals
+> (or transforms deterministically into) the exact `PLAYWRIGHT_SERVICE_URL` string the
+> SDK needs. See
+> [ADR-0056](../../adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)'s
+> Consequences section for the corrected, current record. (Deliberately not using line
+> numbers to point at either instance here — this note's own insertion shifts every
+> line number below it, which is exactly how the first version of this note ended up
+> pointing at the wrong line.)
+>
+> Two further corrections from the same date, both found only when the post-merge deploy
+> actually ran for the first time: the workspace resource's `location:` and `name:` in
+> the Task 2 Bicep snippet below are both wrong. `Microsoft.LoadTestService/playwrightWorkspaces`
+> does not support East US 2 at all (shipped code uses a dedicated
+> `playwrightWorkspaceLocation`, default `eastus`), and the type caps names at 24
+> characters, which `pinwiz-playwright-<env>-<suffix>` (27–28) exceeds — the shipped name
+> uses `-pw-`. Same ADR-0056 Consequences section for both.
 
 **Goal:** Stop `pinwiz-job-stern-games` (and its sibling jobs `stern-bulletins`, `stern-refresh`) OOMKilling by routing Chromium off the 1 GiB ACA job container and onto Azure Playwright Workspaces when deployed, while leaving local development untouched.
 

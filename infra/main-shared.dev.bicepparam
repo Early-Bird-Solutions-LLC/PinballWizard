@@ -75,13 +75,14 @@ param cicdDeployPrincipalId = 'c8466e83-9470-4cad-92a1-2d4149263fdc'
 param playwrightWorkspaceLocation = 'eastus'
 
 // Azure Playwright Workspaces region-connection endpoint (#855, ADR-0056).
-// Intentionally empty: not a value this repo can default or guess (see the
-// top-level param's @description and ADR-0056's Consequences for why) — every
-// Stern Playwright scraper job keeps launching local Chromium exactly as it did
-// before #855 until this is filled in. Obtain the real value from the
-// playwrightWorkspace resource's "Get Started" page in the Azure portal AFTER
-// modules/shared.bicep has been deployed once (the resource must exist first),
-// then set it here and redeploy.
+// Intentionally empty: NOT yet defaulted here — whether it's computable from the
+// workspace's dataplaneUri output is unverified, not proven impossible (see the
+// top-level param's @description and ADR-0056's Consequences for the corrected,
+// current record) — every Stern Playwright scraper job keeps launching local
+// Chromium exactly as it did before #855 until this is filled in. Obtain the real
+// value from the playwrightWorkspace resource's "Get Started" page in the Azure
+// portal AFTER modules/shared.bicep has been deployed once (the resource must
+// exist first), then set it here and redeploy.
 param playwrightServiceUrl = ''
 
 // Entra OIDC sign-in for the Wizard web app (PR-B0 infra half).
