@@ -167,46 +167,86 @@ jobs:
 
           BASE_SHA=""
 
+          # Keep stdout and stderr separate: gh writes deprecation/auth warnings to
+          # stderr even on success, and folding them in with 2>&1 would corrupt the
+          # JSON, making the jq parse below fail and silently forcing the bootstrap
+          # path (run_stack=true) on every push — the same misfire as the bug this
+          # step exists to fix.
+          GH_LIST_ERR=$(mktemp)
           if ! GH_RUNS=$(gh run list \
                 --workflow=deploy.yml \
                 --branch=main \
                 --status=success \
                 --json databaseId,headSha \
-                --limit=50 2>&1); then
+                --limit=50 2>"$GH_LIST_ERR"); then
             echo "::warning::gh run list failed — cannot determine last-deployed SHA (#910)."
-            echo "::warning::Output: $GH_RUNS"
+            echo "::warning::Stderr: $(cat "$GH_LIST_ERR")"
+            rm -f "$GH_LIST_ERR"
             echo "::warning::Running the deployment stack rather than risking a silent skip."
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          rm -f "$GH_LIST_ERR"
 
           # Walk recent successful workflow runs and find the first one where the
           # deployment stack job itself reached conclusion=success (not just skipped).
           # The overall workflow can succeed even when deploy-jobs was *skipped*
           # (run_stack=false on that run), so a job-level check is necessary.
+          #
+          # jq note: parentheses around `.databaseId | tostring` are required — `|` is
+          # the lowest-precedence jq operator, so without them `[.databaseId | tostring,
+          # .headSha]` parses as `[.databaseId | (tostring, .headSha)]`, applying
+          # `.headSha` to a number rather than to the run object → jq error → zero rows
+          # → loop never executes → BASE_SHA always empty (boot-strap on every push).
+          _gh_view_fails=0
+          _job_missing_warned=0
           while IFS=$'\t' read -r run_id head_sha; do
-            if JOBS_JSON=$(gh run view "$run_id" --json jobs 2>/dev/null); then
-              # NOTE: the job name below must stay in sync with the deploy-jobs job's `name:` field.
-              # If that field is ever renamed, select() finds nothing → BASE_SHA stays empty →
-              # run_stack=true on every push (safe direction, but unnecessarily noisy).
-              deploy_conclusion=$(printf '%s' "$JOBS_JSON" | jq -r \
-                '.jobs[] | select(.name == "Repoint ACA jobs via deployment stack") | .conclusion // empty')
-              if [ "$deploy_conclusion" = "success" ]; then
-                BASE_SHA="$head_sha"
-                echo "Last successful deployment stack run: #$run_id at $head_sha"
-                break
-              fi
+            GH_VIEW_ERR=$(mktemp)
+            if ! JOBS_JSON=$(gh run view "$run_id" --json jobs \
+                              2>"$GH_VIEW_ERR" </dev/null); then
+              _gh_view_fails=$((_gh_view_fails + 1))
+              rm -f "$GH_VIEW_ERR"
+              continue
+            fi
+            rm -f "$GH_VIEW_ERR"
+
+            # NOTE: the job name below must stay in sync with the deploy-jobs job's
+            # `name:` field. If that field is ever renamed, select() returns nothing
+            # (conclusion=""), not "skipped". The loop then exhausts all 50 runs,
+            # BASE_SHA stays empty, and every push takes the bootstrap path
+            # (run_stack=true) — which risks the 715-123420 RTFP throttle documented
+            # at lines 108-116 above. An empty conclusion here means either a rename
+            # or an unexpectedly old run structure; warn once so it surfaces.
+            deploy_conclusion=$(printf '%s' "$JOBS_JSON" | jq -r \
+              '.jobs[] | select(.name == "Repoint ACA jobs via deployment stack") | .conclusion // empty')
+            if [ "$deploy_conclusion" = "success" ]; then
+              BASE_SHA="$head_sha"
+              echo "Last successful deployment stack run: #$run_id at $head_sha"
+              break
+            elif [ -z "$deploy_conclusion" ] && [ "$_job_missing_warned" = "0" ]; then
+              echo "::warning::deploy-jobs job ('Repoint ACA jobs via deployment stack') not found in"
+              echo "::warning::run #$run_id. If it was renamed, this lookup will always exhaust all runs"
+              echo "::warning::and fall back to run_stack=true (RTFP risk — see lines 108-116)."
+              _job_missing_warned=1
             fi
           done < <(printf '%s' "$GH_RUNS" | \
-                   jq -r '.[] | [.databaseId | tostring, .headSha] | @tsv')
+                   jq -r '.[] | [(.databaseId | tostring), .headSha] | @tsv')
+
+          if [ "$_gh_view_fails" -gt 0 ]; then
+            echo "::warning::$_gh_view_fails gh run view call(s) failed (token scope, API 5xx, or rate limit)."
+            echo "::warning::Those runs were skipped; result may be based on fewer than 50 candidates."
+          fi
 
           if [ -z "$BASE_SHA" ]; then
             # Bootstrap: no prior run has deploy-jobs=success (first deploy ever,
-            # or every recent run was cancelled/failed before the stack completed).
-            # Fail toward run_stack=true — same posture as every other uncertain case.
+            # or every recent run was cancelled/failed before the stack completed,
+            # or all gh run view calls failed). Use ::warning:: so this appears in
+            # GHA annotations, not buried in the step log — invariant #17
+            # ("fallbacks must not hide failures"), the posture this step cites
+            # throughout.
+            echo "::warning::No prior successful deployment stack run found in the last 50 runs."
+            echo "::warning::Treating as first deployment — running the stack."
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
-            echo "No prior successful deployment stack run found in the last 50 runs."
-            echo "Treating as first deployment — running the stack."
             exit 0
           fi
 
