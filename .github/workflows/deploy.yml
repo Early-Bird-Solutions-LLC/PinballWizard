@@ -92,6 +92,8 @@ on:
 permissions:
   contents: read
   id-token: write   # required for OIDC token exchange with Azure
+  actions: read     # detect-changes reads workflow run history to find the last
+                    # successfully-deployed SHA rather than github.event.before (#910)
 
 concurrency:
   # One deploy at a time on main; a new push cancels an in-progress one.
@@ -121,10 +123,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          # Full history: the comparison base is now the HEAD SHA of the last
+          # successful deployment stack run, which may be many commits behind HEAD
+          # (e.g. after a chain of docs-only or cancelled pushes). The old
+          # fetch-depth:2 only reached one commit back (github.event.before); the
+          # new baseline can be arbitrarily older. See #910.
+          fetch-depth: 0
 
       - name: Check for CLI or infra changes
         id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # workflow_dispatch: always run the stack (operator intent).
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -132,38 +141,92 @@ jobs:
             echo "Manual trigger — unconditionally running the deployment stack."
             exit 0
           fi
-          BEFORE="${{ github.event.before }}"
-          # Zero SHA = first commit / force-push with no common ancestor — treat
-          # as changed rather than silently skipping the stack run.
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+
+          # ── Find the real deployment base (#910) ────────────────────────────
+          # BUG: the old approach diffed HEAD against github.event.before (the SHA
+          # of the immediately prior push to main). That is wrong when a prior deploy
+          # run was cancelled mid-flight: if push N added infra changes but its deploy
+          # run was cancelled by push N+1 arriving before it finished, N+1's
+          # detect-changes diffed N+1 against N. If N+1 only touched docs, run_stack
+          # came out false — even though N's infra changes were never applied anywhere.
+          # The failure was silent: no failed step, no red X, just a legitimately-green
+          # "no infra changes" skip computed against the wrong comparison base.
+          # Confirmed live: #907's Playwright Workspace resource never appeared in Azure
+          # because #908 (a docs-only bot PR) cancelled and then superseded #907's deploy
+          # run. The stack's lastModified predated #907's merge entirely.
+          #
+          # Fix: diff against the HEAD SHA of the most recent deploy.yml run on main
+          # where the deploy-jobs job actually completed with conclusion=success —
+          # meaning the deployment stack was applied and infra is known-current at that
+          # commit. A run where deploy-jobs was *skipped* (run_stack=false on that run)
+          # is not a valid baseline: the deployed state is unchanged from whatever ran
+          # before it. A cancelled or failed overall run is also not valid. This extends
+          # the "fail toward run_stack=true" posture already established for the zero-SHA
+          # and shallow-clone cases: when genuinely uncertain about the baseline, run the
+          # stack rather than risk a silent skip (invariant #17, #859, #910).
+
+          BASE_SHA=""
+
+          if ! GH_RUNS=$(gh run list \
+                --workflow=deploy.yml \
+                --branch=main \
+                --status=success \
+                --json databaseId,headSha \
+                --limit=50 2>&1); then
+            echo "::warning::gh run list failed — cannot determine last-deployed SHA (#910)."
+            echo "::warning::Output: $GH_RUNS"
+            echo "::warning::Running the deployment stack rather than risking a silent skip."
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
-            echo "No prior SHA available — assuming CLI/infra changed."
             exit 0
           fi
-          # The base commit must actually be present. fetch-depth is 2, which covers a
-          # single-commit push, but a multi-commit push or a force-push puts $BEFORE out
-          # of reach. Piping `git diff` straight into grep would hide that: the pipeline
-          # takes grep's exit status, a failed diff produces no output, grep reports "no
-          # match", and the else branch silently sets run_stack=false. The stack would be
-          # skipped on a GREEN run — which is exactly the stale-image bug #859 exists to
-          # fix, reintroduced invisibly and intermittently.
-          #
-          # So: resolve the diff separately, and on ANY failure fall toward RUNNING the
-          # stack. A redundant stack run is cheap and idempotent; a silently skipped one
-          # leaves 20 jobs on stale code with nothing to indicate it. This matches how the
-          # zero-SHA case above already fails toward true, and honours "fallbacks must not
-          # hide failures" (invariant #17) — the degradation is loud, via ::warning::.
-          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+
+          # Walk recent successful workflow runs and find the first one where the
+          # deployment stack job itself reached conclusion=success (not just skipped).
+          # The overall workflow can succeed even when deploy-jobs was *skipped*
+          # (run_stack=false on that run), so a job-level check is necessary.
+          while IFS=$'\t' read -r run_id head_sha; do
+            if JOBS_JSON=$(gh run view "$run_id" --json jobs 2>/dev/null); then
+              deploy_conclusion=$(printf '%s' "$JOBS_JSON" | jq -r \
+                '.jobs[] | select(.name == "Repoint ACA jobs via deployment stack") | .conclusion // empty')
+              if [ "$deploy_conclusion" = "success" ]; then
+                BASE_SHA="$head_sha"
+                echo "Last successful deployment stack run: #$run_id at $head_sha"
+                break
+              fi
+            fi
+          done < <(printf '%s' "$GH_RUNS" | \
+                   jq -r '.[] | [.databaseId | tostring, .headSha] | @tsv')
+
+          if [ -z "$BASE_SHA" ]; then
+            # Bootstrap: no prior run has deploy-jobs=success (first deploy ever,
+            # or every recent run was cancelled/failed before the stack completed).
+            # Fail toward run_stack=true — same posture as every other uncertain case.
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Base commit $BEFORE is not present in this clone (shallow fetch)."
+            echo "No prior successful deployment stack run found in the last 50 runs."
+            echo "Treating as first deployment — running the stack."
+            exit 0
+          fi
+
+          echo "Comparing HEAD (${{ github.sha }}) against last-deployed $BASE_SHA."
+
+          # ── Resolve the diff ────────────────────────────────────────────────
+          # fetch-depth:0 above ensures BASE_SHA is present in the clone. The
+          # git cat-file check is kept as a belt-and-suspenders guard against edge
+          # cases (e.g. a force-pushed history, an unexpectedly missing object).
+          # On any failure, fall toward run_stack=true — matching the existing
+          # hardening pattern that the zero-SHA and shallow-clone cases already use,
+          # and honouring "fallbacks must not hide failures" (invariant #17).
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "run_stack=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Base commit $BASE_SHA not reachable despite fetch-depth:0 (unexpected)."
             echo "::warning::Running the deployment stack rather than skipping it."
             exit 0
           fi
 
           DIFF_ERR=$(mktemp)
-          if ! CHANGED=$(git diff --name-only "$BEFORE" HEAD 2>"$DIFF_ERR"); then
+          if ! CHANGED=$(git diff --name-only "$BASE_SHA" HEAD 2>"$DIFF_ERR"); then
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::git diff against $BEFORE failed:"
+            echo "::warning::git diff against $BASE_SHA failed:"
             sed 's/^/::warning::  /' "$DIFF_ERR"
             rm -f "$DIFF_ERR"
             echo "::warning::Running the deployment stack rather than skipping it."
@@ -174,10 +237,10 @@ jobs:
           if printf '%s\n' "$CHANGED" | grep -qE \
             '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/|deploy/)'; then
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
-            echo "CLI or infra paths changed — deployment stack will run."
+            echo "CLI or infra paths changed since $BASE_SHA — deployment stack will run."
           else
             echo "run_stack=false" >> "$GITHUB_OUTPUT"
-            echo "No CLI or infra changes detected — skipping deployment stack run."
+            echo "No CLI or infra changes since last successful stack deployment ($BASE_SHA) — skipping."
           fi
 
   build-deploy:
