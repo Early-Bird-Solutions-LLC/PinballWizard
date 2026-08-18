@@ -61,7 +61,7 @@ param deployCohereRerank bool = false
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half — "PinballWizard Web" registration, GlobalAdmin app role per ADR-0009). Empty (default) leaves the Entra wiring entirely off: no AzureAd__* env vars, no ACA secret, and the app skips auth registration when AzureAd:TenantId is absent. The client secret is NOT a parameter — it lives in Key Vault (AzureAd-ClientSecret) and reaches the container only via the ACA secret keyVaultUrl reference.')
 param azureAdClientId string = ''
 
-// Region for the Azure Playwright Workspace, deliberately NOT `location` (East US 2).
+@description('Azure region for the Azure Playwright Workspace. Deliberately NOT `location` (East US 2) — the resource type does not support East US 2 at all (fixed region list, not transient capacity). See the comment below for the verification and the full supported-region list.')
 // Same sibling-region pattern as `searchLocation` above, for a harder reason:
 // `Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2 at all —
 // this is not a transient capacity issue like AI Search's, it's a fixed region list.
@@ -75,10 +75,10 @@ param azureAdClientId string = ''
 // and matches the region `searchLocation` already relocated to.
 param playwrightWorkspaceLocation string = 'eastus'
 
-// The Azure Playwright Workspaces region-connection endpoint (the value of the
-// PLAYWRIGHT_SERVICE_URL env var — verified 2026-08-17 by reading the installed
-// Azure.Developer.Playwright 1.0.0 assembly's string literals directly, not from
-// documentation, which does not publish the env var's name).
+@description('The Azure Playwright Workspaces region-connection endpoint (PLAYWRIGHT_SERVICE_URL). NOT computable from the ARM resource or its provider operations — obtain it from the Azure portal workspace "Get Started" page after the workspace is created. See the comment below for how the env var name itself was verified.')
+// Verified 2026-08-17 by reading the installed Azure.Developer.Playwright 1.0.0
+// assembly's string literals directly, not from documentation, which does not
+// publish the env var's name.
 //
 // This value is NOT computable from the workspace resource's own properties or ARM
 // outputs — verified against the Microsoft.LoadTestService provider's operations list
@@ -3613,6 +3613,10 @@ output containerRegistryLoginServer string = containerRegistry.?properties.login
 
 output searchServiceName string = searchService.?name ?? ''
 output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'https://${searchService.name}.search.windows.net'
+
+// So an operator can locate the workspace to copy PLAYWRIGHT_SERVICE_URL from its
+// portal "Get Started" page without a manual `az resource list` (ADR-0056).
+output playwrightWorkspaceName string = playwrightWorkspace.?name ?? ''
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''

@@ -174,6 +174,7 @@ output logAnalyticsWorkspaceName string = shared.outputs.logAnalyticsWorkspaceNa
 output keyVaultName string = shared.outputs.keyVaultName
 output containerRegistryName string = shared.outputs.containerRegistryName
 output searchServiceName string = shared.outputs.searchServiceName
+output playwrightWorkspaceName string = shared.outputs.playwrightWorkspaceName
 output openAiAccountName string = shared.outputs.openAiAccountName
 output documentIntelligenceName string = shared.outputs.documentIntelligenceName
 output documentIntelligenceEndpoint string = shared.outputs.documentIntelligenceEndpoint
