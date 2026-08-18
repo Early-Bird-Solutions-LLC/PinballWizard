@@ -78,7 +78,7 @@ param azureAdClientId string = ''
 ])
 param playwrightWorkspaceLocation string = 'eastus'
 
-@description('Azure Playwright Workspaces region-connection endpoint (the PLAYWRIGHT_SERVICE_URL value the Stern Playwright scraper jobs read). Empty default = every job keeps launching local Chromium exactly as before #855 (ADR-0056) — this is NOT computable and cannot be defaulted meaningfully; obtain it from the workspace resource created by modules/shared.bicep, on its "Get Started" page in the Azure portal, then supply it here on a follow-up deploy. See modules/shared.bicep playwrightServiceUrl for the full contract.')
+@description('Azure Playwright Workspaces region-connection endpoint (the PLAYWRIGHT_SERVICE_URL value the Stern Playwright scraper jobs read). Empty default = every job keeps launching local Chromium exactly as before #855 (ADR-0056). NOT yet computed here even though modules/shared.bicep now exposes playwrightWorkspaceDataplaneUri — the exact transform from that value to this one is unverified, not proven impossible (corrected 2026-08-18, see ADR-0056 Consequences). Obtain the real value from the workspace resource created by modules/shared.bicep, on its "Get Started" page in the Azure portal, then supply it here on a follow-up deploy. See modules/shared.bicep playwrightServiceUrl for the full contract.')
 param playwrightServiceUrl string = ''
 
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
@@ -181,6 +181,7 @@ output keyVaultName string = shared.outputs.keyVaultName
 output containerRegistryName string = shared.outputs.containerRegistryName
 output searchServiceName string = shared.outputs.searchServiceName
 output playwrightWorkspaceName string = shared.outputs.playwrightWorkspaceName
+output playwrightWorkspaceDataplaneUri string = shared.outputs.playwrightWorkspaceDataplaneUri
 output openAiAccountName string = shared.outputs.openAiAccountName
 output documentIntelligenceName string = shared.outputs.documentIntelligenceName
 output documentIntelligenceEndpoint string = shared.outputs.documentIntelligenceEndpoint

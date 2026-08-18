@@ -75,19 +75,32 @@ param azureAdClientId string = ''
 // and matches the region `searchLocation` already relocated to.
 param playwrightWorkspaceLocation string = 'eastus'
 
-@description('The Azure Playwright Workspaces region-connection endpoint (PLAYWRIGHT_SERVICE_URL). NOT computable from the ARM resource or its provider operations — obtain it from the Azure portal workspace "Get Started" page after the workspace is created. See the comment below for how the env var name itself was verified.')
+@description('The Azure Playwright Workspaces region-connection endpoint (PLAYWRIGHT_SERVICE_URL). NOT the same value as playwrightWorkspaceDataplaneUri below, and the exact transform between them is unverified (corrected 2026-08-18) — obtain it from the Azure portal workspace "Get Started" page after the workspace is created until that transform is confirmed. See the comment below for how the env var name itself was verified.')
 // Verified 2026-08-17 by reading the installed Azure.Developer.Playwright 1.0.0
 // assembly's string literals directly, not from documentation, which does not
 // publish the env var's name.
 //
-// This value is NOT computable from the workspace resource's own properties or ARM
-// outputs — verified against the Microsoft.LoadTestService provider's operations list
-// (no url/endpoint/connect operation exists) and the resource's PlaywrightWorkspaceProperties
-// schema (only localAuth, regionalAffinity). Microsoft's own quickstart instructs copying
-// it from the Azure portal's workspace "Get Started" page after the workspace is created —
-// see docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
+// CORRECTED 2026-08-18: this used to claim the value is "NOT computable from the
+// workspace resource's own properties or ARM outputs," verified only against the
+// create-time PlaywrightWorkspaceProperties schema (localAuth, regionalAffinity) and
+// Microsoft's Bicep/ARM-template reference page — which does not document read-only
+// GET-response fields. It was wrong: a live GET response includes
+// `properties.dataplaneUri` and `properties.workspaceId` (confirmed against a real
+// deploy), now exposed as the playwrightWorkspaceDataplaneUri output below.
+// What's still unverified is whether dataplaneUri IS or transforms deterministically
+// into this exact value — the portal's documented shape is
+// `wss://<region>.api.playwright.microsoft.com/playwrightworkspaces/<workspace-id>/browsers`
+// (scheme swap + `/browsers` suffix vs. dataplaneUri's `https://` and no suffix). An
+// attempt to confirm this via PlaywrightServiceBrowserClient.GetConnectOptionsAsync()
+// failed identically for the raw value, the transformed guess, and a deliberately
+// garbage string — inconclusive (the failure was authorization-layer, no RBAC on the
+// throwaway resource used to test it, not URL-validation-layer). See ADR-0056
+// Consequences for the full account. Until the transform is confirmed (e.g. from the
+// deployed ACA job's own RBAC'd identity, or a human comparing both strings once),
+// this still comes from the Azure portal's workspace "Get Started" page — see
+// docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
 // Defaults to '' so a first deploy can create the playwrightWorkspace resource before this
-// value is known; a second deploy supplies it once obtained from the portal.
+// value is known; a second deploy supplies it once obtained.
 param playwrightServiceUrl string = ''
 
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
@@ -3135,16 +3148,35 @@ resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAc
 // re-ballooned to a higher peak than the last). See
 // docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
 resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@2025-09-01' = if (deployPhase2) {
-  name: '${namePrefix}-playwright-${environment}-${uniqueSuffix}'
+  // 'pw', not 'playwright' — this resource type caps names at 24 chars
+  // (`^[a-zA-Z0-9-]{3,24}$`, enforced at ARM PREFLIGHT, so an over-long name fails
+  // the whole stack run before anything deploys; it is not a truncation). The
+  // original '-playwright-' spelling produced 27 chars for dev / 28 for prod and
+  // was the actual cause of the failed deploy on 7a1e8f1 (#911). Worst case across
+  // the full parameter domain — namePrefix at its @maxLength(10), environment
+  // 'prod', 5-char uniqueSuffix — is 10+1+2+1+4+1+5 = 24, exactly at the limit;
+  // 'play' (26) and 'pwright' (29) both overflow it, so 'pw' is the only spelling
+  // that is safe for every legal namePrefix rather than merely for 'pinwiz'.
+  // Terse abbreviation matches the convention already used across this file for
+  // length-constrained resources (kv, ai, law, st, acr).
+  name: '${namePrefix}-pw-${environment}-${uniqueSuffix}'
   location: playwrightWorkspaceLocation
   tags: tags
   properties: {
     // Entra-only — matches Cosmos/App Insights DisableLocalAuth convention elsewhere
     // in this file. No access-token secret to manage or rotate.
     localAuth: 'Disabled'
-    // 'Disabled' pins connections to the workspace's own creation region rather than
-    // routing each worker to whichever region is closest to it — the single-region
-    // deployment this project runs has only one region for "closest" to mean anyway.
+    // 'Disabled' pins connections to the workspace's own creation region
+    // (playwrightWorkspaceLocation, 'eastus') rather than routing each worker to
+    // whichever supported region is closest to it. CORRECTED 2026-08-18: this used
+    // to justify that with "the single-region deployment this project runs has only
+    // one region for closest to mean anyway" — no longer true since
+    // playwrightWorkspaceLocation ('eastus') was split from the rest of the stack's
+    // `location` ('eastus2'). The simpler, still-accurate reason: there is exactly
+    // one playwrightWorkspace resource, so Enabled vs Disabled has no observable
+    // difference today regardless of where a connecting worker runs — Disabled is
+    // kept because it's the explicit, doesn't-depend-on-Microsoft's-routing-logic
+    // choice, not because there's no alternative region to route to.
     regionalAffinity: 'Disabled'
   }
 }
@@ -3617,6 +3649,13 @@ output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'h
 // So an operator can locate the workspace to copy PLAYWRIGHT_SERVICE_URL from its
 // portal "Get Started" page without a manual `az resource list` (ADR-0056).
 output playwrightWorkspaceName string = playwrightWorkspace.?name ?? ''
+
+// `dataplaneUri` is a real, populated GET-response property, confirmed 2026-08-18
+// against a live deploy — correcting ADR-0056's prior "not computable" claim. It is
+// NOT the same string as PLAYWRIGHT_SERVICE_URL (scheme + path suffix differ) and
+// the transform between them is unverified. See ADR-0056 Consequences for the full
+// account. Exposed here so a human can compare it against the portal's copy.
+output playwrightWorkspaceDataplaneUri string = playwrightWorkspace.?properties.dataplaneUri ?? ''
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''
