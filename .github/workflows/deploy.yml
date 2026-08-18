@@ -176,7 +176,7 @@ jobs:
           if ! GH_RUNS=$(gh run list \
                 --workflow=deploy.yml \
                 --branch=main \
-                --status=success \
+                --status=completed \
                 --json databaseId,headSha \
                 --limit=50 2>"$GH_LIST_ERR"); then
             echo "::warning::gh run list failed — cannot determine last-deployed SHA (#910)."
