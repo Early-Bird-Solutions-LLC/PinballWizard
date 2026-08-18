@@ -61,11 +61,13 @@ No staging / pre-prod separation at current scale. `dev` is the live showcase en
 | Resource type | Mechanism | Trigger |
 | --- | --- | --- |
 | ACA Apps (Wizard, Api, RAG-indexer) | `az containerapp update --image :{sha}` — each matrix leg | Every source change (their respective paths) |
-| 20 ACA Jobs (all scraper / linker / OPDB-sync crons) | `az stack sub create` (`deploy-jobs` job) | CLI/infra/`deploy/` paths changed |
+| 20 ACA Jobs (all scraper / linker / OPDB-sync crons) | `az stack sub create` (`deploy-jobs` job) | CLI/infra/`deploy/` paths changed since the last successful stack run |
 
 **ACA Jobs and the CLI image.** All 20 jobs share a single `cliImageTag` parameter threaded through `infra/main-shared.bicep`. The `deploy-jobs` workflow job runs a full subscription-scoped Deployment Stack update with the new `pinwiz-cli:{sha}` tag — all 20 jobs are repointed atomically. This closes the historical gap where job images could lag merged code by weeks (issue #859).
 
 The stack run is gated on CLI, infra, or `deploy/` (the `scheduled-cli-job` Bicep module every job is built from) path changes to avoid triggering the Azure CognitiveServices RTFP throttle (error 715-123420) that fires after ~3–5 rapid Foundry model-deployment cycles. This is a CognitiveServices-specific throttle, not a Deployment Stack limit (which has no documented per-day cap per Microsoft Learn).
+
+The comparison base for that path check is the HEAD SHA of the most recent `deploy.yml` run on `main` whose `deploy-jobs` job itself completed successfully — not the previous push. So infra changes whose deploy run was cancelled mid-flight are still applied by the next push, even if that push touched no gated path (issue #910). If no such run is found in the last 50, or the lookup fails, the stack runs rather than being silently skipped.
 
 **Operator prerequisites for `deploy-jobs`.** Two one-time setups gate the automated repoint: the GitHub OIDC service principal needs **Owner at subscription scope** (`az stack sub create` operates at subscription scope and the template writes role assignments — Contributor is not sufficient), and the repository secret **`DEVELOPER_OBJECT_ID`** must hold the developer's Entra Object ID (an empty value would strip developer data-plane RBAC under `--action-on-unmanage deleteResources` — issue #744). If either is missing the job fails loudly — at the secret guard or at the `az stack sub validate` preflight, before anything is mutated — and the 20 jobs stay on their previous image until it is fixed. Exact remediation commands are in the `deploy.yml` header comment.
 
