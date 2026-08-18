@@ -186,6 +186,9 @@ jobs:
           # (run_stack=false on that run), so a job-level check is necessary.
           while IFS=$'\t' read -r run_id head_sha; do
             if JOBS_JSON=$(gh run view "$run_id" --json jobs 2>/dev/null); then
+              # NOTE: the job name below must stay in sync with the deploy-jobs job's `name:` field.
+              # If that field is ever renamed, select() finds nothing → BASE_SHA stays empty →
+              # run_stack=true on every push (safe direction, but unnecessarily noisy).
               deploy_conclusion=$(printf '%s' "$JOBS_JSON" | jq -r \
                 '.jobs[] | select(.name == "Repoint ACA jobs via deployment stack") | .conclusion // empty')
               if [ "$deploy_conclusion" = "success" ]; then
@@ -207,7 +210,7 @@ jobs:
             exit 0
           fi
 
-          echo "Comparing HEAD (${{ github.sha }}) against last-deployed $BASE_SHA."
+          echo "Comparing HEAD (${GITHUB_SHA}) against last-deployed $BASE_SHA."
 
           # ── Resolve the diff ────────────────────────────────────────────────
           # fetch-depth:0 above ensures BASE_SHA is present in the clone. The
