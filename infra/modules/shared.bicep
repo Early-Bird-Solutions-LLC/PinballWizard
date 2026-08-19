@@ -120,6 +120,14 @@ param playwrightServiceUrl string = ''
 // re-provision anything).
 param useSternPlaywrightWorkspace bool = true
 
+@description('TEMPORARY diagnostic (#920): set true to enable verbose Azure SDK event-source tracing (PINWIZ_AZURE_SDK_DIAGNOSTICS) on the three Stern Playwright jobs. Default false. Turn back off once the workspace auth failure is resolved — it is high-volume and bills against the Log Analytics 1 GB cap.')
+// The Playwright SDK throws a bare `System.Exception: Could not authenticate with the
+// service.` with no inner exception and no status code — byte-identical whether the
+// caller has no RBAC, the wrong role, or is refused for a non-identity reason. Azure.Core's
+// event source carries the actual HTTP response, which is the missing fact. Scoped to the
+// three Stern jobs because they are the only consumers of the workspace path.
+param enableAzureSdkDiagnostics bool = false
+
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -2733,6 +2741,7 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
       { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrlEffective }
+      { name: 'PINWIZ_AZURE_SDK_DIAGNOSTICS', value: string(enableAzureSdkDiagnostics) }
     ]
   }
 }
@@ -3263,6 +3272,7 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
       { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrlEffective }
+      { name: 'PINWIZ_AZURE_SDK_DIAGNOSTICS', value: string(enableAzureSdkDiagnostics) }
     ]
   }
 }
@@ -3300,6 +3310,7 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
       { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrlEffective }
+      { name: 'PINWIZ_AZURE_SDK_DIAGNOSTICS', value: string(enableAzureSdkDiagnostics) }
     ]
   }
 }
