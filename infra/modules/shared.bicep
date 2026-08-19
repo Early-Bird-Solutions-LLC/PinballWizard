@@ -105,6 +105,21 @@ param playwrightWorkspaceLocation string = 'eastus'
 // `wss://${location}.api.playwright.microsoft.com/...` would silently rot.
 param playwrightServiceUrl string = ''
 
+@description('Kill switch: set false to force every Stern Playwright scraper back onto LOCAL Chromium even though the workspace resource exists. Default true (use the workspace). This restores the rollback that playwrightServiceUrl = \'\' used to provide before the endpoint became derived — see the comment below.')
+// Before the endpoint was derived (2026-08-19), an empty playwrightServiceUrl meant
+// "no workspace configured", so clearing it was the operator's way to put the scrapers
+// back on local Chromium. Deriving the value took that away: empty now means "derive",
+// and every non-empty string is treated as a workspace URL, so there was no value an
+// operator could set to disable the workspace path while deployPhase2 stayed true.
+//
+// That matters more here than it would elsewhere because ADR-0056 deliberately has NO
+// local-Chromium fallback — a workspace outage fails the scrape loudly. Without this
+// flag the only escape from a misbehaving workspace would be deleting the resource or
+// shipping a code change; with it, the rollback is a parameter flip and a redeploy, and
+// it is non-destructive (the workspace resource stays put, so flipping back does not
+// re-provision anything).
+param useSternPlaywrightWorkspace bool = true
+
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -3192,19 +3207,22 @@ resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@202
 // playwrightServiceUrl param above for the full history of this claim (it was twice
 // documented as not computable before anyone checked a live GET response).
 //
-// Precedence: an explicit playwrightServiceUrl always wins, so the derivation can be
-// overridden without editing this file. Otherwise it derives from the workspace. When
-// deployPhase2 is false the workspace does not exist, `.?` yields null, and this stays
-// empty — which PlaywrightFactory.IsWorkspaceUrlConfigured reads as "not configured",
-// leaving every scraper on local Chromium exactly as before #855 (ADR-0056). The empty
-// case is therefore a real, safe state, not a failure to be papered over.
+// Precedence, highest first:
+//   1. useSternPlaywrightWorkspace = false  → '' (kill switch; force local Chromium)
+//   2. explicit playwrightServiceUrl        → that value (redirect to another workspace)
+//   3. otherwise                            → derived from this workspace's dataplaneUri
+//
+// When deployPhase2 is false the workspace does not exist, `.?` yields null, and this
+// stays empty anyway. Empty is read by PlaywrightFactory.IsWorkspaceUrlConfigured as
+// "not configured", leaving every scraper on local Chromium exactly as before #855
+// (ADR-0056) — a real, safe state, not a failure being papered over.
 var playwrightWorkspaceDataplaneUriValue = playwrightWorkspace.?properties.dataplaneUri ?? ''
 var playwrightServiceUrlDerived = empty(playwrightWorkspaceDataplaneUriValue)
   ? ''
   : '${replace(playwrightWorkspaceDataplaneUriValue, 'https://', 'wss://')}/browsers'
-var playwrightServiceUrlEffective = empty(playwrightServiceUrl)
-  ? playwrightServiceUrlDerived
-  : playwrightServiceUrl
+var playwrightServiceUrlEffective = !useSternPlaywrightWorkspace
+  ? ''
+  : (empty(playwrightServiceUrl) ? playwrightServiceUrlDerived : playwrightServiceUrl)
 
 // Grants the shared acaIdentity UAMI (used by every ACA host, including all three
 // Stern Playwright jobs) permission to run browsers on the workspace. "Contributor",
@@ -3684,7 +3702,7 @@ output playwrightWorkspaceDataplaneUri string = playwrightWorkspaceDataplaneUriV
 // The endpoint the Stern scraper jobs are actually configured with. Empty means "not
 // configured" — every scraper stays on local Chromium (ADR-0056), which is a valid
 // state, not a fault. Non-empty means the #855 workspace path is live.
-output playwrightServiceUrl string = playwrightServiceUrlEffective
+output playwrightServiceUrlEffective string = playwrightServiceUrlEffective
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''

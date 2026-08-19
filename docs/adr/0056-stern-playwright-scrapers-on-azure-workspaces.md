@@ -155,6 +155,16 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   scraper on local Chromium. Once this deploys, the three Stern jobs connect to the
   remote workspace, and per the no-fallback decision above a workspace outage now fails
   those runs loudly rather than silently reverting to the OOM-prone local path.
+
+  Deriving the value also silently **removed a rollback** that nobody had named as one:
+  while the endpoint was manual, clearing `playwrightServiceUrl` was how an operator put
+  the scrapers back on local Chromium. Once empty means "derive", no value disables the
+  workspace path — and because there is deliberately no fallback, the only escape from a
+  misbehaving workspace would have been deleting the resource or shipping code. A
+  dedicated `useSternPlaywrightWorkspace` flag (default `true`) restores it: setting it
+  `false` forces local Chromium while leaving the resource in place, so the rollback is a
+  parameter flip and a redeploy, non-destructively. Precedence is kill switch → explicit
+  override → derived.
 - **`Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2**,
   where every other resource in this stack lives (`location` param). This surfaced
   post-merge: the deployment stack run for this PR's own merge commit never actually

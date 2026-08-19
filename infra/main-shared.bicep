@@ -81,6 +81,9 @@ param playwrightWorkspaceLocation string = 'eastus'
 @description('OPTIONAL manual override for the Playwright Workspaces endpoint (PLAYWRIGHT_SERVICE_URL). Leave empty (default) — as of 2026-08-19 this value is DERIVED inside modules/shared.bicep from the workspace resource own dataplaneUri, so the previously-required manual portal copy is retired. Set this only to target a different workspace, or if Microsoft changes the endpoint shape and the derivation breaks. See modules/shared.bicep playwrightServiceUrl for the verification history.')
 param playwrightServiceUrl string = ''
 
+@description('Kill switch for the #855 workspace path. Set false to force every Stern Playwright scraper back onto LOCAL Chromium while leaving the workspace resource in place — a non-destructive, parameter-only rollback if the workspace misbehaves. Default true. Needed because ADR-0056 has no local-Chromium fallback: a workspace outage fails those scrapes loudly, so there must be a way out that is not a code change.')
+param useSternPlaywrightWorkspace bool = true
+
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -154,6 +157,7 @@ module shared 'modules/shared.bicep' = {
     azureAdClientId: azureAdClientId
     playwrightWorkspaceLocation: playwrightWorkspaceLocation
     playwrightServiceUrl: playwrightServiceUrl
+    useSternPlaywrightWorkspace: useSternPlaywrightWorkspace
     apiImageTag: apiImageTag
     ragIndexerImageTag: ragIndexerImageTag
     cliImageTag: cliImageTag
@@ -183,7 +187,7 @@ output searchServiceName string = shared.outputs.searchServiceName
 output playwrightWorkspaceName string = shared.outputs.playwrightWorkspaceName
 output playwrightWorkspaceDataplaneUri string = shared.outputs.playwrightWorkspaceDataplaneUri
 // Empty = Stern scrapers on local Chromium; non-empty = #855 workspace path live.
-output playwrightServiceUrl string = shared.outputs.playwrightServiceUrl
+output playwrightServiceUrlEffective string = shared.outputs.playwrightServiceUrlEffective
 output openAiAccountName string = shared.outputs.openAiAccountName
 output documentIntelligenceName string = shared.outputs.documentIntelligenceName
 output documentIntelligenceEndpoint string = shared.outputs.documentIntelligenceEndpoint
