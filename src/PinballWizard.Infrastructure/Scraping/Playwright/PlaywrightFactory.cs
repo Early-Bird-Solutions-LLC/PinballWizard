@@ -338,7 +338,24 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             //
             // Mirrors what the disconnected-cleanup path in GetBrowserAsync and
             // DisposeAsync already do — this was the one path that forgot.
-            _playwright?.Dispose();
+            //
+            // Suppressed, unlike those two. Recycle runs MID-SCRAPE, every N pages, so an
+            // exception escaping here would abort the whole source — and because the throw
+            // happens before the field is cleared, it would also leave the very driver this
+            // block exists to reap orphaned. Failing a catalog run to report a problem
+            // disposing a process that is being discarded anyway trades a large loss for no
+            // gain. The equivalent calls in DisposeAsync and the disconnected-cleanup path
+            // run at shutdown or during re-acquisition, where a throw costs far less, which
+            // is why they are left bare. Logged at Debug for the same reason the sibling
+            // browser-disposal suppression is: it is an expected, uninteresting outcome.
+            try
+            {
+                _playwright?.Dispose();
+            }
+            catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+            {
+                _logger.LogDebug(ex, "Suppressed error disposing the Playwright driver during recycle.");
+            }
             _playwright = null;
         }
         finally
