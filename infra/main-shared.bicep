@@ -84,6 +84,9 @@ param playwrightServiceUrl string = ''
 @description('Kill switch for the #855 workspace path. Set false to force every Stern Playwright scraper back onto LOCAL Chromium while leaving the workspace resource in place — a non-destructive, parameter-only rollback if the workspace misbehaves. Default true. Needed because ADR-0056 has no local-Chromium fallback: a workspace outage fails those scrapes loudly, so there must be a way out that is not a code change.')
 param useSternPlaywrightWorkspace bool = true
 
+@description('TEMPORARY diagnostic (#920): enables verbose Azure SDK tracing on the three Stern Playwright jobs, to turn the contentless Playwright SDK auth exception into an actual HTTP status code. Default false; turn off once resolved. See modules/shared.bicep enableAzureSdkDiagnostics.')
+param enableAzureSdkDiagnostics bool = false
+
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -158,6 +161,7 @@ module shared 'modules/shared.bicep' = {
     playwrightWorkspaceLocation: playwrightWorkspaceLocation
     playwrightServiceUrl: playwrightServiceUrl
     useSternPlaywrightWorkspace: useSternPlaywrightWorkspace
+    enableAzureSdkDiagnostics: enableAzureSdkDiagnostics
     apiImageTag: apiImageTag
     ragIndexerImageTag: ragIndexerImageTag
     cliImageTag: cliImageTag

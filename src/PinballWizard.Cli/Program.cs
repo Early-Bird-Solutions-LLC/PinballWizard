@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using PinballWizard.Cli;
 using PinballWizard.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -2216,6 +2217,12 @@ static async Task<bool> TryPersistSynthesizedRawDocAsync(
 
 static IHost CreateHost(string[] args)
 {
+    // Before anything else touches a credential: opt-in Azure SDK tracing (#920).
+    // Must precede AddServiceDefaults, which resolves SharedAzureCredential — token
+    // acquisition events raised during that call are exactly what the listener is here
+    // to capture, and a listener attached afterwards would miss them.
+    AzureSdkDiagnostics.EnableIfConfigured();
+
     var builder = Host.CreateApplicationBuilder(args);
 
     // Aspire shared defaults — OpenTelemetry (logs / metrics / traces with the

@@ -161,3 +161,10 @@ param wizardCustomDomain = 'pinwiz.ai'
 // First deploy of a partner MaaS model may require accepting the Cohere
 // Marketplace terms on the subscription.
 param deployCohereRerank = true
+
+// TEMPORARY (#920) — verbose Azure SDK tracing on the three Stern Playwright jobs.
+// Enabled deliberately to diagnose the workspace auth failure: the Playwright SDK's
+// exception carries no status code, so Azure.Core's event source is the only place the
+// real HTTP response is visible. REVERT TO false once #920 is resolved — this is
+// high-volume and bills against the Log Analytics 1 GB cap.
+param enableAzureSdkDiagnostics = true
