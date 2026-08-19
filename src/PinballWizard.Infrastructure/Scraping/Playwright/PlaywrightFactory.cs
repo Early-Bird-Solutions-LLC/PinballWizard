@@ -204,9 +204,11 @@ public sealed class PlaywrightFactory : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 "PLAYWRIGHT_SERVICE_URL is not set. This environment attempted to connect to Azure " +
-                "Playwright Workspaces (ADR-0056) — the endpoint value is obtained from the workspace's " +
-                "'Get Started' page in the Azure portal after infra/modules/shared.bicep is deployed. " +
-                "See docs/adr/0056-stern-playwright-scrapers-on-azure-workspaces.md.");
+                "Playwright Workspaces (ADR-0056). Deployed hosts receive this env var from " +
+                "infra/modules/shared.bicep, which derives it from the playwrightWorkspace resource — " +
+                "so an empty value here usually means that resource was not deployed (deployPhase2 " +
+                "false, or the deployment stack has not run since it was added) rather than a missing " +
+                "manual step. See docs/adr/0056-stern-playwright-scrapers-on-azure-workspaces.md.");
         }
 
         try

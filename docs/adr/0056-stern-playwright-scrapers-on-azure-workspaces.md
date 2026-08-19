@@ -123,25 +123,48 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   (2026-08-18) confirms the GET response includes `properties.dataplaneUri`
   (`https://<region>.api.playwright.microsoft.com/playwrightworkspaces/<guid>`) and
   `properties.workspaceId` — both real, populated, and now exposed as the
-  `playwrightWorkspaceDataplaneUri` Bicep output. **What remains genuinely
-  unverified** is whether `dataplaneUri` is, or deterministically transforms into,
-  the exact `PLAYWRIGHT_SERVICE_URL` value the SDK needs — the portal's documented
-  shape is `wss://<region>.api.playwright.microsoft.com/playwrightworkspaces/
-  <workspace-id>/browsers` (scheme swap + `/browsers` suffix vs. `dataplaneUri`).
-  An attempt to test this via `PlaywrightServiceBrowserClient.GetConnectOptionsAsync()`
-  against both the raw and transformed forms failed identically to a deliberately
-  garbage input string — inconclusive, not confirming either candidate, because the
-  failure was authorization-layer (no RBAC on the throwaway test resource used) and
-  never reached URL validation. Obtaining the value from the portal's "Get Started"
-  page remains the verified path until someone with a properly-RBAC'd identity (e.g.
-  the deployed ACA job's own managed identity, once this PR ships) confirms the
-  transform — or a human just compares the two strings once. The Bicep parameter
-  still defaults to an empty string, and — because the code gates on the URL's
-  presence rather than on being deployed — an empty value means every job keeps
-  running exactly as it did before this change (local Chromium, existing recycle)
-  until someone supplies the real value. Merging and deploying this PR is therefore
-  safe on its own; the manual portal step (for now) is what *activates* the fix, not
-  a prerequisite for the deploy not to break something that was working.
+  `playwrightWorkspaceDataplaneUri` Bicep output.
+- **RESOLVED 2026-08-19 — the endpoint IS computable, and the manual portal step is
+  retired.** The remaining open question above was whether `dataplaneUri`
+  deterministically transforms into the `PLAYWRIGHT_SERVICE_URL` the SDK needs. It
+  does. Measured against the live workspace `pinwiz-pw-dev-buutj`:
+
+  | source | value |
+  | --- | --- |
+  | `properties.dataplaneUri` (ARM) | `https://eastus.api.playwright.microsoft.com/playwrightworkspaces/ec28b0b8-…` |
+  | portal "Get Started" page | `wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/ec28b0b8-…/browsers` |
+
+  Character-for-character, the second is the first with the scheme swapped to `wss://`
+  and `/browsers` appended. `modules/shared.bicep` now derives it
+  (`playwrightServiceUrlEffective`), so `playwrightServiceUrl` becomes an optional
+  override rather than a required manual input, and no operator has to visit the portal.
+
+  Two notes on how this was settled, because the path here was not clean. First, the
+  earlier SDK-based attempt to confirm the transform was **inconclusive, and correctly
+  reported as such** — it failed identically for the real value, the transformed guess,
+  *and* a deliberately garbage control string, which proved only that the failure was
+  authorization-layer (no RBAC on the throwaway test resource) and never reached URL
+  validation. The control string is what made that legible; without it the failure would
+  have read as evidence against the transform. Second, the derivation is written against
+  `dataplaneUri` rather than reassembled from `location` + `workspaceId`, so a future
+  change to Microsoft's hostname pattern is followed automatically instead of silently
+  rotting in a hardcoded template string.
+
+  **This is the change that actually activates #855.** Everything before it was inert by
+  construction: the code gates on the URL's *presence*, so an empty value left every
+  scraper on local Chromium. Once this deploys, the three Stern jobs connect to the
+  remote workspace, and per the no-fallback decision above a workspace outage now fails
+  those runs loudly rather than silently reverting to the OOM-prone local path.
+
+  Deriving the value also silently **removed a rollback** that nobody had named as one:
+  while the endpoint was manual, clearing `playwrightServiceUrl` was how an operator put
+  the scrapers back on local Chromium. Once empty means "derive", no value disables the
+  workspace path — and because there is deliberately no fallback, the only escape from a
+  misbehaving workspace would have been deleting the resource or shipping code. A
+  dedicated `useSternPlaywrightWorkspace` flag (default `true`) restores it: setting it
+  `false` forces local Chromium while leaving the resource in place, so the rollback is a
+  parameter flip and a redeploy, non-destructively. Precedence is kill switch → explicit
+  override → derived.
 - **`Microsoft.LoadTestService/playwrightWorkspaces` does not support East US 2**,
   where every other resource in this stack lives (`location` param). This surfaced
   post-merge: the deployment stack run for this PR's own merge commit never actually

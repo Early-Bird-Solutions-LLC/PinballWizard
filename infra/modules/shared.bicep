@@ -75,33 +75,50 @@ param azureAdClientId string = ''
 // and matches the region `searchLocation` already relocated to.
 param playwrightWorkspaceLocation string = 'eastus'
 
-@description('The Azure Playwright Workspaces region-connection endpoint (PLAYWRIGHT_SERVICE_URL). NOT the same value as playwrightWorkspaceDataplaneUri below, and the exact transform between them is unverified (corrected 2026-08-18) — obtain it from the Azure portal workspace "Get Started" page after the workspace is created until that transform is confirmed. See the comment below for how the env var name itself was verified.')
-// Verified 2026-08-17 by reading the installed Azure.Developer.Playwright 1.0.0
-// assembly's string literals directly, not from documentation, which does not
-// publish the env var's name.
+@description('OPTIONAL manual override for the Azure Playwright Workspaces region-connection endpoint (PLAYWRIGHT_SERVICE_URL). Leave empty (default) — the value is now DERIVED from the workspace resource itself (see playwrightServiceUrlEffective below). Set this only to point the Stern scraper jobs at some other workspace, or if Microsoft ever changes the endpoint shape and the derivation breaks.')
+// The env var name `PLAYWRIGHT_SERVICE_URL` was verified 2026-08-17 by reading the
+// installed Azure.Developer.Playwright 1.0.0 assembly's string literals directly, not
+// from documentation, which does not publish it.
 //
-// CORRECTED 2026-08-18: this used to claim the value is "NOT computable from the
-// workspace resource's own properties or ARM outputs," verified only against the
-// create-time PlaywrightWorkspaceProperties schema (localAuth, regionalAffinity) and
-// Microsoft's Bicep/ARM-template reference page — which does not document read-only
-// GET-response fields. It was wrong: a live GET response includes
-// `properties.dataplaneUri` and `properties.workspaceId` (confirmed against a real
-// deploy), now exposed as the playwrightWorkspaceDataplaneUri output below.
-// What's still unverified is whether dataplaneUri IS or transforms deterministically
-// into this exact value — the portal's documented shape is
-// `wss://<region>.api.playwright.microsoft.com/playwrightworkspaces/<workspace-id>/browsers`
-// (scheme swap + `/browsers` suffix vs. dataplaneUri's `https://` and no suffix). An
-// attempt to confirm this via PlaywrightServiceBrowserClient.GetConnectOptionsAsync()
-// failed identically for the raw value, the transformed guess, and a deliberately
-// garbage string — inconclusive (the failure was authorization-layer, no RBAC on the
-// throwaway resource used to test it, not URL-validation-layer). See ADR-0056
-// Consequences for the full account. Until the transform is confirmed (e.g. from the
-// deployed ACA job's own RBAC'd identity, or a human comparing both strings once),
-// this still comes from the Azure portal's workspace "Get Started" page — see
-// docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md.
-// Defaults to '' so a first deploy can create the playwrightWorkspace resource before this
-// value is known; a second deploy supplies it once obtained.
+// History of this parameter, because it reversed twice and the reasoning matters:
+//
+//   1. Originally documented as "NOT computable from the ARM resource" and required a
+//      manual copy from the portal. That was checked only against the CREATE-time
+//      PlaywrightWorkspaceProperties schema (localAuth, regionalAffinity) and
+//      Microsoft's Bicep/ARM template reference page, which omits read-only
+//      GET-response fields. Wrong.
+//   2. Corrected 2026-08-18 once a live GET showed `properties.dataplaneUri` and
+//      `properties.workspaceId` are real and populated — but the derivation from
+//      dataplaneUri to this value was left UNVERIFIED rather than guessed, per
+//      no-guessing.md.
+//   3. Verified 2026-08-19 against the live workspace `pinwiz-pw-dev-buutj`. Its portal
+//      "Get Started" page emits exactly:
+//        wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/ec28b0b8-…/browsers
+//      and its dataplaneUri is:
+//        https://eastus.api.playwright.microsoft.com/playwrightworkspaces/ec28b0b8-…
+//      i.e. character-for-character the scheme swap plus a `/browsers` suffix. The
+//      derivation below is that transform, so the manual portal step is now retired.
+//
+// Derived from dataplaneUri rather than rebuilt from region + workspaceId on purpose:
+// dataplaneUri is the service's own statement of its host, so if Microsoft ever changes
+// the hostname pattern this follows automatically, whereas a hand-assembled
+// `wss://${location}.api.playwright.microsoft.com/...` would silently rot.
 param playwrightServiceUrl string = ''
+
+@description('Kill switch: set false to force every Stern Playwright scraper back onto LOCAL Chromium even though the workspace resource exists. Default true (use the workspace). This restores the rollback that playwrightServiceUrl = \'\' used to provide before the endpoint became derived — see the comment below.')
+// Before the endpoint was derived (2026-08-19), an empty playwrightServiceUrl meant
+// "no workspace configured", so clearing it was the operator's way to put the scrapers
+// back on local Chromium. Deriving the value took that away: empty now means "derive",
+// and every non-empty string is treated as a workspace URL, so there was no value an
+// operator could set to disable the workspace path while deployPhase2 stayed true.
+//
+// That matters more here than it would elsewhere because ADR-0056 deliberately has NO
+// local-Chromium fallback — a workspace outage fails the scrape loudly. Without this
+// flag the only escape from a misbehaving workspace would be deleting the resource or
+// shipping a code change; with it, the rollback is a parameter flip and a redeploy, and
+// it is non-destructive (the workspace resource stays put, so flipping back does not
+// re-provision anything).
+param useSternPlaywrightWorkspace bool = true
 
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
@@ -2715,7 +2732,7 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
       // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
-      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrl }
+      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrlEffective }
     ]
   }
 }
@@ -3181,6 +3198,32 @@ resource playwrightWorkspace 'Microsoft.LoadTestService/playwrightWorkspaces@202
   }
 }
 
+// The value the Stern Playwright jobs actually receive as PLAYWRIGHT_SERVICE_URL.
+//
+// Derivation verified 2026-08-19 against the live workspace: dataplaneUri
+// `https://<region>.api.playwright.microsoft.com/playwrightworkspaces/<id>` becomes the
+// portal's published browser endpoint by swapping the scheme to `wss://` and appending
+// `/browsers` — matched character-for-character against the "Get Started" page. See the
+// playwrightServiceUrl param above for the full history of this claim (it was twice
+// documented as not computable before anyone checked a live GET response).
+//
+// Precedence, highest first:
+//   1. useSternPlaywrightWorkspace = false  → '' (kill switch; force local Chromium)
+//   2. explicit playwrightServiceUrl        → that value (redirect to another workspace)
+//   3. otherwise                            → derived from this workspace's dataplaneUri
+//
+// When deployPhase2 is false the workspace does not exist, `.?` yields null, and this
+// stays empty anyway. Empty is read by PlaywrightFactory.IsWorkspaceUrlConfigured as
+// "not configured", leaving every scraper on local Chromium exactly as before #855
+// (ADR-0056) — a real, safe state, not a failure being papered over.
+var playwrightWorkspaceDataplaneUriValue = playwrightWorkspace.?properties.dataplaneUri ?? ''
+var playwrightServiceUrlDerived = empty(playwrightWorkspaceDataplaneUriValue)
+  ? ''
+  : '${replace(playwrightWorkspaceDataplaneUriValue, 'https://', 'wss://')}/browsers'
+var playwrightServiceUrlEffective = !useSternPlaywrightWorkspace
+  ? ''
+  : (empty(playwrightServiceUrl) ? playwrightServiceUrlDerived : playwrightServiceUrl)
+
 // Grants the shared acaIdentity UAMI (used by every ACA host, including all three
 // Stern Playwright jobs) permission to run browsers on the workspace. "Contributor",
 // not "Reader" — Reader explicitly cannot run browsers on the service, only view
@@ -3219,7 +3262,7 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
       // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
-      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrl }
+      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrlEffective }
     ]
   }
 }
@@ -3256,7 +3299,7 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
       // Pins DefaultAzureCredential to the shared UAMI (acaIdentity) so the Azure Monitor
       // OTel exporters authenticate via Entra (pinwiz-ai-dev has DisableLocalAuth=true — #840).
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
-      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrl }
+      { name: 'PLAYWRIGHT_SERVICE_URL', value: playwrightServiceUrlEffective }
     ]
   }
 }
@@ -3646,16 +3689,20 @@ output containerRegistryLoginServer string = containerRegistry.?properties.login
 output searchServiceName string = searchService.?name ?? ''
 output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'https://${searchService.name}.search.windows.net'
 
-// So an operator can locate the workspace to copy PLAYWRIGHT_SERVICE_URL from its
-// portal "Get Started" page without a manual `az resource list` (ADR-0056).
+// So an operator can identify the workspace without a manual `az resource list`
+// (ADR-0056). No longer needed to fetch PLAYWRIGHT_SERVICE_URL — that is derived.
 output playwrightWorkspaceName string = playwrightWorkspace.?name ?? ''
 
-// `dataplaneUri` is a real, populated GET-response property, confirmed 2026-08-18
-// against a live deploy — correcting ADR-0056's prior "not computable" claim. It is
-// NOT the same string as PLAYWRIGHT_SERVICE_URL (scheme + path suffix differ) and
-// the transform between them is unverified. See ADR-0056 Consequences for the full
-// account. Exposed here so a human can compare it against the portal's copy.
-output playwrightWorkspaceDataplaneUri string = playwrightWorkspace.?properties.dataplaneUri ?? ''
+// `dataplaneUri` is a real, populated GET-response property (confirmed 2026-08-18
+// against a live deploy), undocumented on Microsoft's template reference page. Kept as
+// an output for operator diagnostics — it is the input the PLAYWRIGHT_SERVICE_URL value
+// below is derived from, so seeing both makes a derivation problem obvious at a glance.
+output playwrightWorkspaceDataplaneUri string = playwrightWorkspaceDataplaneUriValue
+
+// The endpoint the Stern scraper jobs are actually configured with. Empty means "not
+// configured" — every scraper stays on local Chromium (ADR-0056), which is a valid
+// state, not a fault. Non-empty means the #855 workspace path is live.
+output playwrightServiceUrlEffective string = playwrightServiceUrlEffective
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''
