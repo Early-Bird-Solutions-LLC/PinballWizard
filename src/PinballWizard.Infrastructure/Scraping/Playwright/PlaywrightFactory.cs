@@ -321,6 +321,25 @@ public sealed class PlaywrightFactory : IAsyncDisposable
                 _logger.LogDebug(ex, "Suppressed error recycling Playwright browser process.");
             }
             _browser = null;
+
+            // #906: dispose the driver too, not just the browser. Microsoft.Playwright's
+            // CreateAsync() spawns a Node.js driver process, and GetBrowserAsync
+            // unconditionally reassigns `_playwright = await Playwright.CreateAsync()` on
+            // the next call — so leaving this field populated orphaned one live Node
+            // process per recycle, with nothing holding a handle to ever reap it.
+            //
+            // This is not merely untidy: ProcTreeMemoryReader sums RSS across every
+            // descendant of the .NET process, so each orphan kept counting toward
+            // chromium_descendant_rss_bytes and toward the container's 1 GiB ceiling.
+            // That makes it a concrete, measured mechanism for the cycle-over-cycle climb
+            // #855 observed but never explained — each recycle freed the browser while
+            // silently adding a driver. It does NOT prove the leak was the whole story;
+            // it removes one real contributor so the remaining curve can be read honestly.
+            //
+            // Mirrors what the disconnected-cleanup path in GetBrowserAsync and
+            // DisposeAsync already do — this was the one path that forgot.
+            _playwright?.Dispose();
+            _playwright = null;
         }
         finally
         {
