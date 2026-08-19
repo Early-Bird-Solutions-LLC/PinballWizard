@@ -69,6 +69,27 @@ jobs:
           # the action use it directly (OVERRIDE_GITHUB_TOKEN in action.yml) and
           # skips the doomed exchange.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # #865: this input defaults to "" and an empty value allows NO bots, so
+          # every bot-authored review — which is the only kind this workflow exists
+          # to triage — was rejected before any work happened. Verified against
+          # anthropics/claude-code-action action.yml at the commit v1 resolves to
+          # (903583c): "Comma-separated list of allowed bot usernames, or '*' to
+          # allow all bots. Empty string (default) allows no bots."
+          #
+          # Named explicitly rather than '*'. This repository is PUBLIC, and the
+          # same input's documentation warns that on a public repo '*' lets
+          # external Apps invoke this action with prompts they control — the
+          # prompt below is handed straight to a model with write-scoped repo
+          # credentials, so widening this is a real privilege decision, not a
+          # convenience toggle.
+          #
+          # These two names are the bots actually observed reviewing PRs here
+          # (sampled across the last twelve PRs: github-code-quality 8 reviews,
+          # github-advanced-security 2), not a guess at what GitHub might send.
+          # A new scanning bot will be rejected until it is added here — that is
+          # the intended failure direction, and it fails loudly in the workflow
+          # log rather than silently skipping findings.
+          allowed_bots: "github-advanced-security[bot],github-code-quality[bot]"
           prompt: |
             REPO: ${{ github.repository }}
             PR: ${{ github.event.pull_request.number || github.event.issue.number }}
