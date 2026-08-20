@@ -314,7 +314,8 @@ two series cannot be joined on `scraper`. `workspace_connect_total` above carrie
 > genuinely freed memory (595→161 MiB in one observed cycle) but each subsequent cycle
 > re-ballooned to a higher peak than the last (713 MiB by page 12 of cycle 2, vs. 595 MiB
 > by page 20 of cycle 1) — a curve no fixed recycle interval could stabilize. Chromium now
-> runs on Azure Playwright Workspaces instead of inside the 1 GiB ACA job container
+> runs on Azure Playwright Workspaces instead of inside the ACA job container (2 GiB on
+> the three Stern jobs since 2026-08-19, 1 GiB before that)
 > whenever `PLAYWRIGHT_SERVICE_URL` is configured (Development, and any environment
 > without that variable set, is unaffected — still local Chromium; see ADR-0056 for why
 > this is gated on the URL rather than on being deployed). When a workspace is
