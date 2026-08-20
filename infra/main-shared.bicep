@@ -87,6 +87,14 @@ param useSternPlaywrightWorkspace bool = true
 @description('TEMPORARY diagnostic (#920): enables verbose Azure SDK tracing on the three Stern Playwright jobs, to turn the contentless Playwright SDK auth exception into an actual HTTP status code. Default false; turn off once resolved. See modules/shared.bicep enableAzureSdkDiagnostics.')
 param enableAzureSdkDiagnostics bool = false
 
+@description('vCPU for the three Stern Playwright scraper jobs. Default 1.0, raised from the 0.5 every other CLI job uses because local Chromium OOMKilled stern-games against the 1 GiB that 0.5 vCPU implies (#855). Memory is derived as exactly 2x this inside modules/shared.bicep, since ACA Consumption permits no other pairing. Set 0.5 to revert. Costs about +1.66 USD/month across all three jobs at current schedules.')
+@allowed([
+  '0.5'
+  '1.0'
+  '2.0'
+])
+param sternPlaywrightJobCpu string = '1.0'
+
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -162,6 +170,7 @@ module shared 'modules/shared.bicep' = {
     playwrightServiceUrl: playwrightServiceUrl
     useSternPlaywrightWorkspace: useSternPlaywrightWorkspace
     enableAzureSdkDiagnostics: enableAzureSdkDiagnostics
+    sternPlaywrightJobCpu: sternPlaywrightJobCpu
     apiImageTag: apiImageTag
     ragIndexerImageTag: ragIndexerImageTag
     cliImageTag: cliImageTag

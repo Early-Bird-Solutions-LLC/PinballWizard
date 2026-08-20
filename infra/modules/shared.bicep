@@ -128,6 +128,28 @@ param useSternPlaywrightWorkspace bool = true
 // three Stern jobs because they are the only consumers of the workspace path.
 param enableAzureSdkDiagnostics bool = false
 
+@description('vCPU for the three Stern Playwright scraper jobs (stern-games, stern-bulletins, stern-refresh). Default 1.0, raised from the 0.5 every other job uses because a locally-launched Chromium OOMKilled stern-games against the 1 GiB that 0.5 vCPU implies (#855). Memory is DERIVED from this — see sternPlaywrightJobMemory below. Only these three jobs are raised; the other ~17 CLI jobs stay at the 0.5/1Gi default.')
+@allowed([
+  '0.5'
+  '1.0'
+  '2.0'
+])
+param sternPlaywrightJobCpu string = '1.0'
+
+// ACA Consumption requires memory to be EXACTLY 2x vCPU in GiB — 0.25/0.5Gi, 0.5/1Gi,
+// 1.0/2Gi, and so on (Microsoft's documented allocation table; any other pairing is
+// rejected). Deriving memory from cpu through this map rather than exposing a second
+// parameter makes the mismatched pairing unrepresentable, instead of relying on whoever
+// edits one to remember the other. It also removes the "just add memory" trap: there is
+// no way to buy RAM here without buying vCPU, which is what actually drives the cost
+// (vCPU is 8x the per-unit rate of memory).
+var sternPlaywrightMemoryByCpu = {
+  '0.5': '1Gi'
+  '1.0': '2Gi'
+  '2.0': '4Gi'
+}
+var sternPlaywrightJobMemory = sternPlaywrightMemoryByCpu[sternPlaywrightJobCpu]
+
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -2713,6 +2735,8 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
     cronExpression: sternRefreshCronExpression
+    cpu: sternPlaywrightJobCpu
+    memory: sternPlaywrightJobMemory
     replicaTimeout: 7200
     command: [ 'dotnet', 'PinballWizard.Cli.dll', '--refresh-game-overviews' ]
     env: [
@@ -3260,6 +3284,8 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
     cronExpression: sternGamesCronExpression
+    cpu: sternPlaywrightJobCpu
+    memory: sternPlaywrightJobMemory
     replicaTimeout: 7200
     command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'games' ]
     env: [
@@ -3298,6 +3324,8 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
     cronExpression: sternBulletinsCronExpression
+    cpu: sternPlaywrightJobCpu
+    memory: sternPlaywrightJobMemory
     replicaTimeout: 7200
     command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'bulletins' ]
     env: [

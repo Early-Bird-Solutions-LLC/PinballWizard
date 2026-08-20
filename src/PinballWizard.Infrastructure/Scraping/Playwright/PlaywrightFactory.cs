@@ -321,6 +321,42 @@ public sealed class PlaywrightFactory : IAsyncDisposable
                 _logger.LogDebug(ex, "Suppressed error recycling Playwright browser process.");
             }
             _browser = null;
+
+            // #906: dispose the driver too, not just the browser. Microsoft.Playwright's
+            // CreateAsync() spawns a Node.js driver process, and GetBrowserAsync
+            // unconditionally reassigns `_playwright = await Playwright.CreateAsync()` on
+            // the next call — so leaving this field populated orphaned one live Node
+            // process per recycle, with nothing holding a handle to ever reap it.
+            //
+            // This is not merely untidy: ProcTreeMemoryReader sums RSS across every
+            // descendant of the .NET process, so each orphan kept counting toward
+            // chromium_descendant_rss_bytes and toward the container's 1 GiB ceiling.
+            // That makes it a concrete, measured mechanism for the cycle-over-cycle climb
+            // #855 observed but never explained — each recycle freed the browser while
+            // silently adding a driver. It does NOT prove the leak was the whole story;
+            // it removes one real contributor so the remaining curve can be read honestly.
+            //
+            // Mirrors what the disconnected-cleanup path in GetBrowserAsync and
+            // DisposeAsync already do — this was the one path that forgot.
+            //
+            // Suppressed, unlike those two. Recycle runs MID-SCRAPE, every N pages, so an
+            // exception escaping here would abort the whole source — and because the throw
+            // happens before the field is cleared, it would also leave the very driver this
+            // block exists to reap orphaned. Failing a catalog run to report a problem
+            // disposing a process that is being discarded anyway trades a large loss for no
+            // gain. The equivalent calls in DisposeAsync and the disconnected-cleanup path
+            // run at shutdown or during re-acquisition, where a throw costs far less, which
+            // is why they are left bare. Logged at Debug for the same reason the sibling
+            // browser-disposal suppression is: it is an expected, uninteresting outcome.
+            try
+            {
+                _playwright?.Dispose();
+            }
+            catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
+            {
+                _logger.LogDebug(ex, "Suppressed error disposing the Playwright driver during recycle.");
+            }
+            _playwright = null;
         }
         finally
         {

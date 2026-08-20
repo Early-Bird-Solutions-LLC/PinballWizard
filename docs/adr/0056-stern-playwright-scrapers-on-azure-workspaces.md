@@ -124,6 +124,40 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   (`https://<region>.api.playwright.microsoft.com/playwrightworkspaces/<guid>`) and
   `properties.workspaceId` — both real, populated, and now exposed as the
   `playwrightWorkspaceDataplaneUri` Bicep output.
+- **AMENDED 2026-08-19 — the local-Chromium path is being made viable again, in
+  parallel.** This ADR chose remote browsers over "raise the container limit", and that
+  choice is no longer carrying its weight unexamined: the workspace path is blocked on
+  an authentication failure (#920) whose leading hypothesis is a subscription
+  entitlement consumed by a throwaway workspace, it costs ~8x more than the alternative,
+  and by design a workspace outage now fails the scrape rather than degrading it. Two
+  changes revisit the rejected option on measured grounds rather than abandoning this
+  one:
+  - **Raise the three Stern jobs to 1.0 vCPU / 2 GiB** (`sternPlaywrightJobCpu`). ACA
+    Consumption permits no other pairing — memory must be exactly 2x vCPU — so memory is
+    derived from the cpu parameter rather than exposed separately, making the invalid
+    combination unrepresentable. Priced from the Azure Retail Prices API for East US 2
+    (vCPU $2.4e-05/s, memory $3e-06/s, both active — jobs never bill idle): **+$1.66/mo**
+    across all three at current schedules, against ~$10–14/mo for Workspaces. The
+    subscription's free grants do not absorb it; three always-on container apps at
+    `minReplicas: 1` exhaust them roughly 33 hours into each month.
+  - **Fix the driver leak (#906).** `RecycleBrowserAsync` disposed `_browser` but never
+    `_playwright`, orphaning one Node.js driver process per recycle — processes that
+    `ProcTreeMemoryReader` then kept counting toward `chromium_descendant_rss_bytes` and
+    the container ceiling.
+
+  **Why both, and in that order of confidence.** A bigger ceiling alone would be exactly
+  the masking `timeout-debugging.md` forbids: the measured curve was not a fixed
+  overshoot but a *rising* one (595 MiB peak in cycle 1, 713 MiB by page 12 of cycle 2),
+  and no fixed limit survives a climbing ceiling — it would fail later, not stop failing.
+  The leak is a concrete, measured mechanism for that climb, so it is the part that
+  addresses cause; the headroom absorbs whatever residual remains. Neither is claimed as
+  proven: if the curve still climbs after #906, the leak was not the whole story, and the
+  extra 1 GiB buys time to find the rest rather than pretending the question is closed.
+
+  This does **not** retract the workspace design. `useSternPlaywrightWorkspace` still
+  selects between them, and the two are complementary — the headroom and the leak fix
+  benefit local-Chromium mode, which is what every unconfigured environment (local dev, a
+  bare CLI run, CI) already uses and will keep using regardless of how #920 resolves.
 - **RESOLVED 2026-08-19 — the endpoint IS computable, and the manual portal step is
   retired.** The remaining open question above was whether `dataplaneUri`
   deterministically transforms into the `PLAYWRIGHT_SERVICE_URL` the SDK needs. It
