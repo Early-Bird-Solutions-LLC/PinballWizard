@@ -861,7 +861,7 @@ public static class PinballWizardTelemetry
     public static readonly Counter<long> ScraperYieldGuardFailures = Meter.CreateCounter<long>(
         "pinwiz.scraper.yield_guard_failures_total",
         unit: "{run}",
-        description: "Scraper runs that failed the per-scraper yield guard — the scraper yielded fewer link items than the configured minimum (Scraper:MinimumYieldPerScraper). Tagged with scraper. A non-zero rate means a scraper collected nothing when it was expected to collect something; the run exits 1. This is the observability-layer signal for the silent-green-job failure class that hid Playwright-not-installed for 45+ days on pinwiz-job-stern-games (#857).");
+        description: "Scraper runs that failed either per-scraper yield guard — the item guard (Scraper:MinimumYieldPerScraper, counting document links plus game records) or the link guard (Scraper:MinimumLinkYieldPerScraper, counting document links only, which keeps a mixed-shape scraper's broken PDF extraction from being masked by its game records). Tagged with scraper and with guard (items|links) so the two conditions stay distinguishable on a dashboard — 'items' is collected nothing at all, 'links' is collected machines but no documents. A non-zero rate means a scraper collected nothing when it was expected to collect something; the run exits 1. This is the observability-layer signal for the silent-green-job failure class that hid Playwright-not-installed for 45+ days on pinwiz-job-stern-games (#857).");
 
     public static readonly Counter<long> SternEditionNavFallbackUsed = Meter.CreateCounter<long>(
         "pinwiz.scraper.stern_edition_nav_fallback_total",

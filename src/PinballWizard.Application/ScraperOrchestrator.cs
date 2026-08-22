@@ -88,10 +88,22 @@ public sealed class ScraperOrchestrator
                 // group are safe because the source-group loop drains all pending tasks
                 // in the finally block before the next scraper starts (sequential ETags).
                 var seenDocuments = new Dictionary<string, DocumentRecord>(StringComparer.Ordinal);
-                // Raw per-scraper link count (before dedup): the yield guard checks this
+                // Raw per-scraper link count (before dedup). Feeds the links_discovered
+                // instrument only — that counter's name says links, so it keeps counting
+                // links and nothing else.
+                var scraperLinkCount = 0;
+                // Raw per-scraper yield count (before dedup): the yield guard checks this
                 // against Scraper:MinimumYieldPerScraper[scraper.Name] to detect scrapers
                 // that silently collected nothing (e.g. Playwright not installed — #857).
-                var scraperLinkCount = 0;
+                //
+                // Counts BOTH item shapes — a document link and a game record are each a
+                // unit of collected work. Counting links alone made the default minimum
+                // of 1 unsatisfiable for the scrapers that only ever emit game records
+                // (JJP, Pinball Brothers, Multimorphic): pinwiz-job-jjp logged "0 links,
+                // 15 game records collected" and failed nightly from 2026-08-18 while
+                // working correctly. An item carrying both shapes counts once — the
+                // guard measures "did this scraper collect anything", not link volume.
+                var scraperYieldCount = 0;
 
                 try
                 {
@@ -101,6 +113,13 @@ public sealed class ScraperOrchestrator
                         if (item.Game is not null)
                         {
                             gameCatalog.Games.Add(item.Game);
+                        }
+
+                        // Counted before the link-only early-continue below, so a
+                        // game-record item registers as yield instead of being skipped.
+                        if (item.Link is not null || item.Game is not null)
+                        {
+                            scraperYieldCount++;
                         }
 
                         if (item.Link is null) continue;
@@ -139,45 +158,90 @@ public sealed class ScraperOrchestrator
                     // here makes the empty-yield case indistinguishable from an explicit failure
                     // (INVARIANT #17: fallbacks must not hide failures; degrade visibly).
                     //
-                    // Semantics of MinimumYieldPerScraper[scraper.Name] — OPT-OUT design:
-                    //   missing entry — default minimum of 1 enforced. A scraper that discovers
-                    //                   zero links fails the run unless it explicitly opts out.
-                    //                   Write an explicit 0 to allow zero yield.
-                    //   0             — explicit opt-out (source legitimately has no documents yet)
-                    //   N > 0         — must yield at least N links or the run is a failure
-                    var minimumYield = _settings.MinimumYieldPerScraper.TryGetValue(scraper.Name, out var configuredMinimum)
-                        ? configuredMinimum
-                        : 1;  // default: at least one link discovered (opt-out design, #857)
+                    // TWO independent guards, because one number cannot express both
+                    // questions and collapsing them loses whichever is not asked:
+                    //
+                    //   items — "did this scraper collect anything at all?"
+                    //           Counts links + game records. Catalogue-only scrapers
+                    //           (JJP, Pinball Brothers, Multimorphic, Barrels of Fun)
+                    //           emit no links whatsoever, so a links-only measure made
+                    //           any positive minimum unsatisfiable for them.
+                    //   links — "did link extraction still work?"
+                    //           Mixed-shape scrapers (Stern Game Pages, Chicago Gaming,
+                    //           Spooky Pinball) emit game records and links as SEPARATE
+                    //           items. Judged only on the total, one whose PDF extraction
+                    //           broke entirely would be carried over the minimum by its
+                    //           game records and pass silently — #857 reopened one shape
+                    //           over, on the scraper #857 was written about. The four
+                    //           catalogue-only scrapers opt out of this one with an
+                    //           explicit 0 in appsettings; that is safe only because the
+                    //           item guard above still covers them.
+                    //
+                    // Both keys share the OPT-OUT semantics described on ScraperSettings:
+                    //   missing entry — default minimum of 1 enforced
+                    //   0             — explicit opt-out (this shape is not expected here)
+                    //   N > 0         — must yield at least N or the run is a failure
+                    var minimumYield = ResolveMinimum(_settings.MinimumYieldPerScraper, scraper.Name, nameof(ScraperSettings.MinimumYieldPerScraper));
+                    var minimumLinkYield = ResolveMinimum(_settings.MinimumLinkYieldPerScraper, scraper.Name, nameof(ScraperSettings.MinimumLinkYieldPerScraper));
 
-                    // A negative minimum disables the guard exactly as 0 does, because no
-                    // count can fall below it. That is a safety guard silently switched off
-                    // by what is almost certainly a typo — the precise failure class #857 is
-                    // about — so say so rather than letting it pass unremarked. 0 is the
-                    // sanctioned way to opt out; behaviour is unchanged, only the silence is.
-                    if (minimumYield < 0)
+                    // The link guard REFINES the item guard rather than sitting beside it:
+                    //   - a scraper that collected nothing at all is one finding, not two.
+                    //     Reporting "0 items" and "0 links" separately doubles the noise on
+                    //     the one condition an operator most needs to read quickly.
+                    //   - MinimumYieldPerScraper <= 0 is the operator declaring this source
+                    //     produces nothing at all. A link minimum would contradict that and
+                    //     force a second, redundant opt-out key to say the same thing twice.
+                    var itemGuardFired = FireGuardIfShort(scraperYieldCount, minimumYield, "items (links + game records)", "items");
+                    if (!itemGuardFired && minimumYield > 0)
                     {
-                        _logger.LogWarning(
-                            "Scraper {Name}: MinimumYieldPerScraper is {Configured}, which disables the yield guard. " +
-                            "Use 0 to opt out explicitly; negative values are almost certainly a mistake.",
-                            scraper.Name, minimumYield);
+                        FireGuardIfShort(scraperLinkCount, minimumLinkYield, "document links", "links");
                     }
 
-                    if (scraperLinkCount < minimumYield)
+                    int ResolveMinimum(Dictionary<string, int> configured, string scraperName, string keyName)
                     {
-                        var guardMsg = $"{scraper.Name}: yielded {scraperLinkCount} links, expected at least {minimumYield}. " +
+                        var minimum = configured.TryGetValue(scraperName, out var value) ? value : 1;
+
+                        // A negative minimum disables the guard exactly as 0 does, because no
+                        // count can fall below it. That is a safety guard silently switched off
+                        // by what is almost certainly a typo — the precise failure class #857 is
+                        // about — so say so rather than letting it pass unremarked. 0 is the
+                        // sanctioned way to opt out; behaviour is unchanged, only the silence is.
+                        if (minimum < 0)
+                        {
+                            _logger.LogWarning(
+                                "Scraper {Name}: {Key} is {Configured}, which disables the yield guard. " +
+                                "Use 0 to opt out explicitly; negative values are almost certainly a mistake.",
+                                scraperName, keyName, minimum);
+                        }
+
+                        return minimum;
+                    }
+
+                    // guardTag distinguishes WHICH of the two guards fired on the shared
+                    // counter. Without it the metric collapses "collected nothing" and
+                    // "collected machines but no documents" into one undifferentiated
+                    // number, while the docs point operators at that number as the signal
+                    // to act on — they would have to open the logs to learn which.
+                    bool FireGuardIfShort(int actual, int minimum, string unit, string guardTag)
+                    {
+                        if (actual >= minimum) return false;
+
+                        var guardMsg = $"{scraper.Name}: yielded {actual} {unit}, expected at least {minimum}. " +
                                        "The scraper may have silently failed (e.g. browser not installed, URL pattern changed).";
                         _logger.LogError(
-                            "Yield guard fired for {Name}: {Actual} links discovered, minimum is {Minimum}. " +
+                            "Yield guard fired for {Name}: {Actual} {Unit} collected, minimum is {Minimum}. " +
                             "Check whether the scraper swallowed an internal exception or the source site changed. " +
                             "See GitHub issue #857.",
-                            scraper.Name, scraperLinkCount, minimumYield);
+                            scraper.Name, actual, unit, minimum);
                         result.Errors.Add(guardMsg);
                         sourceFailed = true;
                         firstError ??= guardMsg;
 
                         PinballWizardTelemetry.ScraperYieldGuardFailures.Add(
                             1,
-                            new System.Diagnostics.TagList { { "scraper", scraper.Name } });
+                            new System.Diagnostics.TagList { { "scraper", scraper.Name }, { "guard", guardTag } });
+
+                        return true;
                     }
 
                     // Phase 2: dispatch one upsert per unique DocumentId (concurrent, under semaphore).

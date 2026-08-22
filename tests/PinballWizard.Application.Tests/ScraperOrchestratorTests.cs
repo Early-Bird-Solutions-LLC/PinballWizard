@@ -574,6 +574,133 @@ public sealed class ScraperOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task YieldGuard_CatalogueOnlyScraper_WithLinkOptOut_NoError()
+    {
+        // Regression: the catalogue-only scrapers yield GameRecords and no document
+        // links at all (JJP, Pinball Brothers, Multimorphic, Barrels of Fun). Counting
+        // links alone made the default minimum of 1 unsatisfiable for them by
+        // construction — pinwiz-job-jjp logged "0 links, 15 game records collected"
+        // and failed every night from 2026-08-18 while working perfectly. A scraper
+        // that collected 15 machines has not "collected nothing", which is the only
+        // thing the #857 guard exists to detect. Mirrors the shipped appsettings:
+        // link guard opted out, item guard left at its default.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumLinkYieldPerScraper = new Dictionary<string, int> { ["Products"] = 0 }
+        };
+        var scraper = new StubScraper("Products", [GameItem("avatar"), GameItem("sonic"), GameItem("elton-john")]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task YieldGuard_MixedShapeScraper_ZeroLinks_RecordsError()
+    {
+        // THE regression this design exists to prevent. Stern Game Pages, Chicago
+        // Gaming and Spooky Pinball emit game records and links as SEPARATE items.
+        // If the guard only measured the total, a run whose PDF extraction broke
+        // completely would be carried over the minimum by its game records alone and
+        // pass silently — the #857 hole reopened, on the very scraper #857 was about.
+        // No link opt-out is configured here, so the link guard must still fire even
+        // though nine game records comfortably clear the item guard.
+        var settings = new ScraperSettings { DataPath = _tempDir };  // default config
+        var scraper = new StubScraper("Game Pages", Enumerable.Range(0, 9).Select(i => GameItem($"game-{i}")));
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("0 document links", error);
+    }
+
+    [Fact]
+    public async Task YieldGuard_MixedLinksAndGameRecords_BothCountTowardItemMinimum()
+    {
+        // The item guard measures total items yielded, not links only. Scrapers that
+        // emit both shapes (CGC, Spooky) are judged on the sum: 1 link + 2 game records
+        // meets a minimum of 3. Counting links alone scores this fixture as 1 and fails.
+        // The link guard is satisfied here by the single link, at its default of 1.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int> { ["Products"] = 3 }
+        };
+        var scraper = new StubScraper("Products", [LinkItem(), GameItem("avatar"), GameItem("sonic")]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task YieldGuard_ItemCarryingBothLinkAndGame_CountsOnce()
+    {
+        // The guard counts ITEMS, not shapes: a single item carrying both a document
+        // link and a game record is one unit of collected work, not two. Asserted by
+        // demanding a minimum of 2 from a scraper that yields exactly one such item —
+        // if both shapes were tallied separately this would pass and the guard would
+        // be silently inflating every mixed-shape scraper's yield.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int> { ["Products"] = 2 }
+        };
+        var scraper = new StubScraper("Products", [LinkAndGameItem("avatar")]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("yielded 1 items", error);
+    }
+
+    [Fact]
+    public async Task YieldGuard_CatalogueOnlyScraper_WithoutLinkOptOut_RecordsError()
+    {
+        // The link guard is fail-CLOSED: a catalogue-only scraper that was never given
+        // its explicit 0 in appsettings fails loudly rather than being waved through.
+        // A missing opt-out must surface as a visibly broken job, not as silence —
+        // the mistake is then self-correcting instead of permanent.
+        var settings = new ScraperSettings { DataPath = _tempDir };  // no link opt-out
+        var scraper = new StubScraper("Products", [GameItem("avatar"), GameItem("sonic")]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("0 document links", error);
+    }
+
+    [Fact]
+    public async Task YieldGuard_GameRecordsBelowConfiguredMinimum_RecordsError()
+    {
+        // Counting game records must widen what satisfies the guard, not weaken it:
+        // a game-record scraper that collects less than expected still fails. Without
+        // this, the fix above could be over-applied into an escape hatch that lets a
+        // half-broken catalogue scrape pass — the #857 hole reopened one shape over.
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MinimumYieldPerScraper = new Dictionary<string, int> { ["Products"] = 5 },
+            MinimumLinkYieldPerScraper = new Dictionary<string, int> { ["Products"] = 0 }
+        };
+        var scraper = new StubScraper("Products", [GameItem("avatar"), GameItem("sonic")]);
+        var orch = CreateOrchestrator([scraper], settings: settings);
+
+        var result = await orch.ScrapeAsync(dryRun: true);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("Products", error);
+        Assert.Contains("yielded 2 items", error);   // actual yield
+        Assert.Contains("at least 5", error);        // configured minimum
+    }
+
+    [Fact]
     public async Task YieldGuard_PositiveYieldAboveMinimum_NoError()
     {
         // A scraper that finds documents should not trip the guard.
@@ -660,6 +787,39 @@ public sealed class ScraperOrchestratorTests : IDisposable
         SourceType = SourceType.ManualsPage,
         DiscoveryUrl = "https://example.com/list",
         DiscoveryContext = "list",
+    };
+
+    // A game-record item with no Link — the shape JJP, Pinball Brothers and
+    // Multimorphic emit for their entire run.
+    private static ScrapedItem GameItem(string slug) => new()
+    {
+        Game = new GameRecord
+        {
+            GameId = GameRecord.GenerateId(slug),
+            Title = slug,
+            Slug = slug,
+            GamePageUrl = $"https://example.com/products/{slug}",
+        },
+        SourceType = SourceType.JjpProductPage,
+        DiscoveryUrl = "https://example.com/sitemap.xml",
+        DiscoveryContext = "sitemap",
+    };
+
+    // A single item carrying BOTH shapes — the game-page scrapers emit these when a
+    // discovered document is attributable to the machine on the same page.
+    private static ScrapedItem LinkAndGameItem(string slug) => new()
+    {
+        Link = new DiscoveredLink { FileUrl = $"https://example.com/{slug}.pdf", LinkText = slug, GameSlug = slug },
+        Game = new GameRecord
+        {
+            GameId = GameRecord.GenerateId(slug),
+            Title = slug,
+            Slug = slug,
+            GamePageUrl = $"https://example.com/products/{slug}",
+        },
+        SourceType = SourceType.GamePage,
+        DiscoveryUrl = $"https://example.com/products/{slug}",
+        DiscoveryContext = "game page",
     };
 
     private static ScrapedItem MakeLinkItem(

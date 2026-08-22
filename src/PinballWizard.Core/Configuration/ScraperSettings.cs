@@ -73,20 +73,27 @@ public sealed class ScraperSettings
     public string? Trigger { get; set; }
 
     /// <summary>
-    /// Per-scraper minimum number of link items expected from a single
+    /// Per-scraper minimum number of items expected from a single
     /// <see cref="PinballWizard.Core.Scraping.ISourceScraper.ScrapeAsync"/> run.
+    /// An <em>item</em> is a document link OR a game record — an item carrying both
+    /// counts once. Catalogue-only scrapers (JJP, Pinball Brothers, Multimorphic)
+    /// emit no links at all, so a link-only measure would make any positive minimum
+    /// unsatisfiable for them by construction.
     /// Key: <see cref="PinballWizard.Core.Scraping.ISourceScraper.Name"/>
     /// (e.g. <c>"Manuals"</c>, <c>"Game Pages"</c>).
     /// Value semantics (opt-OUT design, #857):
     /// <list type="bullet">
-    ///   <item>Missing entry — default minimum of 1 enforced. A scraper that discovers
-    ///     zero links fails the run unless it is explicitly opted out. This catches the
+    ///   <item>Missing entry — default minimum of 1 enforced. A scraper that collects
+    ///     nothing fails the run unless it is explicitly opted out. This catches the
     ///     production silent-green scenario where a scraper swallows its own exception
     ///     (e.g. <c>PlaywrightException</c> when Chromium is not installed) and returns
     ///     0 items without propagating the error. Write an explicit 0 to allow zero yield.</item>
-    ///   <item>0 — explicit opt-out; zero-yield is allowed for sources that have no
-    ///     documents yet or that run through a non-scraper path (e.g. OPDB).</item>
-    ///   <item>N &gt; 0 — the scraper must yield at least N link items or the run is
+    ///   <item>0 — explicit opt-out; zero-yield is allowed for sources that genuinely have
+    ///     nothing to collect yet or that run through a non-scraper path (e.g. OPDB).
+    ///     It is NOT the way to accommodate a scraper whose output is a shape the guard
+    ///     does not count — widen the count instead, or the guard goes blind to that
+    ///     scraper breaking for real.</item>
+    ///   <item>N &gt; 0 — the scraper must yield at least N items or the run is
     ///     recorded as failed.</item>
     ///   <item>negative — disables the guard exactly as 0 does (no count can fall below
     ///     it), but is logged as a warning at run time because it is almost certainly a
@@ -97,13 +104,37 @@ public sealed class ScraperSettings
     /// "Scraper": {
     ///   "MinimumYieldPerScraper": {
     ///     "Manuals": 10,
-    ///     "Game Pages": 20,
-    ///     "JJP": 0
+    ///     "Game Pages": 20
     ///   }
     /// }
     /// </code>
     /// </summary>
     public Dictionary<string, int> MinimumYieldPerScraper { get; set; } = [];
+
+    /// <summary>
+    /// Per-scraper minimum number of DOCUMENT LINKS expected from a single
+    /// <see cref="PinballWizard.Core.Scraping.ISourceScraper.ScrapeAsync"/> run.
+    /// Same key and same opt-OUT semantics as
+    /// <see cref="MinimumYieldPerScraper"/> (missing entry = 1; explicit 0 = opt out;
+    /// negative = disabled with a warning).
+    /// <para>
+    /// Why this exists as a SECOND guard rather than folding into the first: the
+    /// mixed-shape scrapers (Stern Game Pages, Chicago Gaming, Spooky Pinball) emit
+    /// game records and document links as separate items. Measured on total items
+    /// alone, such a scraper whose link extraction broke completely would still be
+    /// carried over the minimum by its game records and pass silently — which is the
+    /// #857 hole reopened one shape over, on the very scraper #857 was written about.
+    /// Guarding links independently keeps "every PDF vanished" a failure.
+    /// </para>
+    /// <para>
+    /// The four catalogue-only scrapers emit no links by design and opt out with an
+    /// explicit 0 in <c>appsettings.json</c>: JJP, Pinball Brothers, Multimorphic,
+    /// Barrels of Fun. That opt-out is safe precisely because
+    /// <see cref="MinimumYieldPerScraper"/> still guards them on the game records they
+    /// do collect — neither guard is load-bearing alone.
+    /// </para>
+    /// </summary>
+    public Dictionary<string, int> MinimumLinkYieldPerScraper { get; set; } = [];
 
     // Derived paths
     public string DownloadsPath => Path.Combine(DataPath, "downloads");
