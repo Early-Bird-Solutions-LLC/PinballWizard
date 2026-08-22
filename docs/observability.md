@@ -371,9 +371,12 @@ ContainerAppConsoleLogs_CL
 Emitted by `ScraperOrchestrator.ScrapeAsync` once per `ISourceScraper` run, from the
 per-scraper `finally` block — so a scraper that threw part-way still reports the count it
 reached. An **absent** series means the scraper was never invoked, never that it failed. A
-real `0` has two causes: the scraper ran and found nothing (`yield_guard_failures_total`
-also increments), or it threw before finding anything (the exception lands in
-`ScrapeResult.Errors` and is logged at Error; the throw bypasses the guard, so the guard
+real `0` on `links_discovered_total` has three causes: the scraper is one of the four
+catalogue-only sources (JJP, Pinball Brothers, Multimorphic, Barrels of Fun) that emit no
+links by design, so `0` is the correct baseline and neither guard increments; the scraper
+ran and collected nothing at all (`yield_guard_failures_total` also increments, tagged
+`guard=items`); or it threw before finding anything (the exception lands in
+`ScrapeResult.Errors` and is logged at Error; the throw bypasses both guards, so the guard
 counter does not increment).
 
 | Instrument | Type | Tags | Purpose |
