@@ -22,7 +22,8 @@ real total, not just the Azure bill.
 | **Cloudflare** | Pro plan — WAF, Bot Fight, DDoS, CDN, rate limits | $240/year (annual, 20% saving vs monthly) | **$20.00** |
 | **Azure** | AI Search Basic | $74/mo | **$74.00** |
 | **Azure** | ACA Web App (Blazor + API, min=1 live) | ~$35/mo | **$35.00** |
-| **Azure** | ACA Jobs (scraper + indexer, schedule-triggered) | <$1/mo | **$1.00** |
+| **Azure** | ACA Jobs (scraper + indexer, schedule-triggered; three Stern jobs raised to 1.0 vCPU / 2 GiB per [ADR-0056](adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)) | <$1/mo + $1.66/mo | **$2.66** |
+| **Azure** | Playwright Workspaces (remote Chromium for the three Stern Playwright scrapers, [ADR-0056](adr/0056-stern-playwright-scrapers-on-azure-workspaces.md)) | $10–14/mo variable | **$10–14** |
 | **Azure** | Cosmos DB Serverless | $25–100/mo variable | **$25–100** |
 | **Azure** | Azure OpenAI completions (gpt-4o + gpt-4.1 ~20%) | $10–40/mo variable | **$10–40** |
 | **Azure** | Azure OpenAI embeddings | ~$0.50/mo incremental | **$0.50** |
@@ -34,9 +35,9 @@ real total, not just the Azure bill.
 | **Azure** | Functions (Cosmos Change Feed) | $5–20/mo | **$5–20** |
 | **Microsoft** | Entra External ID (CIAM, free tier) | $0 | **$0** |
 | | | | |
-| | **Steady-state total (live)** | | **~$195–370/mo** |
+| | **Steady-state total (live)** | | **~$207–386/mo** |
 | | **Hard cap** | | **$400/mo** |
-| | **Headroom at midpoint** | | **~$120/mo** |
+| | **Headroom at midpoint** | | **~$105/mo** |
 
 ---
 
@@ -105,7 +106,7 @@ within the $400/mo cap.
 ## Development-process economics
 
 The tables above price one axis — **cost-to-run**: the Azure + Cloudflare bill to operate
-pinwiz.ai, held under the $400/mo hard cap ($300 alert; ~$195–370/mo steady state). This
+pinwiz.ai, held under the $400/mo hard cap ($300 alert; ~$207–386/mo steady state). This
 section names the other axis — **cost-to-build**: what it costs to author and maintain the app
 when AI writes nearly all the code. They are different axes and are not conflated below.
 
