@@ -43,10 +43,10 @@ jobs:
       # Base ref only (no ref:) — untrusted PR head code is NEVER checked out or run,
       # which is the real mitigation that makes comment-only safe even for fork PRs.
       - name: Checkout base
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Triage PR feedback (comment only)
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1
         with:
           # #804 root cause (proved by the probe on run 31517799430): the action
           # sends anthropic_api_key as a static x-api-key header, but a WIF
