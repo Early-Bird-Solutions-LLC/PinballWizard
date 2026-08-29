@@ -184,7 +184,7 @@
       a green "Build, test, coverage" does NOT clear a MudBlazor bump.
       Moving to 9.7.0 means labelling those MudSelects first.
     -->
-    <PackageVersion Include="MudBlazor" Version="9.5.0" />
+    <PackageVersion Include="MudBlazor" Version="9.9.0" />
     <!--
       Microsoft.Identity.Web supports Entra External ID tenants natively per
       ADR-0009. The app uses only AddMicrosoftIdentityWebApp + AddMicrosoftIdentityUI
