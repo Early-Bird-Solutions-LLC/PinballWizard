@@ -10,6 +10,11 @@
   //     with majors held for explicit approval on the Dependency Dashboard.
   //   - Dependabot is kept ONLY as the native CVE/security-PR layer.
   //
+  // The GitHub App is installed on Early-Bird-Solutions-LLC (all repos).
+  // Mend Silent mode must stay off (Interactive + Automated PRs) or jobs
+  // run without opening issues/PRs — that was why #427's config sat idle
+  // until 2026-08-29. Dashboard: PinballWizard issue #931.
+  //
   // Running both tools for *version* updates would double-open PRs, so
   // Renovate's own vulnerabilityAlerts are disabled below and Dependabot's
   // version updates are throttled to zero.
@@ -67,6 +72,23 @@
     {
       matchPackageNames: ["Aspire.*"],
       groupName: "Aspire",
+    },
+    {
+      matchPackageNames: ["Microsoft.Agents.AI", "Microsoft.Agents.AI.Foundry"],
+      groupName: "Microsoft Agent Framework",
+    },
+    {
+      // Foundry provider latest stable is still 1.5.0. Don't let Agents.AI
+      // 1.19 auto-merge against a 1.5 Foundry package.
+      matchPackageNames: ["Microsoft.Agents.AI"],
+      allowedVersions: "<1.6.0",
+    },
+    {
+      // 9.7.0+ changes MudSelect to an unnamed combobox and fails axe
+      // aria-input-field-name on admin pages. See Directory.Packages.props.
+      // Without this, a 9.5 → 9.9 minor would auto-merge and red the ui-tests job.
+      matchPackageNames: ["MudBlazor"],
+      allowedVersions: "<9.7.0",
     },
     {
       matchPackageNames: ["Microsoft.Extensions.*"],

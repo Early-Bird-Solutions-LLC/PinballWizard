@@ -340,6 +340,20 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[SilverballLabsOptions.ApiKe
 // unit-testable (WebCosmosCompositionTests) — see that class + extension for why.
 builder.AddWebCosmosPersistence();
 
+// ── Azure AI Search (gated — mirrors Api Program.cs wiring) ───────────────
+// AddAzureFoundryIntegration → AddAiRouter registers SearchCorpusTool and
+// AiRouter as singletons. Those depend on IRagRetriever and
+// IMachineCorpusCoverage, which only AddAzureAiSearchIntegration provides.
+// Without this call the Web host fails ValidateOnBuild at startup
+// (pinwiz-web Finished in the Aspire dashboard) whenever Foundry is
+// configured — including local AppHost runs that inherit start-apphost.ps1
+// AiFoundry__/AiSearch__ env vars. Gated on AiSearch:Endpoint so a
+// Foundry-only box is unchanged; start-apphost sets both.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[AiSearchOptions.EndpointKey]))
+{
+    builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
+}
+
 // RAG corpus stats for /admin/corpus — narrow AI Search read-only registration
 // (no Foundry, no ValidateOnStart; degrades visibly if AI Search is unconfigured).
 builder.Services.AddRagCorpusStatsRead(builder.Configuration);
