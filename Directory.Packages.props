@@ -99,7 +99,7 @@
       outline from PDF streams; no native dependencies; compatible with
       the showcase posture (no GPL/AGPL like iText 7 community license).
     -->
-    <PackageVersion Include="PdfPig" Version="0.1.15" />
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry — exporters + auto-instrumentation (ServiceDefaults)">
     <!-- Azure.Monitor.OpenTelemetry.Exporter — Entra-authenticated log exporter for the
