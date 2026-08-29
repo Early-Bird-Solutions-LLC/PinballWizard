@@ -813,7 +813,7 @@ resource documentIntelligence 'Microsoft.CognitiveServices/accounts@2024-10-01' 
 // Endpoint format consumed by AzureFoundrySmokeProbe + IAiRouter:
 //   https://<customSubDomainName>.services.ai.azure.com/api/projects/<project-name>
 
-resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (deployPhase2) {
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-09-01' = if (deployPhase2) {
   name: foundryAccountName
   location: location
   tags: tags
