@@ -346,7 +346,7 @@ Use `Microsoft.Extensions.Http.Resilience` (Polly v8). Every named `HttpClient` 
 ### 8.2 Dependencies
 
 - `dotnet list package --vulnerable --include-transitive` runs in CI. Any vulnerability of severity High or Critical fails the build.
-- **Renovate** owns version updates — grouped by package family, minor/patch auto-merged once CI is green, majors held for explicit approval on the Dependency Dashboard. **Dependabot** is scoped to security-only (immediate CVE PRs). Full rationale and the two-tool division of labour: [ADR-0037](adr/0037-dependency-update-automation.md).
+- **Renovate** owns version updates — grouped by package family, minor/patch auto-merged once CI is green, majors held for explicit approval on the Dependency Dashboard. Individual packages with a known-incompatible newer release carry an `allowedVersions` ceiling in [`renovate.json5`](../.github/renovate.json5), which suppresses updates past it (currently `Microsoft.Agents.AI` and `MudBlazor`); each ceiling states its reason inline. **Dependabot** is scoped to security-only (immediate CVE PRs). Full rationale and the two-tool division of labour: [ADR-0037](adr/0037-dependency-update-automation.md).
 - Major version bumps land as dedicated, individually reviewed PRs (the Renovate dashboard gate enforces this); a non-obvious major also warrants its own ADR.
 - License scanning verifies no GPL/AGPL transitives sneak in (we'll publish under MIT).
 
