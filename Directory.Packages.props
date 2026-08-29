@@ -26,9 +26,9 @@
     <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.5.3" />
     <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
