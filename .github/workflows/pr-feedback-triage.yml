@@ -43,7 +43,7 @@ jobs:
       # Base ref only (no ref:) — untrusted PR head code is NEVER checked out or run,
       # which is the real mitigation that makes comment-only safe even for fork PRs.
       - name: Checkout base
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Triage PR feedback (comment only)
         uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1
