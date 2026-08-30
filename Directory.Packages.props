@@ -33,11 +33,11 @@
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.1" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageVersion Include="Azure.AI.Projects" Version="2.0.1" />
-    <PackageVersion Include="Azure.Core" Version="1.60.0" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
+    <PackageVersion Include="Azure.Core" Version="1.62.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <!-- Azure.Monitor.Query 1.7.1 — Log Analytics query client for live telemetry reads.
          Resolved via `dotnet add package Azure.Monitor.Query` 2026-07-01 (latest stable).
@@ -50,7 +50,7 @@
     <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.5.0" />
     <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.5.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.0" />
+    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.5.0" />
