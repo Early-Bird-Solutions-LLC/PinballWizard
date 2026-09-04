@@ -19,7 +19,10 @@ If `git rev-parse --abbrev-ref HEAD` is `main`, STOP and create a feature branch
 - Then the commit skill (`.claude/skills/commit/`) for conventional formatting.
 - **Identity:** every commit MUST author as
   `Jim Keeley <94459922+jkeeley2073@users.noreply.github.com>` (INVARIANT).
-- **No Claude attribution trailer** (matches repo history).
+- **Claude attribution required.** End every Claude-authored commit with
+  `Co-Authored-By: Claude <Model> <noreply@anthropic.com>`, and every PR body with
+  `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. This repo is
+  NOT a carve-out — attribution is on for every org except Commons and APS.
 
 ## 3. After git push
 

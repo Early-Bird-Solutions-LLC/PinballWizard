@@ -54,7 +54,7 @@ git commit -m "type(scope): description"
 
 Commit format: `type(scope): description` (no work-item prefix for PinballWizard).
 Commit types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `infra`.
-**No Co-Authored-By trailer** on this repo.
+**End the body with `Co-Authored-By: Claude <Model> <noreply@anthropic.com>`.**
 Identity must be `94459922+jkeeley2073@users.noreply.github.com`.
 
 ### Step 5: Push
@@ -126,7 +126,7 @@ Report the full PR URL to the user.
 - Commit format: `type(scope): description`
 - No work-item prefix required
 - No time tracking (personal project)
-- No Co-Authored-By trailer
+- `Co-Authored-By: Claude <Model> <noreply@anthropic.com>` trailer present
 
 <!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/ship.md @ 6dfd2cf
      adapted-for: PinballWizard (adapted: removed Jira/ship.py/work-item-context/APS-Neighborli routing; rewired to gh CLI + /local-review + PR-AUDIT + personal identity; no time tracking)

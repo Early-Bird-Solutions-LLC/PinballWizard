@@ -36,13 +36,18 @@ CHECK:  dotnet build PinballWizard.slnx --nologo -warnaserror
 SEV:    🔴
 REF:    PR-AUDIT#6
 
-**RULE DLV-04** (conventional-commit-no-attribution)
+**RULE DLV-04** (conventional-commit-with-attribution)
 WHEN:   writing a commit message
-THEN:   use conventional format `type(scope) message`; no Claude attribution trailer
-NEVER:  add a Co-Authored-By: Claude / Generated-with trailer (does not match repo history)
-CHECK:  git log -1 --format='%B' | rg -i "Co-Authored-By: Claude|Generated with" && echo "VIOLATION" || echo "CLEAN"
+THEN:   use conventional format `type(scope) message`; end the body with the Claude
+        co-author trailer `Co-Authored-By: Claude <Model> <noreply@anthropic.com>`,
+        substituting the ACTUAL model name for `<Model>` (e.g. `Claude Opus 5`) --
+        the CHECK anchors on the `Co-Authored-By: Claude` prefix, so it cannot
+        catch the literal placeholder being committed verbatim
+NEVER:  omit the trailer on a Claude-authored commit. DLV-01 still governs the AUTHOR
+        (Jim's personal noreply); a co-author trailer does not change authorship.
+CHECK:  git log -1 --format='%B' | rg -qi "^co-authored-by: claude" && echo "CLEAN" || echo "VIOLATION"
 SEV:    ⚠️
-REF:    pinball-workflows · feedback_personal_identity_only
+REF:    pinball-workflows · claude-attribution-policy (DLV-01 owns identity; this rule owns attribution)
 
 **RULE DLV-05** (no-hardcoded-sub-ids)
 WHEN:   adding or modifying a runbook script
@@ -58,5 +63,5 @@ REF:    PR-AUDIT#12
 - DLV-01: commit identity is the personal noreply.
 - DLV-02: no bare `az deployment` in infra scripts.
 - DLV-03: zero-warning build.
-- DLV-04: conventional commit, no Claude attribution.
+- DLV-04: conventional commit, Claude co-author trailer present.
 - DLV-05: no hardcoded sub IDs in runbooks.
