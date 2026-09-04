@@ -26,18 +26,18 @@
     <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.5.3" />
     <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.1" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageVersion Include="Azure.AI.Projects" Version="2.0.1" />
-    <PackageVersion Include="Azure.Core" Version="1.60.0" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
+    <PackageVersion Include="Azure.Core" Version="1.62.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <!-- Azure.Monitor.Query 1.7.1 — Log Analytics query client for live telemetry reads.
          Resolved via `dotnet add package Azure.Monitor.Query` 2026-07-01 (latest stable).
@@ -50,29 +50,29 @@
     <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.5.0" />
     <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.5.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.0" />
+    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.5.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Foundry" Version="1.5.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions.* — Hosting / DI / Configuration / Logging / Options">
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.8.0" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
     <!-- Microsoft.Extensions.Logging — concrete LoggerFactory.Create used by the
          PerfMetrics console tool. Abstractions alone don't ship LoggerFactory. Verified via
          `dotnet package search Microsoft.Extensions.Logging` on 2026-07-09. -->
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.8.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.9.0" />
   </ItemGroup>
   <ItemGroup Label="Phase 4 RAG pipeline — chunking + PDF extraction">
     <!--
@@ -99,22 +99,22 @@
       outline from PDF streams; no native dependencies; compatible with
       the showcase posture (no GPL/AGPL like iText 7 community license).
     -->
-    <PackageVersion Include="PdfPig" Version="0.1.15" />
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry — exporters + auto-instrumentation (ServiceDefaults)">
     <!-- Azure.Monitor.OpenTelemetry.Exporter — Entra-authenticated log exporter for the
          PerfMetrics console tool (Phase 1 perf-trend tracking). Verified latest stable via
          `dotnet package search Azure.Monitor.OpenTelemetry.Exporter` on 2026-07-09. -->
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.3" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
   </ItemGroup>
   <ItemGroup Label="Scraping / parsing / browser automation">
-    <PackageVersion Include="AngleSharp" Version="1.7.0" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
+    <PackageVersion Include="AngleSharp" Version="1.7.3" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.62.0" />
     <!-- Azure.Developer.Playwright 1.0.0 (GA stable) — connects to a remote Chromium
          instance on Azure Playwright Workspaces via BrowserType.ConnectAsync, instead
          of launching a local browser process. Introduced for #855: local Chromium was
@@ -131,11 +131,11 @@
       tests/PinballWizard.Web.Tests/A11y/ to assert WCAG 2.1 AA compliance
       on every public route via a real Chromium browser.
     -->
-    <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.12.0" />
+    <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.13.0" />
   </ItemGroup>
   <ItemGroup Label="Tests — xUnit + NSubstitute + bUnit + test SDK">
-    <PackageVersion Include="bunit" Version="2.8.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
+    <PackageVersion Include="bunit" Version="2.9.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <!--
       System.Security.Cryptography.Xml is still pulled transitively by bunit 2.x
       at a vulnerable version, so it stays direct-pinned here to a safe one.
@@ -152,8 +152,8 @@
       for WizardAskStreamEndpointTests (Wave 1 PR-F2). Version matches
       ASP.NET Core / .NET 10 GA train.
     -->
-    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
@@ -204,7 +204,7 @@
       referenced by the Server (PinballWizard.Web) so Kestrel serves
       the WASM bootstrap and static framework files.
     -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.11" />
   </ItemGroup>
 </Project>
