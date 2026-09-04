@@ -864,7 +864,7 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
 //
 // IMPORTANT: deployment capacity is in 1k-tokens-per-minute units.
 
-resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
+resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-09-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryChatDeploymentName
   sku: {
@@ -881,7 +881,7 @@ resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments
   }
 }
 
-resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
+resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-09-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryChatHeavyDeploymentName
   sku: {
@@ -903,7 +903,7 @@ resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deploy
   ]
 }
 
-resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
+resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-09-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryEmbeddingDeploymentName
   sku: {
@@ -960,7 +960,7 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
 // Marketplace terms. Validate the H5b run end-to-end (keyless inference) before
 // flipping Rag:CrossEncoder:Enabled to production.
 
-resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployCohereRerank) {
+resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-09-01' = if (deployPhase2 && deployCohereRerank) {
   parent: foundry
   name: 'Cohere-rerank-v4.0-pro'
   sku: {
