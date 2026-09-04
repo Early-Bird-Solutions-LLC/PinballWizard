@@ -836,7 +836,7 @@ resource foundry 'Microsoft.CognitiveServices/accounts@2025-09-01' = if (deployP
   }
 }
 
-resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = if (deployPhase2) {
+resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-09-01' = if (deployPhase2) {
   parent: foundry
   name: foundryProjectName
   location: location
