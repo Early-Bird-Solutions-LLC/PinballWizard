@@ -61,7 +61,7 @@ Generate commit message using PinballWizard format:
 ```
 
 **No work-item prefix** (personal GitHub project — no issue tracker prefix required).
-**No Co-Authored-By trailer.**
+**End the body with `Co-Authored-By: Claude <Model> <noreply@anthropic.com>`.**
 
 Identity must be `94459922+jkeeley2073@users.noreply.github.com`.
 
@@ -109,5 +109,5 @@ Next steps:
 **Parent Command:** /ship
 
 <!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/quick-commit.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed work-item-context/APS work-item prefix; commit format is type(scope): description; no Co-Authored-By)
+     adapted-for: PinballWizard (adapted: removed work-item-context/APS work-item prefix; commit format is type(scope): description; Co-Authored-By: Claude trailer required per DLV-04)
      last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->

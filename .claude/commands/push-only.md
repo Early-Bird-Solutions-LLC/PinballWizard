@@ -60,7 +60,7 @@ git add -u
 
 Identity must be `94459922+jkeeley2073@users.noreply.github.com` — verify with `git log -1 --format='%ae'` after commit.
 
-**No Co-Authored-By trailer.**
+**End the body with `Co-Authored-By: Claude <Model> <noreply@anthropic.com>`.**
 
 ### Step 4: Push to Remote
 

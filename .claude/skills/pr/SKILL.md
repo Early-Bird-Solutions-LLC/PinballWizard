@@ -71,7 +71,7 @@ Goal: **reviewer re-reviews only the new work**. PinballWizard is a GitHub repo 
 === PR VERIFICATION ===
 PR #[ID] created: [FULL_HTTPS_URL]
 [✓/✗] claude-code label added
-[✓/✗] Attribution footer visible (OPTIONAL — repo history omits it; include when present)
+[✓/✗] Attribution footer visible (MANDATORY — 🤖 Generated with Claude Code)
 === VERIFICATION COMPLETE ===
 ```
 
@@ -84,7 +84,7 @@ PR #[ID] created: [FULL_HTTPS_URL]
 | Merge conflicts | BLOCKING — resolve before PR creation |
 | `/local-review` + PR-AUDIT | BLOCKING — must run before `gh pr create` |
 | `claude-code` label | MANDATORY — add via `gh pr edit --add-label claude-code` after creation |
-| Attribution footer | OPTIONAL — `🤖 Generated with Claude Code` in PR body is welcome but not required |
+| Attribution footer | MANDATORY — `🤖 Generated with [Claude Code](https://claude.com/claude-code)` at the end of the PR body |
 | Full PR URL in response | MANDATORY — full `https://github.com/...` URL, not bare `#NN` |
 
 ### Error Quick Fixes
@@ -156,7 +156,16 @@ gh pr view <PR_NUMBER> --json labels --jq '.labels[].name'
 
 ### Attribution Footer
 
-The `🤖 Generated with Claude Code` line in the PR description body is **optional** for PinballWizard. Repo history omits it by default. Include it when it adds useful context; omit it when keeping the description lean.
+End every PR description with:
+
+```
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+This is **mandatory** for PinballWizard. Attribution is on for every org except
+Commons and APS, both of which are carve-outs honouring conventions authored by
+others — see `.claude/rules/pinball-workflows.md` §2. Commits carry the matching
+`Co-Authored-By: Claude <Model> <noreply@anthropic.com>` trailer (DLV-04).
 
 ### CLI Auth Fallback
 
