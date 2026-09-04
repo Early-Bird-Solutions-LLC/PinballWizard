@@ -5,7 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A570%25%20gated-brightgreen)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Early-Bird-Solutions-LLC/PinballWizard?include_prereleases&label=release&color=blue)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/releases)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
-[![Aspire](https://img.shields.io/badge/.NET%20Aspire-13.4.6-512BD4?logo=dotnet)](https://learn.microsoft.com/en-us/dotnet/aspire/)
+[![Aspire](https://img.shields.io/badge/.NET%20Aspire-13.5.3-512BD4?logo=dotnet)](https://learn.microsoft.com/en-us/dotnet/aspire/)
 
 > **An enterprise AI reference application by Earlybird Solutions** — demonstrating end-to-end architecture, build, and operation of a modern Azure + .NET Aspire AI platform.
 > The pinball domain is the vehicle. The engineering is the point.
@@ -186,7 +186,7 @@ The application is live on [pinwiz.ai](https://pinwiz.ai). The following limitat
 ## Tech stack
 
 - **.NET 10 / C# 14**, `Directory.Build.props` enforcing zero warnings as errors
-- **.NET Aspire 13.4.6** — local orchestration ([`PinballWizard.AppHost`](src/PinballWizard.AppHost/) + [`PinballWizard.ServiceDefaults`](src/PinballWizard.ServiceDefaults/) — OTel, service discovery, standard HTTP resilience, `/healthz` + `/alive`)
+- **.NET Aspire 13.5.3** — local orchestration ([`PinballWizard.AppHost`](src/PinballWizard.AppHost/) + [`PinballWizard.ServiceDefaults`](src/PinballWizard.ServiceDefaults/) — OTel, service discovery, standard HTTP resilience, `/healthz` + `/alive`)
 - **Azure** — Cosmos DB Serverless, AI Search Basic, Azure OpenAI / Microsoft Foundry, Container Apps, Container Registry, Storage, Key Vault, Application Insights, Log Analytics
 - **Microsoft.Azure.Cosmos** (data-plane SDK) + **Azure.ResourceManager.CosmosDB** (ARM SDK) — split per [ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md): schema CRUD via ARM, item CRUD via data-plane SDK
 - **Microsoft Agent Framework (`Microsoft.Agents.AI` 1.5.0)** — Responses Agent pattern; `AIProjectClient.AsAIAgent`; OTel auto-emission
