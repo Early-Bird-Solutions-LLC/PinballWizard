@@ -452,7 +452,7 @@ resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01'
 // main-shared.dev.local.bicepparam) the jobs would still exist, still authenticate as the
 // UAMI, and — with an AI-Search-gated grant — 403 on every Cosmos call. The grant must
 // therefore be at least as available as the hosts that depend on it.
-resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, '${namePrefix}-aca-id-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -1461,7 +1461,7 @@ resource ragIndexerAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-pre
 
 var roleAssignmentPrincipalType = 'User'
 
-resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (!empty(developerObjectId)) {
+resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (!empty(developerObjectId)) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, developerObjectId, '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -1590,7 +1590,7 @@ resource developerDocIntUser 'Microsoft.Authorization/roleAssignments@2022-04-01
 // runtime resolution is permitted. Stable across redeploys: same app name →
 // same id → same guid → idempotent re-application.
 
-resource ragIndexerCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+resource ragIndexerCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2 && deployAiSearch) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, ragIndexerApp.id, '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -2608,7 +2608,7 @@ module linkerJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (
 // Follows the identical pattern as ragIndexerCosmosDataContrib (line 945).
 // guid() uses the module deployment name as the stable variable component so
 // the assignment name is deterministic and idempotent across redeploys.
-resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'linker-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -2703,7 +2703,7 @@ module opdbSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
 // Cosmos DB Built-in Data Contributor for the OPDB sync job's system-assigned MI.
 // Identical pattern to linkerJobCosmosDataContrib above — the OPDB sync writes
 // machine records + lookup rows through IMachineRepository (data-plane CRUD).
-resource opdbSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource opdbSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'opdb-sync-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -2774,7 +2774,7 @@ module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
 // Identical pattern to opdbSyncJobCosmosDataContrib — the Stern refresh writes
 // scraped items through the repository (data-plane CRUD). Gated on deployPhase2 &&
 // deployAiSearch to match the module gate above (no orphan role assignment).
-resource sternRefreshJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+resource sternRefreshJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2 && deployAiSearch) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'stern-refresh-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -2897,7 +2897,7 @@ module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
 // Identical pattern to sternRefreshJobCosmosDataContrib — the sync reads the machine
 // title-lookup rows through the repository (data-plane access). Gated on deployPhase2
 // && deployAiSearch to match the module gate above (no orphan role assignment).
-resource kineticistSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+resource kineticistSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2 && deployAiSearch) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'kineticist-sync-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -2991,7 +2991,7 @@ module twipNewsletterJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
 // Even though TWIP doesn't write to Cosmos, the CLI's DI gate (cosmosWired) requires
 // a live Cosmos connection to register IChunker. The Cosmos data-plane RBAC is needed
 // so DefaultAzureCredential can authenticate to Cosmos at startup.
-resource twipJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+resource twipJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2 && deployAiSearch) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'twip-newsletter-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3055,7 +3055,7 @@ module multimorphicScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
   }
 }
 
-resource multimorphicJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource multimorphicJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'multimorphic-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3094,7 +3094,7 @@ module cgcScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = i
   }
 }
 
-resource cgcJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource cgcJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'cgc-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3133,7 +3133,7 @@ module barrelsOfFunScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
   }
 }
 
-resource barrelsOfFunJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource barrelsOfFunJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'barrelsoffun-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3180,7 +3180,7 @@ module sternManualsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.b
   }
 }
 
-resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'stern-manuals-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3303,7 +3303,7 @@ module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
   }
 }
 
-resource sternGamesScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource sternGamesScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'stern-games-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3343,7 +3343,7 @@ module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job
   }
 }
 
-resource sternBulletinsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource sternBulletinsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'stern-bulletins-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3382,7 +3382,7 @@ module jjpScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = i
   }
 }
 
-resource jjpJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource jjpJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'jjp-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3421,7 +3421,7 @@ module jjpSupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bic
   }
 }
 
-resource jjpSupportJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource jjpSupportJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'jjp-support-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3460,7 +3460,7 @@ module apScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
   }
 }
 
-resource apJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource apJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'ap-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3499,7 +3499,7 @@ module apBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bi
   }
 }
 
-resource apBulletinsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource apBulletinsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'ap-bulletins-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3538,7 +3538,7 @@ module spookyScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
   }
 }
 
-resource spookyJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource spookyJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'spooky-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3577,7 +3577,7 @@ module spookySupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.
   }
 }
 
-resource spookySupportJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource spookySupportJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'spooky-support-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3616,7 +3616,7 @@ module pbScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
   }
 }
 
-resource pbJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource pbJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'pb-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3655,7 +3655,7 @@ module pbDocsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
   }
 }
 
-resource pbDocsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource pbDocsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'pb-docs-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
@@ -3694,7 +3694,7 @@ module pbFreshdeskScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bi
   }
 }
 
-resource pbFreshdeskJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource pbFreshdeskJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, 'pb-freshdesk-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
