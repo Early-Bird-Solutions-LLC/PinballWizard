@@ -304,7 +304,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (deployPhas
 // PR (Gate 1 in the parallel execution plan). This module just provisions
 // the account itself.
 
-resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-08-15' = {
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   name: cosmosAccountName
   location: location
   tags: tags
