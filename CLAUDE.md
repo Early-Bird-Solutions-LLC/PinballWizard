@@ -81,7 +81,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 | Pinball Brothers (Freshdesk) | `pinballbrothers.freshdesk.com/support/solutions` | Static HTML (AngleSharp) | `PbFreshdeskDocumentScraper`; PDF/file attachments (PR #663) |
 | Barrels of Fun | `shop.kollectfun.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `BofProductScraper` |
 | Multimorphic | `multimorphic.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `MultimorphicProductScraper` |
-| Chicago Gaming (CGC) | `chicago-gaming.com/coinop/` | Custom Nginx HTML | `CgcGamePageScraper` |
+| Chicago Gaming (CGC) | `chicago-gaming.com` (root nav; `/coinop/` index retired 2026-08, #967) | Custom Nginx HTML | `CgcGamePageScraper` |
 | OPDB (canonical machine catalog) | `opdb.org/api/` | API; not a web scraper | `OpdbSyncService`, special-cased — writes `IMachineRepository` not `ScrapedItems` |
 
 JJP uses `JsonLdProductParser` + `OpenGraphExtractor` in `Infrastructure/Scraping/JsonLd/` and `Infrastructure/Scraping/OpenGraph/`. BoF and Multimorphic moved to the WooCommerce Store API (shared `WooCommerceStoreApiClient` + `WooCommerceProductMapper` in `Infrastructure/Scraping/WooCommerce/`).

@@ -2493,7 +2493,8 @@ static IHost CreateHost(string[] args)
     builder.Services.AddBarrelsOfFunScraping(builder.Configuration);
 
     // Chicago Gaming Company scraper (Phase 1.3 — custom Nginx-served HTML,
-    // discovers machines via the /coinop/ index page, extracts title from
+    // discovers machines via the configured index page (the site root since
+    // CGC retired /coinop/, #967), extracts title from
     // page <title> with manufacturer suffix stripped, plus same-host PDFs).
     builder.Services.AddChicagoGamingScraping(builder.Configuration);
 

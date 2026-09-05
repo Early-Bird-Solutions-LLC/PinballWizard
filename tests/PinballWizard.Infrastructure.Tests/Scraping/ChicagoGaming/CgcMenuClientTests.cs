@@ -19,9 +19,11 @@ public sealed class CgcMenuClientTests
     [Fact]
     public void ParseMachineLinks_ReturnsCanonicalMachineUrls()
     {
-        // Mirrors the actual /coinop/ index page anchor set: 5
-        // canonical machines plus their /update and /update/mac
-        // sub-pages, plus external + non-coinop links.
+        // Hand-written anchor set covering the shapes discovery must handle: 5
+        // canonical machines plus /update and /update/mac sub-pages, plus external
+        // and non-coinop links. Modelled on the retired /coinop/ index (#967); the
+        // live-shape equivalent against the current source is
+        // CgcMenuClientLiveShapeTests, which uses a captured fixture.
         const string html = """
             <html><body>
               <a href="/coinop/attack-from-mars">AFM</a>
