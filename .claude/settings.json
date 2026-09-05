@@ -10,5 +10,18 @@
       "Bash(dotnet --list-sdks)",
       "Bash(dotnet --list-runtimes)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/bin/check-unpushed-branches.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
   }
 }
