@@ -60,7 +60,7 @@ public sealed class CgcGamePageScraperTests
             """;
 
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", indexHtml)
+            .MapHtml($"{BaseUrl}/", indexHtml)
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", mmHtml)
             .MapHtml($"{BaseUrl}/coinop/pulp-fiction", pulpHtml));
 
@@ -135,7 +135,7 @@ public sealed class CgcGamePageScraperTests
         const string pulpHtml = """<html><head><title>Pulp | Chicago Gaming Company</title></head></html>""";
 
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", indexHtml)
+            .MapHtml($"{BaseUrl}/", indexHtml)
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", mmHtml)
             .Map($"{BaseUrl}/coinop/broken",
                 _ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError))
@@ -169,7 +169,7 @@ public sealed class CgcGamePageScraperTests
         // outer try/catch around ScrapeAsync(), but this scraper's contract
         // is to yield-break cleanly on discovery failure.
         var (scraper, _, _) = BuildScraper(h => h
-            .Map($"{BaseUrl}/coinop/",
+            .Map($"{BaseUrl}/",
                 _ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)));
 
         var items = await ScrapeAllAsync(scraper);
@@ -187,7 +187,7 @@ public sealed class CgcGamePageScraperTests
         // explicitly excludes PolitenessException; the per-page
         // TryExtractAsync also rethrows it explicitly.
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", """<html/>""")
+            .MapHtml($"{BaseUrl}/", """<html/>""")
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", "<html/>"));
 
         gate.ThrowOnAcquire = new PolitenessException(
@@ -219,7 +219,7 @@ public sealed class CgcGamePageScraperTests
         // ReportResponseAsync error path on the gate.
         const string indexHtml = """<html><body><a href="/coinop/medieval-madness">MM</a></body></html>""";
         var (scraper, gate, _) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", indexHtml)
+            .MapHtml($"{BaseUrl}/", indexHtml)
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", "<html/>"));
 
         gate.ThrowOnReport = new PolitenessException(

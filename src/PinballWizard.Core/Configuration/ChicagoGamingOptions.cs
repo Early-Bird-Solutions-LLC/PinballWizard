@@ -12,9 +12,10 @@ namespace PinballWizard.Core.Configuration;
 /// Phase 1.3 of the manufacturer-scraper fan-out. The CGC sitemap
 /// at <c>/sitemap.xml</c> is incomplete in practice (omits Pulp
 /// Fiction and Cactus Canyon as of 2026-05) so discovery uses the
-/// <see cref="MachinesIndexPath"/> page (<c>/coinop/</c>) instead.
-/// That page lists every machine and is the canonical filter — same
-/// pattern as Barrels of Fun's <c>/product-category/machines/</c>.
+/// <see cref="MachinesIndexPath"/> page instead. That page's navigation
+/// links every shipped machine and is the canonical filter — same pattern as
+/// Barrels of Fun's <c>/product-category/machines/</c>. It was <c>/coinop/</c>
+/// until CGC retired that index (#967); it is now the site root.
 /// <para>
 /// CGC produces "Remake" editions of classic Bally/Williams pinball
 /// machines (Attack from Mars, Medieval Madness, Monster Bash,
@@ -36,11 +37,25 @@ public sealed class ChicagoGamingOptions
     public string BaseUrl { get; set; } = "https://www.chicago-gaming.com";
 
     /// <summary>
-    /// Path to the index page that lists every CGC machine.
+    /// Path to the page whose anchors are scanned for machines.
     /// Discovery extracts <c>/coinop/{slug}</c> anchors from this page.
     /// </summary>
+    /// <remarks>
+    /// The site root, not <c>/coinop/</c>. CGC retired the dedicated machines index
+    /// around 2026-08-23 — it now returns 404 while the root returns 200 and each
+    /// <c>/coinop/{slug}</c> page still resolves, which failed every scheduled CGC
+    /// scrape for a fortnight (#967). The root's navigation links every shipped
+    /// coin-op title, and <see cref="GamePathPrefix"/> plus the single-slug-segment
+    /// rule still does the filtering, so only the fetch target changed.
+    /// <para>
+    /// This is a navigation source rather than a dedicated index, so it is more
+    /// fragile than what it replaced: a nav reshuffle changes discovery. If CGC ever
+    /// publishes a real machine listing or a sitemap (neither existed when this was
+    /// captured), prefer it. The yield guard is what catches the next break.
+    /// </para>
+    /// </remarks>
     [Required]
-    public string MachinesIndexPath { get; set; } = "/coinop/";
+    public string MachinesIndexPath { get; set; } = "/";
 
     /// <summary>
     /// URL path prefix that identifies a CGC machine page. URLs

@@ -7,10 +7,11 @@ using PinballWizard.Infrastructure.Scraping.Polite;
 namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 
 /// <summary>
-/// Reads CGC's <c>/coinop/</c> index page and returns the set of
-/// canonical machine URLs. The site's sitemap is incomplete in
-/// practice (omits some shipped machines); the index page is the
-/// canonical source — same defence-in-depth pattern as
+/// Reads the configured CGC index page (see
+/// <c>ChicagoGamingOptions.MachinesIndexPath</c> — the site root since CGC
+/// retired <c>/coinop/</c>, #967) and returns the set of canonical machine
+/// URLs. The site's sitemap is incomplete in practice (omits some shipped
+/// machines); that page is the canonical source — same defence-in-depth as
 /// <c>BofCategoryClient</c>.
 /// </summary>
 /// <remarks>

@@ -10,7 +10,8 @@ namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 
 /// <summary>
 /// Chicago Gaming Company game-page scraper. Discovers CGC machines
-/// via the <c>/coinop/</c> index page, then fetches each canonical
+/// via the configured index page (the site root since CGC retired
+/// <c>/coinop/</c>, #967), then fetches each canonical
 /// machine page and yields:
 /// <list type="bullet">
 ///   <item>One <see cref="ScrapedItem"/> with <c>.Game</c> populated.</item>
