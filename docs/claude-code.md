@@ -44,7 +44,7 @@ flowchart TD
   skills --> gate
   gate --> review["/local-review<br/>qualitative diff review"]
   review --> audit["PR-AUDIT.md<br/>12-item mechanical checklist"]
-  audit --> commit["git commit<br/>personal identity · no Co-Authored-By"]
+  audit --> commit["git commit<br/>personal identity · Claude Co-Authored-By trailer"]
   commit --> push["gh pr create<br/>claude-code label · /local-review outcome recorded"]
   push --> pr["PR description<br/>findings addressed · ADR links · test evidence"]
 ```
