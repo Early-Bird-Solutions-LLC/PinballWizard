@@ -189,12 +189,13 @@ public sealed class BlobDocumentBytesSourceTests
         {
             SendCount++;
             _onSend();
-            var response = new HttpResponseMessage(HttpStatusCode.Forbidden)
+            // Returned to HttpClient, which disposes it. Do not dispose here —
+            // a using would release the message before the caller reads the 403.
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
             {
                 Content = new ByteArrayContent("blocked-by-waf"u8.ToArray()),
                 RequestMessage = request,
-            };
-            return Task.FromResult(response);
+            });
         }
     }
 

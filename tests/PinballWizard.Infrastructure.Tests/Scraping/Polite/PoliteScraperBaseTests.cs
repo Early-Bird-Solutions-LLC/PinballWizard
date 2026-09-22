@@ -198,7 +198,7 @@ public sealed class PoliteScraperBaseTests
 
         using var httpClient = new HttpClient(handler);
         var scraper = new TestScraper(gate);
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
         var ex = await Assert.ThrowsAsync<PolitenessException>(
             () => scraper.SendAsync(httpClient, request, CancellationToken.None));
