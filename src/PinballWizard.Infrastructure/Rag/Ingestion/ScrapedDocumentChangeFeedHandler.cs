@@ -38,7 +38,9 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // is passed to `IDocumentBytesSource.OpenAsync`; `BlobDocumentBytesSource`
 // recognises a blob-name shape (contains '/', no '://') and serves from
 // pinwiz-raw. A blob miss (not yet uploaded) falls through to HTTP inside
-// `BlobDocumentBytesSource` — a genuine fetch, not masking (invariant #17).
+// `BlobDocumentBytesSource`. That fetch acquires `IPolitenessGate` before
+// the wire call. A non-success status (including 403) throws and is
+// dead-lettered — a genuine failure, not a placeholder body (invariant #17).
 // When the raw record is absent or `File` is null the URL is passed
 // instead, keeping the previous HTTP fallback behaviour.
 //

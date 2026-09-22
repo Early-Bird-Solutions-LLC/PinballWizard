@@ -170,6 +170,45 @@ public sealed class PoliteScraperBaseTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SendPolitelyAsync_WhenReportThrows_DisposesResponseAndReleasesLease()
+    {
+        // A 429-streak abort throws from ReportResponseAsync after the
+        // response exists. The caller never sees that response, so the
+        // base must dispose it (ResponseHeadersRead would otherwise pin
+        // the connection) and still release the politeness lease.
+        var leaseDisposed = false;
+        TrackingContent? content = null;
+
+        var gate = Substitute.For<IPolitenessGate>();
+        gate.AcquireForRequestAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IAsyncDisposable>(new TrackingLease(() => leaseDisposed = true)));
+        gate.ReportResponseAsync(Arg.Any<Uri>(), Arg.Any<HttpStatusCode>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new PolitenessException(
+                PolitenessViolation.TooMany429Responses,
+                "429 streak"));
+
+        var url = new Uri("https://example.com/streak");
+        var handler = new QueueingHttpMessageHandler();
+        handler.Map(url.AbsoluteUri, _ =>
+        {
+            content = new TrackingContent("body"u8.ToArray());
+            return new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = content };
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var scraper = new TestScraper(gate);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+        var ex = await Assert.ThrowsAsync<PolitenessException>(
+            () => scraper.SendAsync(httpClient, request, CancellationToken.None));
+
+        Assert.Equal(PolitenessViolation.TooMany429Responses, ex.Violation);
+        Assert.True(leaseDisposed);
+        Assert.NotNull(content);
+        Assert.True(content.Disposed);
+    }
+
     // --- helpers ---
 
     private sealed class NoOpLease : IAsyncDisposable
@@ -183,6 +222,17 @@ public sealed class PoliteScraperBaseTests
         {
             onDispose();
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class TrackingContent(byte[] bytes) : ByteArrayContent(bytes)
+    {
+        public bool Disposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
         }
     }
 

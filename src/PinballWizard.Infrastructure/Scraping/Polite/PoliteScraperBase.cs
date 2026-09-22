@@ -56,9 +56,24 @@ public abstract class PoliteScraperBase
     /// transient retries (5xx, network errors) are handled by the
     /// <see cref="HttpClient"/>'s configured resilience pipeline.
     /// </summary>
+    protected Task<HttpResponseMessage> SendPolitelyAsync(
+        HttpClient client,
+        HttpRequestMessage request,
+        CancellationToken cancellationToken) =>
+        SendPolitelyAsync(client, request, HttpCompletionOption.ResponseContentRead, cancellationToken);
+
+    /// <summary>
+    /// Same as <see cref="SendPolitelyAsync(HttpClient, HttpRequestMessage, CancellationToken)"/>
+    /// but the caller chooses when the response body is buffered.
+    /// Document downloads pass <see cref="HttpCompletionOption.ResponseHeadersRead"/>
+    /// so a large PDF is not buffered twice (once by <see cref="HttpClient"/>,
+    /// again by the caller). Page scrapers keep the default
+    /// <see cref="HttpCompletionOption.ResponseContentRead"/>.
+    /// </summary>
     protected async Task<HttpResponseMessage> SendPolitelyAsync(
         HttpClient client,
         HttpRequestMessage request,
+        HttpCompletionOption completionOption,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -68,9 +83,21 @@ public abstract class PoliteScraperBase
 
         await using var lease = await Politeness.AcquireForRequestAsync(url, cancellationToken).ConfigureAwait(false);
 
-        var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        await Politeness.ReportResponseAsync(url, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken).ConfigureAwait(false);
-        return response;
+        var response = await client.SendAsync(request, completionOption, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Politeness.ReportResponseAsync(url, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken).ConfigureAwait(false);
+            return response;
+        }
+        catch
+        {
+            // ReportResponseAsync can throw (429-streak abort). The caller never
+            // receives the message in that case, so this method owns disposal.
+            // ResponseHeadersRead leaves the connection checked out until the
+            // content is disposed; dropping the message on the floor pins it.
+            response.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

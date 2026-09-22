@@ -38,7 +38,9 @@ public static class ServiceCollectionExtensions
     //     Application-side TryAddSingleton placeholder).
     //   - Registers `IDeadLetterSink` → `CosmosBackedDeadLetterSink`.
     //   - Registers `IDocumentBytesSource` → `HttpDocumentBytesSource`
-    //     via a typed HttpClient.
+    //     via a typed HttpClient. The HTTP source depends on
+    //     `IPolitenessGate` — the host must call `AddPoliteScraping`
+    //     before the first document fetch.
     //   - Registers the concrete `ICosmosChangeFeedHandler<RagSourceDocument>`
     //     bridge.
     //   - Registers the generic `CosmosChangeFeedHostedService<RagSourceDocument>`
@@ -219,7 +221,16 @@ public static class ServiceCollectionExtensions
         // capture a single instance for process life (that would pin one HttpClient
         // handler and defeat factory rotation/DNS-refresh). The decorator resolves
         // a fresh inner per fallback via the captured IServiceProvider.
-        services.AddHttpClient<HttpDocumentBytesSource>();
+        //
+        // The typed client pulls IPolitenessGate from DI (constructor) and stamps
+        // the polite User-Agent. AddPoliteScraping must already have bound
+        // PolitenessOptions and registered the gate; otherwise the first fallback
+        // fails at resolution instead of issuing an ungated request.
+        services.AddHttpClient<HttpDocumentBytesSource>((sp, client) =>
+        {
+            var politeness = sp.GetRequiredService<IOptions<PolitenessOptions>>().Value;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+        });
         services.AddSingleton<IDocumentBytesSource>(sp =>
         {
             var store = sp.GetRequiredService<IDocumentBlobStore>();

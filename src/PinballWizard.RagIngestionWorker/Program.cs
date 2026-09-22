@@ -9,6 +9,7 @@ using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Infrastructure.Rag.Extraction;
 using PinballWizard.Infrastructure.Rag.Ingestion;
+using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.ServiceDefaults;
 
 // W3-2 RAG ingestion worker — Container-App-hosted Cosmos Change Feed
@@ -54,6 +55,16 @@ builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
 
 // Application-layer pipeline orchestrator.
 builder.Services.AddRagIngestionPipeline();
+
+// Polite-scraping foundation. The ingestion HTTP fallback
+// (HttpDocumentBytesSource) acquires IPolitenessGate before any
+// manufacturer fetch. Register it before the change-feed consumer
+// so the typed client can resolve the gate and the polite User-Agent.
+builder.Services.AddPoliteScraping(builder.Configuration);
+// Per-host PolitenessOverrides live on the ingestion-source Cosmos docs.
+// The CLI wires this whenever Cosmos is present; the worker has Cosmos too,
+// so a host an operator slowed down is paced here as well.
+builder.Services.AddCosmosBackedPolitenessOverrides();
 
 // Infrastructure-layer change-feed consumer — registers the hosted
 // service (BackgroundService) that drives the actual Change Feed
