@@ -22,8 +22,18 @@
       symbols pages map back to GitHub URLs. Replaces the per-project
       PackageReference pattern previously held in Directory.Build.props
       (the GlobalPackageReference + CPM combo is the modern equivalent).
+
+      10.0.401 — 10.0.300 resolved Microsoft.Build.Tasks.Git 10.0.300, which
+      GHSA-23fw-v26w-5fgq (CVE-2026-62900) marks vulnerable for
+      >= 10.0.300 and <= 10.0.301. NuGet audit emits NU1902, and
+      TreatWarningsAsErrors turns that into a restore failure. That has
+      stopped the scheduled canary and the corpus-coverage probe before
+      either job reaches the live site (since 2026-09-10). 10.0.401 depends
+      on Microsoft.Build.Tasks.Git 10.0.401, which is outside that range.
+      The first patched 10.0.300-band release is 10.0.303; 10.0.401 is the
+      current stable on the 10.0 train.
     -->
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
   </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
