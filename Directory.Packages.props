@@ -23,7 +23,7 @@
       PackageReference pattern previously held in Directory.Build.props
       (the GlobalPackageReference + CPM combo is the modern equivalent).
     -->
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
   </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
