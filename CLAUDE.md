@@ -72,7 +72,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 | Stern (bulletins) | `sternpinball.com/support/service-bulletins/` | Vue.js (Playwright) | `ServiceBulletinScraper` |
 | Jersey Jack (JJP) | `jerseyjackpinball.com/products/...` | Shopify sitemap + JSON-LD | `JjpProductScraper` |
 | Jersey Jack (JJP, support) | `jerseyjackpinball.com/support/` + `/pages/support/{edition}` | Static Shopify page | `JjpSupportDocScraper`; per-edition Game Manual + Rules Flowchart PDFs |
-| American Pinball (AP) | `american-pinball.com` | DOM heuristic | `ApGamePageScraper` |
+| American Pinball (AP) | `american-pinball.com` | Yoast sitemap index + WP-REST `game-page` category; DOM heuristic | `ApGamePageScraper`; game pages are root permalinks `/{slug}/` (legacy `/games/{slug}` still accepted) |
 | American Pinball (AP, bulletins) | `american-pinball.com/support/` | Static HTML (AngleSharp) | `ApBulletinScraper`; service-bulletin PDFs |
 | Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
 | Spooky Pinball (support) | `spookypinball.com` game-support pages | WordPress REST (child pages) | `SpookySupportPageScraper`; per-game rule sheets / manuals / charts (PDF) |
