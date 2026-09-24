@@ -112,11 +112,14 @@ param playwrightServiceUrl string = ''
 // and every non-empty string is treated as a workspace URL, so there was no value an
 // operator could set to disable the workspace path while deployPhase2 stayed true.
 //
-// That matters more here than it would elsewhere because ADR-0056 deliberately has NO
-// local-Chromium fallback — a workspace outage fails the scrape loudly. Without this
-// flag the only escape from a misbehaving workspace would be deleting the resource or
-// shipping a code change; with it, the rollback is a parameter flip and a redeploy, and
-// it is non-destructive (the workspace resource stays put, so flipping back does not
+// That matters more here than it would elsewhere because ADR-0056 still has no
+// local-Chromium fallback for a workspace that was reached and then failed — that
+// outage fails the scrape loudly. (The #920 authentication failure is the exception:
+// it is logged and metered, then the factory launches local Chromium. A workspace
+// that authenticates and then misbehaves does not take that path.) Without this
+// flag the only escape from that outage would be deleting the resource or shipping
+// a code change; with it, the rollback is a parameter flip and a redeploy, and it
+// is non-destructive (the workspace resource stays put, so flipping back does not
 // re-provision anything).
 param useSternPlaywrightWorkspace bool = true
 
