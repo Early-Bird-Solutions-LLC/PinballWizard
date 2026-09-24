@@ -399,9 +399,11 @@ public sealed class ApSitemapClientTests
         // rooted argument and drops base. This must still land on the captured file.
         var rooted = Path.DirectorySeparatorChar + "sitemap-index.captured.xml";
         var path = FixtureFile(rooted);
-        var expected = Path.Combine(Path.GetFullPath(FixtureDir()), "sitemap-index.captured.xml");
+        var root = Path.GetFullPath(FixtureDir()).TrimEnd(Path.DirectorySeparatorChar);
+        var expected = root + Path.DirectorySeparatorChar + "sitemap-index.captured.xml";
 
         Assert.Equal(expected, path);
+        Assert.StartsWith(root + Path.DirectorySeparatorChar, path, StringComparison.Ordinal);
         Assert.True(File.Exists(path));
         Assert.NotEqual(Path.GetFullPath(rooted), path);
     }
