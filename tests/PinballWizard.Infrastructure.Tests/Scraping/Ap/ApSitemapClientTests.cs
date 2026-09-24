@@ -414,7 +414,7 @@ public sealed class ApSitemapClientTests
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
 
-        // A rooted later argument makes Path.Combine discard every earlier segment.
+        // A rooted name is reduced to its file name so it cannot replace the fixture directory.
         var segment = Path.IsPathRooted(fileName) ? Path.GetFileName(fileName) : fileName;
         if (string.IsNullOrEmpty(segment)
             || segment.Contains("..", StringComparison.Ordinal)
@@ -424,15 +424,8 @@ public sealed class ApSitemapClientTests
             throw new InvalidOperationException($"Fixture file name must be a single relative segment: {fileName}");
         }
 
-        var root = Path.GetFullPath(FixtureDir());
-        var combined = Path.GetFullPath(Path.Combine(root, segment));
-        var prefix = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!combined.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"Fixture path escaped {root}: {combined}");
-        }
-
-        return combined;
+        var root = Path.GetFullPath(FixtureDir()).TrimEnd(Path.DirectorySeparatorChar);
+        return root + Path.DirectorySeparatorChar + segment;
     }
 
     private static string FixtureDir()
