@@ -233,10 +233,9 @@ public sealed class ApSitemapClientTests
     [Fact]
     public async Task DiscoverGameUrls_CapturedYoastIndex_ReturnsLiveGamePermalinksOnly()
     {
-        var fixtures = FixtureDir();
-        var indexXml = File.ReadAllText(Path.Combine(fixtures, "sitemap-index.captured.xml"));
-        var postSitemap = File.ReadAllText(Path.Combine(fixtures, "post-sitemap.captured.xml"));
-        var postsJson = File.ReadAllText(Path.Combine(fixtures, "game-page-posts.captured.json"));
+        var indexXml = File.ReadAllText(FixtureFile("sitemap-index.captured.xml"));
+        var postSitemap = File.ReadAllText(FixtureFile("post-sitemap.captured.xml"));
+        var postsJson = File.ReadAllText(FixtureFile("game-page-posts.captured.json"));
         var children = ApSitemapClient.ParseChildSitemapUrls(indexXml);
         Assert.NotEmpty(children);
 
@@ -245,14 +244,14 @@ public sealed class ApSitemapClientTests
             mapped.MapXml($"{BaseUrl}/sitemap.xml", indexXml);
             mapped.MapJson(
                 $"{BaseUrl}/wp-json/wp/v2/categories?slug=game-page&_fields=id,slug",
-                File.ReadAllText(Path.Combine(fixtures, "game-page-category.captured.json")));
+                File.ReadAllText(FixtureFile("game-page-category.captured.json")));
             mapped.MapJson(
                 $"{BaseUrl}/wp-json/wp/v2/posts?categories=114&per_page=100&page=1&_fields=slug,link",
                 postsJson);
             foreach (var child in children)
             {
                 var fileName = Path.GetFileNameWithoutExtension(child.AbsolutePath) + ".captured.xml";
-                mapped.MapXml(child.AbsoluteUri, File.ReadAllText(Path.Combine(fixtures, fileName)));
+                mapped.MapXml(child.AbsoluteUri, File.ReadAllText(FixtureFile(fileName)));
             }
         });
 
@@ -393,7 +392,46 @@ public sealed class ApSitemapClientTests
         Assert.Contains("game-page", ex.Message);
     }
 
+    [Fact]
+    public void FixtureFile_RootedName_KeepsTheFixtureDirectory()
+    {
+        // Path.Combine(base, "/sitemap-index.captured.xml") returns only the
+        // rooted argument and drops base. This must still land on the captured file.
+        var rooted = Path.DirectorySeparatorChar + "sitemap-index.captured.xml";
+        var path = FixtureFile(rooted);
+        var expected = Path.Combine(Path.GetFullPath(FixtureDir()), "sitemap-index.captured.xml");
+
+        Assert.Equal(expected, path);
+        Assert.True(File.Exists(path));
+        Assert.NotEqual(Path.GetFullPath(rooted), path);
+    }
+
     private const string BaseUrl = "https://www.american-pinball.com";
+
+    private static string FixtureFile(string fileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+
+        // A rooted later argument makes Path.Combine discard every earlier segment.
+        var segment = Path.IsPathRooted(fileName) ? Path.GetFileName(fileName) : fileName;
+        if (string.IsNullOrEmpty(segment)
+            || segment.Contains("..", StringComparison.Ordinal)
+            || segment.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || segment.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Fixture file name must be a single relative segment: {fileName}");
+        }
+
+        var root = Path.GetFullPath(FixtureDir());
+        var combined = Path.GetFullPath(Path.Combine(root, segment));
+        var prefix = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!combined.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Fixture path escaped {root}: {combined}");
+        }
+
+        return combined;
+    }
 
     private static string FixtureDir()
     {
