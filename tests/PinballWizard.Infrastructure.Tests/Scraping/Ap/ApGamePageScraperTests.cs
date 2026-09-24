@@ -131,6 +131,71 @@ public sealed class ApGamePageScraperTests
     }
 
     [Fact]
+    public async Task ScrapeAsync_SitemapIndex_YieldsCanonicalGamePagesWithProvenance()
+    {
+        const string indexXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+              <sitemap><loc>https://americanpinball.com/post-sitemap.xml</loc></sitemap>
+            </sitemapindex>
+            """;
+        const string postSitemapXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+              <url><loc>https://americanpinball.com/houdini/</loc></url>
+              <url><loc>https://americanpinball.com/houdini-manual/</loc></url>
+              <url><loc>https://americanpinball.com/oktoberfest/</loc></url>
+            </urlset>
+            """;
+        const string houdiniHtml = """
+            <html>
+              <head><title>Houdini | American Pinball</title></head>
+              <body><a href="/downloads/Houdini_Manual.pdf">Manual</a></body>
+            </html>
+            """;
+        const string oktoberfestHtml = """
+            <html>
+              <head><title>Oktoberfest | American Pinball</title></head>
+              <body><a href="/downloads/Oktoberfest_Flyer.pdf">Flyer</a></body>
+            </html>
+            """;
+
+        var (scraper, gate, handler) = BuildScraper(h => h
+            .MapXml($"{BaseUrl}/sitemap.xml", indexXml)
+            .MapXml("https://americanpinball.com/post-sitemap.xml", postSitemapXml)
+            .MapJson($"{BaseUrl}/wp-json/wp/v2/categories?slug=game-page&_fields=id,slug", """[{"id":114,"slug":"game-page"}]""")
+            .MapJson(
+                $"{BaseUrl}/wp-json/wp/v2/posts?categories=114&per_page=100&page=1&_fields=slug,link",
+                """
+                [
+                  {"slug":"houdini","link":"https://americanpinball.com/houdini/"},
+                  {"slug":"oktoberfest","link":"https://americanpinball.com/oktoberfest/"}
+                ]
+                """)
+            .MapHtml("https://americanpinball.com/houdini/", houdiniHtml)
+            .MapHtml("https://americanpinball.com/oktoberfest/", oktoberfestHtml));
+
+        var items = await ScrapeAllAsync(scraper);
+
+        Assert.Equal(4, items.Count);
+        Assert.Equal("houdini", items[0].Game!.Slug);
+        Assert.Equal("https://americanpinball.com/houdini/", items[0].DiscoveryUrl);
+        Assert.Equal("https://americanpinball.com/houdini/", items[0].Game!.GamePageUrl);
+        Assert.Equal("American Pinball Game Page", items[0].DiscoveryContext);
+        Assert.Equal(SourceType.AmericanPinballGamePage, items[0].SourceType);
+        Assert.Equal("houdini", items[1].Link!.GameSlug);
+        Assert.Equal("https://americanpinball.com/houdini/", items[1].DiscoveryUrl);
+
+        Assert.Equal("oktoberfest", items[2].Game!.Slug);
+        Assert.Equal("https://americanpinball.com/oktoberfest/", items[2].DiscoveryUrl);
+        Assert.Equal("oktoberfest", items[3].Link!.GameSlug);
+
+        Assert.DoesNotContain(handler.Requests, u => u.AbsolutePath.Contains("houdini-manual", StringComparison.Ordinal));
+        Assert.Equal(handler.Requests.Select(u => u.AbsoluteUri), gate.Acquired.Select(u => u.AbsoluteUri));
+        Assert.Equal(handler.Requests.Count, gate.Reported.Count);
+    }
+
+    [Fact]
     public async Task ScrapeAsync_PerPageFetchFailure_DoesNotAbortRun()
     {
         // One bad page in the middle should NOT prevent siblings from yielding.

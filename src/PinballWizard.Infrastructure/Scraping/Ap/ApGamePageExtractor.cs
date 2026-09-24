@@ -101,9 +101,12 @@ public static class ApGamePageExtractor
     }
 
     /// <summary>
-    /// Pulls the slug from a URL like
-    /// <c>https://www.american-pinball.com/games/houdini</c> →
-    /// <c>"houdini"</c>.
+    /// Pulls the slug from a legacy game URL
+    /// (<c>/games/houdini</c>) or from a current root permalink
+    /// (<c>https://americanpinball.com/houdini/</c>). Nested paths
+    /// that are not under <c>/games/</c> — support pages, category
+    /// archives — are not game slugs. Which root permalinks are
+    /// actually games is discovery's decision, not this method's.
     /// </summary>
     public static string? ExtractSlug(Uri pageUrl)
     {
@@ -115,10 +118,16 @@ public static class ApGamePageExtractor
                 return segments[i + 1];
             }
         }
-        // Trailing-segment fallback for /games/{slug} without further nesting.
-        return segments.Length >= 2 && segments[^2].Equals("games", StringComparison.OrdinalIgnoreCase)
-            ? segments[^1]
-            : null;
+
+        // Current Yoast permalinks are a single path segment. The bare
+        // /games/ listing page is not itself a game.
+        if (segments.Length == 1
+            && !segments[0].Equals("games", StringComparison.OrdinalIgnoreCase))
+        {
+            return segments[0];
+        }
+
+        return null;
     }
 
     private static string? ExtractTitle(IHtmlDocument doc, string slug)

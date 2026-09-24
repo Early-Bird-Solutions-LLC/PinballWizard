@@ -17,10 +17,10 @@ namespace PinballWizard.Infrastructure.Scraping.Ap;
 /// </list>
 /// </summary>
 /// <remarks>
-/// AP runs a custom-CMS server-rendered site (no Shopify, no SPA),
-/// so HTTP scraping via <see cref="PoliteScraperBase"/> is the right
-/// fit. Politeness, robots.txt, and 429 backoff inherited from the
-/// gate.
+/// AP is a WordPress site. Game pages are discovered from the Yoast
+/// sitemap index, filtered to the <c>game-page</c> category, then
+/// fetched as server-rendered HTML. Politeness, robots.txt, and 429
+/// backoff are inherited from the gate.
 /// <para>
 /// AP's pages don't expose JSON-LD or Open Graph tags, so the
 /// extractor falls back to DOM heuristics (page <c>&lt;title&gt;</c>,
