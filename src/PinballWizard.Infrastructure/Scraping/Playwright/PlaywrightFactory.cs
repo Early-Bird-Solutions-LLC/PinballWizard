@@ -330,11 +330,11 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             // propagate (every other failure). Metering is AcquireBrowserAsync's
             // job — doing it here as well would double-count the auth fallback.
             //
-            // Dispose is swallowed, wider than the sibling filters in this class,
-            // because the exception this catch is holding is the #920 discriminator.
-            // A throwing Dispose would replace that exception, AcquireBrowserAsync
-            // would classify the dispose failure instead, and the auth fallback
-            // would never run. The dispose failure is still logged.
+            // Expected cleanup failures are swallowed so they cannot replace the
+            // connect exception this catch is holding — that exception is the
+            // #920 discriminator. The filter matches the other disposal paths in
+            // this class. An unexpected dispose exception still propagates; a
+            // catch-all here is what code scanning rejects.
             var client = _workspaceClient;
             _workspaceClient = null;
             if (client is not null)
@@ -343,7 +343,7 @@ public sealed class PlaywrightFactory : IAsyncDisposable
                 {
                     client.Dispose();
                 }
-                catch (Exception disposeEx)
+                catch (Exception disposeEx) when (disposeEx is PlaywrightException or InvalidOperationException or ObjectDisposedException)
                 {
                     _logger.LogDebug(
                         disposeEx,
