@@ -2472,7 +2472,7 @@ static IHost CreateHost(string[] args)
     // JJP scraper (Phase 1.2 — Shopify/HTTP, sitemap-first discovery).
     builder.Services.AddJjpScraping(builder.Configuration);
 
-    // American Pinball scraper (Phase 1.2 — custom-CMS/HTTP, sitemap-first discovery,
+    // American Pinball scraper (sitemap index + WordPress game-page category,
     // DOM-heuristic title extraction, downloadable PDF/ZIP/SPK link extraction).
     builder.Services.AddAmericanPinballScraping(builder.Configuration);
 

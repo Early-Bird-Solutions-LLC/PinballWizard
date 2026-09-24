@@ -123,8 +123,12 @@ public sealed class ApGamePageExtractorTests
     [Theory]
     [InlineData("https://www.american-pinball.com/games/houdini", "houdini")]
     [InlineData("https://www.american-pinball.com/games/legends-of-valhalla/", "legends-of-valhalla")]
+    [InlineData("https://americanpinball.com/houdini/", "houdini")]
+    [InlineData("https://americanpinball.com/barry-os-bbq-challenge/", "barry-os-bbq-challenge")]
     [InlineData("https://www.american-pinball.com/", null)]
-    [InlineData("https://www.american-pinball.com/about", null)]
+    [InlineData("https://www.american-pinball.com/games/", null)]
+    [InlineData("https://americanpinball.com/support/houdini/", null)]
+    [InlineData("https://americanpinball.com/category/game-page/", null)]
     public void ExtractSlug_ReturnsExpected(string url, string? expected)
     {
         Assert.Equal(expected, ApGamePageExtractor.ExtractSlug(new Uri(url)));
