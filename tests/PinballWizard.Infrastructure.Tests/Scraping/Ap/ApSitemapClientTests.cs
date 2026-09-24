@@ -431,7 +431,7 @@ public sealed class ApSitemapClientTests
     private static string FixtureDir()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PinballWizard.slnx")))
+        while (dir is not null && !File.Exists(JoinRelative(dir.FullName, "PinballWizard.slnx")))
         {
             dir = dir.Parent;
         }
@@ -441,7 +441,32 @@ public sealed class ApSitemapClientTests
             throw new InvalidOperationException("Could not locate repo root from the test assembly.");
         }
 
-        return Path.Combine(dir.FullName, "tests", "PinballWizard.Infrastructure.Tests", "Fixtures", "Ap");
+        return JoinRelative(
+            dir.FullName,
+            "tests",
+            "PinballWizard.Infrastructure.Tests",
+            "Fixtures",
+            "Ap");
+    }
+
+    private static string JoinRelative(string directory, params ReadOnlySpan<string> segments)
+    {
+        var path = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        foreach (var segment in segments)
+        {
+            if (string.IsNullOrEmpty(segment)
+                || Path.IsPathRooted(segment)
+                || segment.Contains("..", StringComparison.Ordinal)
+                || segment.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || segment.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Path segment must be a single relative name: {segment}");
+            }
+
+            path += Path.DirectorySeparatorChar + segment;
+        }
+
+        return path;
     }
 
     private static string PostsUrl(int page, int pageSize) =>
