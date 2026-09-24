@@ -61,17 +61,53 @@ endpoint is supplied the container's Chromium footprint (the multi-hundred-MiB p
 removed entirely rather than managed; the ACA job process then holds only the .NET
 process and a thin CDP client connection.
 
-**The two failure modes are handled differently, deliberately.** "No workspace
-configured" (§ above) is not a failure — it's the default, and it behaves exactly as
-this project did before #855. "Workspace configured but the connection attempt
-fails" is a real failure, and there is no local-Chromium fallback for it: the exception
-propagates, composing with #857's existing "fail a run that collects nothing rather
-than exit 0" behavior. Falling back to `LaunchAsync` *after a configured attempt fails*
-would mask a real outage (Azure Playwright Workspaces down on a night it was
-supposed to be used) behind data that looks like a clean local run — exactly what
-invariant #17 forbids. Conflating these two states — as an earlier revision did, by
-gating on `SharedAzureCredential.IsDevelopment` instead of the URL itself — was the
-defect pre-push review caught: it turned "not configured yet" into a hard failure too.
+**Failure modes are handled differently, deliberately.** "No workspace configured"
+(§ above) is not a failure — it's the default, and it behaves exactly as this project
+did before #855. "Workspace configured, the service was reached, and the connection
+then failed" is a real outage: the exception propagates, composing with #857's
+existing "fail a run that collects nothing rather than exit 0" behavior. Falling back
+to `LaunchAsync` after a configured workspace was reached and then failed would mask
+that outage behind data that looks like a clean local run — exactly what invariant #17
+forbids. Conflating "not configured" with "configured and failed" — as an earlier
+revision did, by gating on `SharedAzureCredential.IsDevelopment` instead of the URL
+itself — was the defect pre-push review caught: it turned "not configured yet" into a
+hard failure too.
+
+**AMENDED 2026-09-24 — authentication failure falls back to local Chromium (#920).**
+The rule above still holds for a connect failure whose exception does not carry the
+SDK sentence below. It does not hold for the failure the Stern jobs have hit every
+night since August: `PlaywrightServiceBrowserClient.GetConnectOptionsAsync` throws
+`System.Exception: Could not authenticate with the service`. Azure SDK traces on the
+failing executions show IMDS/Cosmos/monitor tokens only — no Playwright scope, no
+request to `*.api.playwright.microsoft.com` — so on those runs the workspace was never
+contacted. Propagating the exception collected zero Stern pages: the yield guard
+correctly failed the job, and the catalog stopped updating. Since the 2026-08-19
+amendment, local Chromium is viable again (2 GiB jobs, driver leak fixed), which is
+the path an unconfigured environment already uses.
+
+The fallback key is that sentence, matched on the thrown exception or an inner
+exception. It is not a proof, visible to the factory, that no token was requested.
+`AzureSdkDiagnostics` already records the limit: the sentence is byte-identical for
+no RBAC, the wrong role, a non-identity refusal, and a deliberately garbage endpoint,
+all of which fail inside `GetConnectOptionsAsync` before a browser session exists.
+The factory cannot tell those apart, and it does not pretend to. Every one of them is
+"could not authenticate." A later `ConnectAsync` failure whose message does not
+contain the sentence still propagates. If a reached-then-failed error ever reused the
+sentence, it would also fall back; that is the cost of the SDK offering one sentence,
+and the Error log plus the counter tag still name it as a failure rather than a
+success.
+
+On a match, `PlaywrightFactory.AcquireBrowserAsync` logs the exception at Error,
+increments `pinwiz.scraper.workspace_connect_total` with `outcome=failure` and
+`fallback=local_chromium`, then launches local Chromium. Pages collected on that path
+are real scraped pages. The counter does not record success. A job that exits 0 after
+this fallback is degraded, and the Error log plus the `fallback` tag are what make
+that visible — a dashboard that only watches execution status would miss it, which is
+why the tag exists. Any other exception from the connect attempt is unchanged:
+metered `outcome=failure` with no fallback tag, then propagated. Cancellation and the
+defensive missing-URL throw are still not metered. The `useSternPlaywrightWorkspace`
+kill switch remains the operator control for a workspace that authenticates and then
+misbehaves; this amendment does not silently switch those runs onto local Chromium.
 
 ### Why not tune the recycle instead
 
@@ -114,7 +150,9 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   configured.
 - **A new external dependency exists once a workspace is configured.** From that point
   on, the scrape depends on Azure Playwright Workspaces being reachable; an outage
-  fails the scrape loudly rather than degrading it (see above).
+  (the service was reached, then the connect failed) fails the scrape loudly rather
+  than degrading it. The #920 authentication failure is the carve-out in the Decision
+  amendment above: it is logged and metered, then the run continues on local Chromium.
 - **CORRECTED 2026-08-18 — the original claim here ("not computable from the ARM
   resource or its provider's operations") was wrong, and shipped unverified.** It
   described the create-time schema (`localAuth`, `regionalAffinity` only, per
@@ -187,8 +225,10 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   **This is the change that actually activates #855.** Everything before it was inert by
   construction: the code gates on the URL's *presence*, so an empty value left every
   scraper on local Chromium. Once this deploys, the three Stern jobs connect to the
-  remote workspace, and per the no-fallback decision above a workspace outage now fails
-  those runs loudly rather than silently reverting to the OOM-prone local path.
+  remote workspace, and per the decision above a workspace outage (reached, then
+  failed) fails those runs loudly rather than silently reverting to the OOM-prone
+  local path. The 2026-09-24 amendment does not change that outage case; it only
+  falls back when authentication fails before the data plane is contacted.
 
   Deriving the value also silently **removed a rollback** that nobody had named as one:
   while the endpoint was manual, clearing `playwrightServiceUrl` was how an operator put

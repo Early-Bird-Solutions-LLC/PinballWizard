@@ -27,6 +27,15 @@ namespace PinballWizard.Infrastructure.Scraping.Playwright;
 /// unconfigured deployment behave exactly as it did before this change (local
 /// Chromium, existing recycle) rather than failing, and only switches over once
 /// the endpoint is actually supplied. See #855 and ADR-0056.
+/// <para>
+/// Authentication failure is the one configured-workspace failure that falls
+/// back to that local Chromium path (#920, ADR-0056 amended 2026-09-24). The
+/// SDK throws "Could not authenticate with the service" before it requests a
+/// token or contacts the data plane, so the workspace was never reached — this
+/// is not the outage the ADR refuses to mask. The exception is logged at Error
+/// and metered (<c>outcome=failure</c>, <c>fallback=local_chromium</c>) before
+/// local Chromium launches. Every other connect failure still propagates.
+/// </para>
 /// </remarks>
 public sealed class PlaywrightFactory : IAsyncDisposable
 {
@@ -106,25 +115,11 @@ public sealed class PlaywrightFactory : IAsyncDisposable
 
             try
             {
-                var playwrightServiceUrl = Environment.GetEnvironmentVariable("PLAYWRIGHT_SERVICE_URL");
-                if (IsWorkspaceUrlConfigured(playwrightServiceUrl))
-                {
-                    _logger.LogInformation("Connecting to remote Chromium on Azure Playwright Workspaces...");
-                    _browser = await ConnectToWorkspaceAsync(_playwright);
-                    _isWorkspaceConnection = true;
-                    _logger.LogInformation("Connected to Azure Playwright Workspaces browser");
-                }
-                else
-                {
-                    _logger.LogInformation("Initializing Playwright and launching Chromium...");
-                    _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-                    {
-                        Headless = true,
-                        Args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
-                    });
-                    _isWorkspaceConnection = false;
-                    _logger.LogInformation("Chromium launched successfully");
-                }
+                _browser = await AcquireBrowserAsync(
+                    _playwright,
+                    Environment.GetEnvironmentVariable("PLAYWRIGHT_SERVICE_URL"),
+                    ConnectToWorkspaceAsync,
+                    LaunchLocalChromiumAsync).ConfigureAwait(false);
             }
             catch
             {
@@ -157,6 +152,103 @@ public sealed class PlaywrightFactory : IAsyncDisposable
         }
     }
 
+    // SDK text for the client-side authentication failure #920 records. The thrown
+    // type is a bare System.Exception with no status code and no inner exception, so
+    // this sentence is the only discriminator. It is intentionally not a catch-all:
+    // a workspace that was reached and then failed (outage, ConnectAsync error)
+    // must still propagate (ADR-0056).
+    internal const string WorkspaceAuthenticationFailureMarker = "Could not authenticate with the service";
+
+    // True when the SDK (or a wrapper around it) reported the #920 authentication
+    // failure. Walks InnerException so a future wrapper does not turn the same
+    // failure back into a zero-item job. Cancellation is never this failure —
+    // shutdown must not look like an auth miss and must not launch Chromium on
+    // the way out.
+    internal static bool IsWorkspaceAuthenticationFailure(Exception ex)
+    {
+        if (ex is OperationCanceledException)
+            return false;
+
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current.Message.Contains(WorkspaceAuthenticationFailureMarker, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    // The defensive re-check inside ConnectToWorkspaceAsync. It is an internal
+    // consistency violation (the URL was set when AcquireBrowserAsync decided to
+    // connect, then disappeared), not a connection attempt, so it must not be
+    // counted on ScraperWorkspaceConnectTotal.
+    internal static bool IsDefensiveMissingWorkspaceUrl(Exception ex) =>
+        ex is InvalidOperationException &&
+        ex.Message.StartsWith("PLAYWRIGHT_SERVICE_URL is not set.", StringComparison.Ordinal);
+
+    // Decides local Chromium vs Azure Playwright Workspaces and, for the #920
+    // authentication failure only, logs and meters that failure and then launches
+    // local Chromium. The two delegates are the production SDK/launch calls from
+    // GetBrowserAsync; tests pass fakes so an auth failure can be fixture'd
+    // without a Node driver, a Chromium process, or a live workspace.
+    //
+    // Metering lives here, not in ConnectToWorkspaceAsync, so the auth-fallback
+    // data point is one counter event (outcome=failure, fallback=local_chromium)
+    // rather than a failure event plus a second event on the way out. Cancellation
+    // and the defensive missing-URL throw are not metered — same rule the connect
+    // method used to apply inline.
+    internal async Task<IBrowser> AcquireBrowserAsync(
+        IPlaywright playwright,
+        string? playwrightServiceUrl,
+        Func<IPlaywright, Task<IBrowser>> connectToWorkspace,
+        Func<IPlaywright, Task<IBrowser>> launchLocalChromium)
+    {
+        if (!IsWorkspaceUrlConfigured(playwrightServiceUrl))
+        {
+            _isWorkspaceConnection = false;
+            var local = await launchLocalChromium(playwright).ConfigureAwait(false);
+            _browser = local;
+            return local;
+        }
+
+        _logger.LogInformation("Connecting to remote Chromium on Azure Playwright Workspaces...");
+        try
+        {
+            var remote = await connectToWorkspace(playwright).ConfigureAwait(false);
+            _isWorkspaceConnection = true;
+            _browser = remote;
+            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(
+                1, new System.Diagnostics.TagList { { "outcome", "success" } });
+            _logger.LogInformation("Connected to Azure Playwright Workspaces browser");
+            return remote;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && IsWorkspaceAuthenticationFailure(ex))
+        {
+            // Log and meter BEFORE the local launch. If Chromium then fails to
+            // start, the auth failure is already on the counter and in the Error
+            // log — the fallback must not be the only record of it, and a failed
+            // fallback must not erase it (invariant #17).
+            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList
+            {
+                { "outcome", "failure" },
+                { "fallback", "local_chromium" },
+            });
+            _logger.LogError(
+                ex,
+                "Azure Playwright Workspaces authentication failed. Metered pinwiz.scraper.workspace_connect_total outcome=failure fallback=local_chromium. Falling back to local Chromium so this run still collects real pages. This is degraded mode, not a healthy workspace connection (#920).");
+            _isWorkspaceConnection = false;
+            var local = await launchLocalChromium(playwright).ConfigureAwait(false);
+            _browser = local;
+            return local;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && !IsDefensiveMissingWorkspaceUrl(ex))
+        {
+            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(
+                1, new System.Diagnostics.TagList { { "outcome", "failure" } });
+            throw;
+        }
+    }
+
     // Whether a remote Azure Playwright Workspaces connection should be used instead
     // of launching a local Chromium process. internal static and parameterized —
     // mirrors SharedAzureCredential.BuildOptions's pattern — so this decision is
@@ -179,26 +271,27 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     // Connects to a remote Chromium instance on Azure Playwright Workspaces rather
     // than launching a local one. Entra-only auth via the project's single shared
     // TokenCredential (SharedAzureCredential.Instance) — the deployed workspace sets
-    // localAuth: 'Disabled', so an access token is never an option here. No local
-    // fallback on failure: propagating the exception is deliberate (#855 design §D,
-    // ADR-0056) — a silent fallback to LaunchAsync here (as opposed to simply never
-    // attempting a workspace connection when unconfigured, which IsWorkspaceUrlConfigured
-    // already handles above) would mask a real, mid-attempt failure — e.g. the
-    // Workspace being down on a night it WAS configured — behind data that looks like
-    // a clean local run, which is exactly what invariant #17 forbids.
+    // localAuth: 'Disabled', so an access token is never an option here.
+    //
+    // Does not fall back itself. AcquireBrowserAsync owns that decision: the #920
+    // authentication failure (this method throws, the SDK never reaches the data
+    // plane) is logged, metered, and then local Chromium is launched; every other
+    // failure still propagates. A silent fallback inside this method for an outage
+    // — the workspace was reached, then failed — would mask that outage behind data
+    // that looks like a clean local run, which is what invariant #17 forbids.
     private async Task<IBrowser> ConnectToWorkspaceAsync(IPlaywright playwright)
     {
         // Checking for the missing env var BEFORE the client call turns "the SDK threw
         // some internal exception" into an actionable message naming exactly what's
         // missing, rather than making an operator trace a stack frame back to ADR-0056.
-        // Reachable here only if the URL passed IsWorkspaceUrlConfigured at the
-        // GetBrowserAsync call site and then something cleared/mutated the env var in
-        // between — a defensive re-check against an internal-consistency violation, not
-        // a normal operational outcome, so unlike the success/failure paths below it
-        // does NOT record ScraperWorkspaceConnectTotal: that counter's whole value is
-        // being a clean binary signal once a connection is genuinely attempted, and
-        // muddying it with a should-never-happen third state would only make dashboards
-        // built against it harder to read, not easier.
+        // Reachable here only if the URL passed IsWorkspaceUrlConfigured in
+        // AcquireBrowserAsync and then something cleared the env var — a defensive
+        // re-check against an internal-consistency violation, not a normal operational
+        // outcome. AcquireBrowserAsync recognizes this message
+        // (IsDefensiveMissingWorkspaceUrl) and does NOT record
+        // ScraperWorkspaceConnectTotal for it: that counter's value is a clean signal
+        // once a connection is genuinely attempted, and a should-never-happen third
+        // state would only make dashboards built against it harder to read.
         var playwrightServiceUrl = Environment.GetEnvironmentVariable("PLAYWRIGHT_SERVICE_URL");
         if (!IsWorkspaceUrlConfigured(playwrightServiceUrl))
         {
@@ -227,26 +320,50 @@ public sealed class PlaywrightFactory : IAsyncDisposable
             // connection alive.
             _workspaceClient = new PlaywrightServiceBrowserClient(credential: SharedAzureCredential.Instance);
             var connectOptions = await _workspaceClient.GetConnectOptionsAsync<BrowserTypeConnectOptions>();
-            var browser = await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options);
-            PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "success" } });
-            return browser;
+            return await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options)
+                .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _workspaceClient?.Dispose();
+            // The client was constructed for this attempt. Drop it whether the
+            // caller is about to fall back to local Chromium (#920 auth) or
+            // propagate (every other failure). Metering is AcquireBrowserAsync's
+            // job — doing it here as well would double-count the auth fallback.
+            //
+            // Dispose is swallowed, wider than the sibling filters in this class,
+            // because the exception this catch is holding is the #920 discriminator.
+            // A throwing Dispose would replace that exception, AcquireBrowserAsync
+            // would classify the dispose failure instead, and the auth fallback
+            // would never run. The dispose failure is still logged.
+            var client = _workspaceClient;
             _workspaceClient = null;
-
-            // Cancellation (job shutdown/SIGTERM mid-await) is not a workspace failure —
-            // tagging it "failure" would seed the counter ADR-0056 and observability.md
-            // both describe as "the signal to check" with false positives from ordinary
-            // shutdown, matching the ex-is-not-OperationCanceledException pattern
-            // ScraperOrchestrator already uses for the same distinction.
-            if (ex is not OperationCanceledException)
+            if (client is not null)
             {
-                PinballWizardTelemetry.ScraperWorkspaceConnectTotal.Add(1, new System.Diagnostics.TagList { { "outcome", "failure" } });
+                try
+                {
+                    client.Dispose();
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogDebug(
+                        disposeEx,
+                        "Suppressed error disposing PlaywrightServiceBrowserClient after a failed workspace connect. The connect exception is preserved so an authentication failure can still fall back to local Chromium.");
+                }
             }
             throw;
         }
+    }
+
+    private async Task<IBrowser> LaunchLocalChromiumAsync(IPlaywright playwright)
+    {
+        _logger.LogInformation("Initializing Playwright and launching Chromium...");
+        var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true,
+            Args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+        }).ConfigureAwait(false);
+        _logger.LogInformation("Chromium launched successfully");
+        return browser;
     }
 
     /// <summary>
