@@ -1,3 +1,8 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Playwright;
+using NSubstitute;
 using PinballWizard.Infrastructure.Scraping.Playwright;
 using Xunit;
 
@@ -108,5 +113,267 @@ public sealed class PlaywrightFactoryTests
         var result = PlaywrightFactory.ShouldSkipRecycle(isWorkspaceConnection: false);
 
         Assert.False(result);
+    }
+
+    // The string the Azure Playwright SDK throws. It is a bare System.Exception —
+    // no status code, no inner exception — and it is byte-stable across "the
+    // workspace was never contacted" (#920). Hardcoded here, not read from
+    // PlaywrightFactory.WorkspaceAuthenticationFailureMarker, so a marker that
+    // drifts away from the SDK text fails this test instead of following it.
+    private const string SdkAuthenticationFailure =
+        "Could not authenticate with the service.\nPlease refer to https://aka.ms/pww/docs/authentication";
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenWorkspaceAuthenticationFails_MetersFailureAndLaunchesLocalChromium()
+    {
+        var logger = new CapturingLogger();
+        await using var factory = new PlaywrightFactory(logger);
+        using var listener = StartConnectListener(out var samples);
+
+        var local = Substitute.For<IBrowser>();
+        var connectCalled = false;
+        var launchCalled = false;
+        var playwright = Substitute.For<IPlaywright>();
+
+        var browser = await factory.AcquireBrowserAsync(
+            playwright,
+            "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers",
+            _ =>
+            {
+                connectCalled = true;
+                throw SdkAuthenticationException();
+            },
+            _ =>
+            {
+                launchCalled = true;
+                return Task.FromResult(local);
+            });
+
+        Assert.True(connectCalled);
+        Assert.True(launchCalled);
+        Assert.Same(local, browser);
+
+        var sample = Assert.Single(samples);
+        Assert.Equal(1, sample.Value);
+        Assert.Equal("failure", sample.Outcome);
+        Assert.Equal("local_chromium", sample.Fallback);
+
+        var error = Assert.Single(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Contains("Falling back to local Chromium", error.Message, StringComparison.Ordinal);
+        Assert.NotNull(error.Exception);
+        Assert.Contains(PlaywrightFactory.WorkspaceAuthenticationFailureMarker, error.Exception.Message, StringComparison.Ordinal);
+
+        // Local Chromium must stay on the recycle path. A workspace connection
+        // skips recycle; if the fallback left that flag set, this browser would
+        // not be disposed and the OOM the 2 GiB jobs exist to absorb would return.
+        await factory.RecycleBrowserAsync();
+        await local.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenWorkspaceConnectFailsForOtherReason_DoesNotLaunchLocalChromium()
+    {
+        var logger = new CapturingLogger();
+        await using var factory = new PlaywrightFactory(logger);
+        using var listener = StartConnectListener(out var samples);
+        var launchCalled = false;
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.AcquireBrowserAsync(
+                Substitute.For<IPlaywright>(),
+                "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers",
+                _ => throw new InvalidOperationException("workspace unreachable after authentication"),
+                _ =>
+                {
+                    launchCalled = true;
+                    return Task.FromResult(Substitute.For<IBrowser>());
+                }));
+
+        Assert.False(launchCalled);
+        Assert.Equal("workspace unreachable after authentication", thrown.Message);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Error);
+
+        var sample = Assert.Single(samples);
+        Assert.Equal("failure", sample.Outcome);
+        Assert.Null(sample.Fallback);
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenWorkspaceConnectIsCanceled_DoesNotMeterOrFallBack()
+    {
+        var logger = new CapturingLogger();
+        await using var factory = new PlaywrightFactory(logger);
+        using var listener = StartConnectListener(out var samples);
+        var launchCalled = false;
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            factory.AcquireBrowserAsync(
+                Substitute.For<IPlaywright>(),
+                "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers",
+                _ => throw new OperationCanceledException(),
+                _ =>
+                {
+                    launchCalled = true;
+                    return Task.FromResult(Substitute.For<IBrowser>());
+                }));
+
+        Assert.False(launchCalled);
+        Assert.Empty(samples);
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenAuthenticationFailureIsWrapped_MetersFailureAndLaunchesLocalChromium()
+    {
+        // The marker lives only on InnerException. A matcher that reads ex.Message
+        // and stops there would propagate this and the jobs would yield nothing again.
+        var logger = new CapturingLogger();
+        await using var factory = new PlaywrightFactory(logger);
+        using var listener = StartConnectListener(out var samples);
+        var local = Substitute.For<IBrowser>();
+
+        var browser = await factory.AcquireBrowserAsync(
+            Substitute.For<IPlaywright>(),
+            WorkspaceUrl,
+            _ => throw new InvalidOperationException("connect options failed", SdkAuthenticationException()),
+            _ => Task.FromResult(local));
+
+        Assert.Same(local, browser);
+        var sample = Assert.Single(samples);
+        Assert.Equal("failure", sample.Outcome);
+        Assert.Equal("local_chromium", sample.Fallback);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error && e.Exception is InvalidOperationException);
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenWorkspaceConnectSucceeds_MetersSuccessAndSkipsRecycle()
+    {
+        await using var factory = new PlaywrightFactory(new CapturingLogger());
+        using var listener = StartConnectListener(out var samples);
+        var remote = Substitute.For<IBrowser>();
+        var launchCalled = false;
+
+        var browser = await factory.AcquireBrowserAsync(
+            Substitute.For<IPlaywright>(),
+            WorkspaceUrl,
+            _ => Task.FromResult(remote),
+            _ =>
+            {
+                launchCalled = true;
+                return Task.FromResult(Substitute.For<IBrowser>());
+            });
+
+        Assert.False(launchCalled);
+        Assert.Same(remote, browser);
+        var sample = Assert.Single(samples);
+        Assert.Equal("success", sample.Outcome);
+        Assert.Null(sample.Fallback);
+
+        await factory.RecycleBrowserAsync();
+        await remote.Received(0).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenWorkspaceUrlDisappearsBeforeConnect_DoesNotMeterOrFallBack()
+    {
+        await using var factory = new PlaywrightFactory(new CapturingLogger());
+        using var listener = StartConnectListener(out var samples);
+        var launchCalled = false;
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.AcquireBrowserAsync(
+                Substitute.For<IPlaywright>(),
+                WorkspaceUrl,
+                _ => throw new InvalidOperationException(
+                    "PLAYWRIGHT_SERVICE_URL is not set. This environment attempted to connect to Azure Playwright Workspaces (ADR-0056)."),
+                _ =>
+                {
+                    launchCalled = true;
+                    return Task.FromResult(Substitute.For<IBrowser>());
+                }));
+
+        Assert.StartsWith("PLAYWRIGHT_SERVICE_URL is not set.", thrown.Message, StringComparison.Ordinal);
+        Assert.False(launchCalled);
+        Assert.Empty(samples);
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenLocalLaunchFailsAfterAuthenticationFailure_KeepsTheAuthMeterAndLog()
+    {
+        var logger = new CapturingLogger();
+        await using var factory = new PlaywrightFactory(logger);
+        using var listener = StartConnectListener(out var samples);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.AcquireBrowserAsync(
+                Substitute.For<IPlaywright>(),
+                WorkspaceUrl,
+                _ => throw SdkAuthenticationException(),
+                _ => throw new InvalidOperationException("chromium failed to launch")));
+
+        Assert.Equal("chromium failed to launch", thrown.Message);
+        var sample = Assert.Single(samples);
+        Assert.Equal("failure", sample.Outcome);
+        Assert.Equal("local_chromium", sample.Fallback);
+        var error = Assert.Single(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.NotNull(error.Exception);
+        Assert.Contains(PlaywrightFactory.WorkspaceAuthenticationFailureMarker, error.Exception.Message, StringComparison.Ordinal);
+    }
+
+    private const string WorkspaceUrl =
+        "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers";
+
+    // The SDK throws a bare System.Exception (no derived type). The fixture has
+    // to throw that same type; a more specific exception would not be the
+    // failure the jobs actually hit.
+    private static Exception SdkAuthenticationException()
+    {
+#pragma warning disable CA2201
+        return new Exception(SdkAuthenticationFailure);
+#pragma warning restore CA2201
+    }
+
+    private static MeterListener StartConnectListener(
+        out ConcurrentBag<(long Value, string? Outcome, string? Fallback)> samples)
+    {
+        var bag = new ConcurrentBag<(long Value, string? Outcome, string? Fallback)>();
+        samples = bag;
+        var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "pinwiz.scraper.workspace_connect_total")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            string? outcome = null;
+            string? fallback = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "outcome") outcome = tag.Value?.ToString();
+                else if (tag.Key == "fallback") fallback = tag.Value?.ToString();
+            }
+            bag.Add((value, outcome, fallback));
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private sealed class CapturingLogger : ILogger<PlaywrightFactory>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception), exception));
+        }
     }
 }
