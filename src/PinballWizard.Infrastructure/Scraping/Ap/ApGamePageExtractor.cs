@@ -16,14 +16,30 @@ namespace PinballWizard.Infrastructure.Scraping.Ap;
 /// DOM-based heuristics for the title (page <c>&lt;title&gt;</c>,
 /// then any <c>&lt;h2&gt;</c> starting with "About"). For
 /// downloadable assets, the extractor scans every <c>&lt;a&gt;</c>
-/// for <c>.pdf</c> / <c>.zip</c> / <c>.spk</c> hrefs from the same
-/// host.
+/// for <c>.pdf</c> / <c>.zip</c> / <c>.spk</c> hrefs on an American
+/// Pinball document host (the page host, <c>american-pinball.com</c>
+/// including the <c>s4</c> CDN, and the HubSpot file hosts that now
+/// hold the manuals).
 /// </remarks>
 public static class ApGamePageExtractor
 {
     private static readonly HtmlParser Parser = new();
 
     private static readonly string[] DownloadableExtensions = [".pdf", ".zip", ".spk"];
+
+    // Both registrable domains. After the www redirect the game page is
+    // americanpinball.com; flyers still live on american-pinball.com and
+    // bulletins on its s4 CDN subdomain. A suffix match without the leading
+    // dot would also accept not-american-pinball.com, so the dot is required.
+    private static readonly string[] ApDocumentDomains =
+    [
+        "americanpinball.com",
+        "american-pinball.com",
+    ];
+
+    // Hot Wheels and Barry O's release notes are served from this HubSpot
+    // custom domain (/hubfs/...), not from hubspotusercontent.
+    private const string OrbitGamesHubSpotHost = "my.orbitgames.fun";
 
     /// <summary>
     /// Extracts a <see cref="GameRecord"/> from a game page. Returns
@@ -59,10 +75,16 @@ public static class ApGamePageExtractor
     }
 
     /// <summary>
-    /// Extracts every downloadable asset link (.pdf, .zip, .spk)
-    /// from the page that points back to AP's host.
+    /// Extracts every downloadable asset link (.pdf, .zip, .spk) on an
+    /// allowed American Pinball document host. <paramref name="rejectedDownloadHosts"/>,
+    /// when supplied, receives the host of each downloadable link that was
+    /// dropped. An empty list stays empty: a host mismatch is not rewritten
+    /// into a synthetic file URL.
     /// </summary>
-    public static List<DiscoveredLink> ExtractDownloads(string html, Uri pageUrl)
+    public static List<DiscoveredLink> ExtractDownloads(
+        string html,
+        Uri pageUrl,
+        ISet<string>? rejectedDownloadHosts = null)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(pageUrl);
@@ -78,13 +100,17 @@ public static class ApGamePageExtractor
             if (string.IsNullOrWhiteSpace(href)) continue;
             if (!Uri.TryCreate(pageUrl, href, out var absolute)) continue;
 
-            // Same-host downloads only (avoid swallowing every external link).
-            if (!string.Equals(absolute.Host, pageUrl.Host, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!HasDownloadableExtension(absolute.AbsolutePath)) continue;
 
-            var path = absolute.AbsolutePath;
-            if (!HasDownloadableExtension(path)) continue;
+            if (!IsAllowedDownloadHost(absolute.Host))
+            {
+                rejectedDownloadHosts?.Add(absolute.Host);
+                continue;
+            }
 
-            var url = absolute.ToString();
+            // AbsoluteUri keeps percent-encoding. ToString() decodes %20, which
+            // is not the file URL the page published (HubSpot paths contain spaces).
+            var url = absolute.AbsoluteUri;
             if (!seenUrls.Add(url)) continue;
 
             var text = anchor.TextContent?.Trim();
@@ -183,6 +209,45 @@ public static class ApGamePageExtractor
         {
             if (path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) return true;
         }
+        return false;
+    }
+
+    private static bool IsAllowedDownloadHost(string host)
+    {
+        foreach (var domain in ApDocumentDomains)
+        {
+            if (host.Equals(domain, StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (host.Equals(OrbitGamesHubSpotHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IsHubSpotFileCdnHost(host);
+    }
+
+    // HubSpot's file CDN zone observed on the live manuals
+    // ({portal}.fs1.hubspotusercontent-na1.net). Same equals-or-subdomain
+    // rule as the AP domains, so files.hubspotusercontent-evil.net and
+    // hubspotusercontent-na1.net.evil.example do not match.
+    private static readonly string[] HubSpotFileCdnZones = ["hubspotusercontent-na1.net"];
+
+    private static bool IsHubSpotFileCdnHost(string host)
+    {
+        foreach (var zone in HubSpotFileCdnZones)
+        {
+            if (host.Equals(zone, StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith("." + zone, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 }
