@@ -65,7 +65,7 @@ public sealed class Obs01NoMaskingFallbackTests
     public void ProductionSources_DoNotSwitchBrowserProvidersInsideACatch()
     {
         var root = DocConformanceTests.FindRepoRoot();
-        var src = Path.Combine(root, "src");
+        var src = Path.Join(root, "src");
         var hits = new List<string>();
 
         foreach (var file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
