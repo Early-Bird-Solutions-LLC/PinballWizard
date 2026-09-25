@@ -113,12 +113,16 @@ problems. If you find none of consequence, say so explicitly.
    `catch (Exception) { }` with no log)? Any case where a single bad
    record / page / row would abort the whole run when it shouldn't?
    Any `OperationCanceledException` paths swallowed?
-   Any fallback path that masks the underlying failure — rendering
-   placeholder / synthetic / stale content as if it were live output,
-   or converting a transport failure into fabricated success — is a
-   🔴 (invariant #17: degrade visibly, never fabricate, log + meter
-   the failure). Ask: if the primary path silently died, would anyone
-   know?
+   Any fallback path that masks the underlying failure is a 🔴
+   (invariant #17 / OBS-01). That includes rendering placeholder /
+   synthetic / stale content as live output, converting a transport
+   failure into fabricated success, and switching providers after a
+   configured dependency fails so the operation still succeeds (Azure
+   Playwright auth failure must not launch local Chromium; a local
+   Chromium failure must not connect to Azure Playwright). Logging and
+   metering that failure does not make the switch honest. Ask: if the
+   configured dependency failed, did the operation fail without
+   switching providers?
 
 4. **Sibling drift**: If this PR copies a sibling pattern (manufacturer
    scrapers, repository implementations, ADRs), diff against the

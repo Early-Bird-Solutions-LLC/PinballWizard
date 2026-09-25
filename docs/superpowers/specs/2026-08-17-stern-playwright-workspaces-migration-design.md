@@ -233,13 +233,11 @@ at implementation time — flagged here rather than guessed.
 
 ### D. Error handling — fail loud, no local-Chromium fallback
 
-> **Amended 2026-09-24 (ADR-0056, #920).** The paragraph below is the original
-> decision. Authentication failure is no longer in that set: when
-> `GetConnectOptionsAsync` throws "Could not authenticate with the service" before
-> any data-plane call, the factory logs and meters the failure
-> (`outcome=failure`, `fallback=local_chromium`) and launches local Chromium.
-> Every other connect failure still propagates, which is the outage case this
-> section was written to protect.
+> **Reversed 2026-09-25 (ADR-0056).** PR #972 (2026-09-24) launched local Chromium
+> after "Could not authenticate with the service". That carve-out is withdrawn.
+> Authentication failure is a configuration error: the factory logs and meters
+> `outcome=failure`, then the exception propagates. The paragraph below is the
+> decision again, for authentication as well as for every other connect failure.
 
 If `ConnectAsync` (or the `GetConnectOptionsAsync` call preceding it) throws — connection
 failure, workspace throttling — let it propagate. No fallback to

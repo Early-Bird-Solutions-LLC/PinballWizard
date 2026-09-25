@@ -56,7 +56,7 @@ CI guard jobs:
 
 - **Provenance is sacred** — every scraped item traces back to its source URL; never drop `Source` / `DiscoveryUrl` / `GameSlug`
 - **Polite-by-construction scraping** — all outbound HTTP routes through `IPolitenessGate`; no bare `HttpClient.GetAsync` in scraper code; `robots.txt` honoured unconditionally
-- **Fallbacks must not hide failures** — degrade visibly, log + meter the failure; never present synthetic content as real output
+- **Fallbacks must not hide failures** — a configured dependency that fails must fail the operation; do not switch providers; logging and metering is not enough if the operation then succeeds; never present synthetic content as real output
 - **Personal identity only** — commits must use the personal GitHub no-reply email above; the work account must never touch this repo
 - **Deployment Stacks only** — `az stack sub/group create`; never `az deployment sub/group create`
 - **Cosmos schema via ARM, items via data-plane SDK** — no Cosmos containers in Bicep; `--ensure-cosmos-containers` is the canonical creator

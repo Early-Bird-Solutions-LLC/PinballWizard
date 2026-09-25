@@ -130,7 +130,7 @@ Key invariants to keep top-of-mind:
 
 - **Provenance is sacred.** Every item traces back to its source URL.
 - **Polite-by-construction.** `PoliteScraperBase` + `IPolitenessGate`. No bare `HttpClient.GetAsync` in scrapers.
-- **Fallbacks must not hide failures.** Degrade visibly, never present synthetic/placeholder content as real output, log + meter the underlying failure.
+- **Fallbacks must not hide failures.** A configured dependency that fails must fail the operation. Do not switch providers to keep going. Logging and metering the failure is not enough if the operation then succeeds. Never present synthetic/placeholder content as real output.
 - **Personal identity only.** Commits must show `94459922+jkeeley2073@users.noreply.github.com`.
 - **Deployment Stacks only.** `az stack sub/group create` — never `az deployment sub/group create`.
 - **Schema CRUD via ARM, item CRUD via data-plane SDK.** No Cosmos containers in Bicep.

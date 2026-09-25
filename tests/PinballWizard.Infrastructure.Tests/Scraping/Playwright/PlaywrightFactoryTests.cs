@@ -124,50 +124,48 @@ public sealed class PlaywrightFactoryTests
         "Could not authenticate with the service.\nPlease refer to https://aka.ms/pww/docs/authentication";
 
     [Fact]
-    public async Task AcquireBrowserAsync_WhenWorkspaceAuthenticationFails_MetersFailureAndLaunchesLocalChromium()
+    public async Task AcquireBrowserAsync_WhenWorkspaceAuthenticationFails_MetersLogsAndPropagates()
     {
         var logger = new CapturingLogger();
         await using var factory = new PlaywrightFactory(logger);
         using var listener = StartConnectListener(out var samples);
 
-        var local = Substitute.For<IBrowser>();
         var connectCalled = false;
         var launchCalled = false;
         var playwright = Substitute.For<IPlaywright>();
 
-        var browser = await factory.AcquireBrowserAsync(
-            playwright,
-            "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers",
-            _ =>
-            {
-                connectCalled = true;
-                throw SdkAuthenticationException();
-            },
-            _ =>
-            {
-                launchCalled = true;
-                return Task.FromResult(local);
-            });
+        var thrown = await Assert.ThrowsAsync<Exception>(() =>
+            factory.AcquireBrowserAsync(
+                playwright,
+                "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers",
+                _ =>
+                {
+                    connectCalled = true;
+                    throw SdkAuthenticationException();
+                },
+                _ =>
+                {
+                    launchCalled = true;
+                    return Task.FromResult(Substitute.For<IBrowser>());
+                }));
 
         Assert.True(connectCalled);
-        Assert.True(launchCalled);
-        Assert.Same(local, browser);
+        Assert.False(launchCalled);
+        // The SDK throws a bare System.Exception. A catch that wrapped it, or
+        // that launched local Chromium and returned, would not surface this type.
+        Assert.IsType<Exception>(thrown);
+        Assert.Contains(PlaywrightFactory.WorkspaceAuthenticationFailureMarker, thrown.Message, StringComparison.Ordinal);
 
         var sample = Assert.Single(samples);
         Assert.Equal(1, sample.Value);
         Assert.Equal("failure", sample.Outcome);
-        Assert.Equal("local_chromium", sample.Fallback);
+        Assert.Null(sample.Fallback);
 
         var error = Assert.Single(logger.Entries, e => e.Level == LogLevel.Error);
-        Assert.Contains("Falling back to local Chromium", error.Message, StringComparison.Ordinal);
         Assert.NotNull(error.Exception);
         Assert.Contains(PlaywrightFactory.WorkspaceAuthenticationFailureMarker, error.Exception.Message, StringComparison.Ordinal);
-
-        // Local Chromium must stay on the recycle path. A workspace connection
-        // skips recycle; if the fallback left that flag set, this browser would
-        // not be disposed and the OOM the 2 GiB jobs exist to absorb would return.
-        await factory.RecycleBrowserAsync();
-        await local.Received(1).DisposeAsync();
+        Assert.Contains("local Chromium will not be started", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Falling back", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -222,25 +220,34 @@ public sealed class PlaywrightFactoryTests
     }
 
     [Fact]
-    public async Task AcquireBrowserAsync_WhenAuthenticationFailureIsWrapped_MetersFailureAndLaunchesLocalChromium()
+    public async Task AcquireBrowserAsync_WhenAuthenticationFailureIsWrapped_MetersLogsAndPropagates()
     {
-        // The marker lives only on InnerException. A matcher that reads ex.Message
-        // and stops there would propagate this and the jobs would yield nothing again.
+        // The marker lives only on InnerException. The Error log still has to
+        // name the authentication failure; the exception still has to propagate
+        // and local Chromium still must not launch.
         var logger = new CapturingLogger();
         await using var factory = new PlaywrightFactory(logger);
         using var listener = StartConnectListener(out var samples);
-        var local = Substitute.For<IBrowser>();
+        var launchCalled = false;
 
-        var browser = await factory.AcquireBrowserAsync(
-            Substitute.For<IPlaywright>(),
-            WorkspaceUrl,
-            _ => throw new InvalidOperationException("connect options failed", SdkAuthenticationException()),
-            _ => Task.FromResult(local));
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.AcquireBrowserAsync(
+                Substitute.For<IPlaywright>(),
+                WorkspaceUrl,
+                _ => throw new InvalidOperationException("connect options failed", SdkAuthenticationException()),
+                _ =>
+                {
+                    launchCalled = true;
+                    return Task.FromResult(Substitute.For<IBrowser>());
+                }));
 
-        Assert.Same(local, browser);
+        Assert.False(launchCalled);
+        Assert.Equal("connect options failed", thrown.Message);
+        Assert.NotNull(thrown.InnerException);
+        Assert.Contains(PlaywrightFactory.WorkspaceAuthenticationFailureMarker, thrown.InnerException.Message, StringComparison.Ordinal);
         var sample = Assert.Single(samples);
         Assert.Equal("failure", sample.Outcome);
-        Assert.Equal("local_chromium", sample.Fallback);
+        Assert.Null(sample.Fallback);
         Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error && e.Exception is InvalidOperationException);
     }
 
@@ -296,27 +303,56 @@ public sealed class PlaywrightFactoryTests
         Assert.Empty(samples);
     }
 
-    [Fact]
-    public async Task AcquireBrowserAsync_WhenLocalLaunchFailsAfterAuthenticationFailure_KeepsTheAuthMeterAndLog()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task AcquireBrowserAsync_WhenConfiguredForLocalChromium_LaunchesLocalAndDoesNotConnect(string? playwrightServiceUrl)
     {
-        var logger = new CapturingLogger();
-        await using var factory = new PlaywrightFactory(logger);
+        await using var factory = new PlaywrightFactory(new CapturingLogger());
         using var listener = StartConnectListener(out var samples);
+        var local = Substitute.For<IBrowser>();
+        var connectCalled = false;
+
+        var browser = await factory.AcquireBrowserAsync(
+            Substitute.For<IPlaywright>(),
+            playwrightServiceUrl,
+            _ =>
+            {
+                connectCalled = true;
+                return Task.FromResult(Substitute.For<IBrowser>());
+            },
+            _ => Task.FromResult(local));
+
+        Assert.False(connectCalled);
+        Assert.Same(local, browser);
+        Assert.Empty(samples);
+
+        await factory.RecycleBrowserAsync();
+        await local.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AcquireBrowserAsync_WhenLocalChromiumFails_PropagatesAndDoesNotConnectToWorkspace()
+    {
+        await using var factory = new PlaywrightFactory(new CapturingLogger());
+        using var listener = StartConnectListener(out var samples);
+        var connectCalled = false;
 
         var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             factory.AcquireBrowserAsync(
                 Substitute.For<IPlaywright>(),
-                WorkspaceUrl,
-                _ => throw SdkAuthenticationException(),
+                playwrightServiceUrl: null,
+                _ =>
+                {
+                    connectCalled = true;
+                    return Task.FromResult(Substitute.For<IBrowser>());
+                },
                 _ => throw new InvalidOperationException("chromium failed to launch")));
 
+        Assert.False(connectCalled);
         Assert.Equal("chromium failed to launch", thrown.Message);
-        var sample = Assert.Single(samples);
-        Assert.Equal("failure", sample.Outcome);
-        Assert.Equal("local_chromium", sample.Fallback);
-        var error = Assert.Single(logger.Entries, e => e.Level == LogLevel.Error);
-        Assert.NotNull(error.Exception);
-        Assert.Contains(PlaywrightFactory.WorkspaceAuthenticationFailureMarker, error.Exception.Message, StringComparison.Ordinal);
+        Assert.Empty(samples);
     }
 
     private const string WorkspaceUrl =
