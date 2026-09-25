@@ -830,15 +830,15 @@ public static class PinballWizardTelemetry
     // is actually attempted (PLAYWRIGHT_SERVICE_URL configured — #855, ADR-0056). A
     // successful connect means the ACA job is not running Chromium locally, so the
     // container's own OOM is no longer the failure mode to watch. An authentication
-    // failure (#920) is the exception: outcome=failure and fallback=local_chromium,
-    // and Chromium is local again, so the recycle and the memory probes still apply.
-    // Connecting to Azure Playwright Workspaces is a new external dependency on the
-    // success path, and #855's own history (a silent capability regression running
-    // undiagnosed for 9 nights) is exactly why this counter shipped from day one.
+    // failure (#920) is outcome=failure and the exception propagates — the job does
+    // not continue on local Chromium. Connecting to Azure Playwright Workspaces is a
+    // new external dependency on the success path, and #855's own history (a silent
+    // capability regression running undiagnosed for 9 nights) is exactly why this
+    // counter shipped from day one.
     public static readonly Counter<long> ScraperWorkspaceConnectTotal = Meter.CreateCounter<long>(
         "pinwiz.scraper.workspace_connect_total",
         unit: "{connection}",
-        description: "Azure Playwright Workspaces connection attempts from PlaywrightFactory.AcquireBrowserAsync, tagged with outcome (\"success\" or \"failure\") and, only when an authentication failure fell back to local Chromium (#920), fallback=local_chromium. Emitted ONLY when PLAYWRIGHT_SERVICE_URL is configured and a connection is genuinely attempted -- an absent series means either the job never ran or it's running local Chromium because no workspace is configured, matching this project's established absent-series convention (see pinwiz.scraper.links_discovered_total), not a failure signal on its own. \"failure\" excludes OperationCanceledException (job shutdown/SIGTERM mid-attempt is not a workspace failure) and the defensive missing-URL throw -- neither records at all, rather than muddying the signal. An authentication failure is still outcome=failure (the job continuing on local Chromium is not a success) and carries fallback=local_chromium so a green job execution does not hide it. Any other connect failure is outcome=failure with no fallback tag, and the exception still propagates. On a job execution window where the workspace IS configured and expected to be used, a \"failure\" tag appearing -- or \"success\" tags going silent where they were previously present -- is the signal to check.");
+        description: "Azure Playwright Workspaces connection attempts from PlaywrightFactory.AcquireBrowserAsync, tagged with outcome (\"success\" or \"failure\"). Emitted ONLY when PLAYWRIGHT_SERVICE_URL is configured and a connection is genuinely attempted -- an absent series means either the job never ran or it's running local Chromium because no workspace is configured, matching this project's established absent-series convention (see pinwiz.scraper.links_discovered_total), not a failure signal on its own. \"failure\" excludes OperationCanceledException (job shutdown/SIGTERM mid-attempt is not a workspace failure) and the defensive missing-URL throw -- neither records at all, rather than muddying the signal. Authentication failure and every other connect failure are both outcome=failure, and the exception propagates so the job fails. On a job execution window where the workspace IS configured and expected to be used, a \"failure\" tag appearing -- or \"success\" tags going silent where they were previously present -- is the signal to check.");
     // ── Scraper yield instrumentation (#857) ─────────────────────────────
     // Emitted by ScraperOrchestrator once per ISourceScraper run. Two instruments:
     //   links_discovered_total — the raw count of link items yielded. Emitted from
