@@ -123,12 +123,12 @@ param playwrightServiceUrl string = ''
 // re-provision anything).
 param useSternPlaywrightWorkspace bool = true
 
-@description('TEMPORARY diagnostic (#920): set true to enable verbose Azure SDK event-source tracing (PINWIZ_AZURE_SDK_DIAGNOSTICS) on the three Stern Playwright jobs. Default false. Turn back off once the workspace auth failure is resolved — it is high-volume and bills against the Log Analytics 1 GB cap.')
-// The Playwright SDK throws a bare `System.Exception: Could not authenticate with the
-// service.` with no inner exception and no status code — byte-identical whether the
-// caller has no RBAC, the wrong role, or is refused for a non-identity reason. Azure.Core's
-// event source carries the actual HTTP response, which is the missing fact. Scoped to the
-// three Stern jobs because they are the only consumers of the workspace path.
+@description('Opt-in verbose Azure SDK event-source tracing (PINWIZ_AZURE_SDK_DIAGNOSTICS) on the three Stern Playwright jobs. Default false. High-volume; bills against the Log Analytics 1 GB cap. Leave false except for a bounded diagnosis.')
+// #920 used this trace because the Playwright SDK threw a bare
+// `System.Exception: Could not authenticate with the service.` with no inner
+// exception and no status code. The cause was a missing Entra handshake (PR 979),
+// not a missing role, so the dev parameter is false again. Scoped to the three
+// Stern jobs because they are the only consumers of the workspace path.
 param enableAzureSdkDiagnostics bool = false
 
 @description('vCPU for the three Stern Playwright scraper jobs (stern-games, stern-bulletins, stern-refresh). Default 1.0, raised from the 0.5 every other job uses because a locally-launched Chromium OOMKilled stern-games against the 1 GiB that 0.5 vCPU implies (#855). Memory is DERIVED from this — see sternPlaywrightJobMemory below. Only these three jobs are raised; the other ~17 CLI jobs stay at the 0.5/1Gi default.')

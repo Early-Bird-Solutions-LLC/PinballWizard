@@ -84,7 +84,7 @@ param playwrightServiceUrl string = ''
 @description('Kill switch for the #855 workspace path. Set false to force every Stern Playwright scraper back onto LOCAL Chromium while leaving the workspace resource in place — a non-destructive, parameter-only rollback if the workspace misbehaves. Default true. Needed because ADR-0056 has no local-Chromium fallback for a workspace that was reached and then failed: that outage fails those scrapes loudly, so there must be a way out that is not a code change. The #920 authentication failure is separate — the factory logs and meters it, then launches local Chromium on its own.')
 param useSternPlaywrightWorkspace bool = true
 
-@description('TEMPORARY diagnostic (#920): enables verbose Azure SDK tracing on the three Stern Playwright jobs, to turn the contentless Playwright SDK auth exception into an actual HTTP status code. Default false; turn off once resolved. See modules/shared.bicep enableAzureSdkDiagnostics.')
+@description('Opt-in verbose Azure SDK tracing (PINWIZ_AZURE_SDK_DIAGNOSTICS) on the three Stern Playwright jobs. Default false. Used to diagnose #920; leave false except for a bounded diagnosis — the trace is high-volume and bills against the Log Analytics 1 GB cap. See modules/shared.bicep enableAzureSdkDiagnostics.')
 param enableAzureSdkDiagnostics bool = false
 
 @description('vCPU for the three Stern Playwright scraper jobs. Default 1.0, raised from the 0.5 every other CLI job uses because local Chromium OOMKilled stern-games against the 1 GiB that 0.5 vCPU implies (#855). Memory is derived as exactly 2x this inside modules/shared.bicep, since ACA Consumption permits no other pairing. Set 0.5 to revert. Costs about +1.66 USD/month across all three jobs at current schedules.')
