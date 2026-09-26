@@ -48,11 +48,16 @@ the documented standalone-CLI scrape path and made the rollout itself unsafe):
   pre-#855-fix behavior.
 - **`PLAYWRIGHT_SERVICE_URL` set:** connects to a remote Chromium instance on
   **Azure Playwright Workspaces** (`Microsoft.LoadTestService/playwrightWorkspaces`)
-  via `PlaywrightServiceBrowserClient.GetConnectOptionsAsync()` +
-  `BrowserType.ConnectAsync`. Auth is Entra-only (`SharedAzureCredential.Instance`,
-  the project's single shared `TokenCredential`) — the workspace resource sets
+  via `PlaywrightServiceBrowserClient.InitializeAsync()` then
+  `GetConnectOptionsAsync()` + `BrowserType.ConnectAsync`. Auth is Entra-only
+  (`ServiceAuthType.EntraId`, `SharedAzureCredential.Instance`, the project's
+  single shared `TokenCredential`) — the workspace resource sets
   `localAuth: 'Disabled'`, matching the Cosmos/App Insights `DisableLocalAuth`
-  convention elsewhere in this project.
+  convention elsewhere in this project. SDK 1.0.0 does not fetch the Entra token
+  inside `GetConnectOptionsAsync`; that method reads
+  `PLAYWRIGHT_SERVICE_ACCESS_TOKEN`. `InitializeAsync` acquires the token for
+  scope `https://management.core.windows.net/.default` and stores it there.
+  See the 2026-09-26 resolution of #920.
 
 This applies uniformly to all three scrapers and all four jobs that reach
 `PlaywrightFactory` (`stern-games`, `stern-bulletins`, `stern-refresh`, and the
@@ -110,6 +115,20 @@ providers is not a mode. Logging and metering do not make a switch honest: a job
 that exits 0 has hidden the broken setup behind a successful scrape (invariant
 #17, OBS-01). Cancellation and the defensive missing-URL throw are still not
 metered.
+
+**RESOLVED 2026-09-26 — #920 was a missing Entra handshake, not a missing role.**
+Live state on `pinwiz-pw-dev-buutj` (workspace id `ec28b0b8-1aaa-4e11-9fc3-fae42d13c40e`,
+East US, `localAuth: Disabled`) already matches this Bicep: the shared UAMI
+`pinwiz-aca-id-dev` holds Playwright Workspace Contributor at workspace scope,
+assigned 2026-08-18 when the resource was created. The 2026-09-26 games execution
+with `PINWIZ_AZURE_SDK_DIAGNOSTICS` on requested Cosmos and Monitor tokens for
+that identity and never requested `https://management.core.windows.net/.default`.
+The stack is `GetConnectOptionsAsync` with no `EntraLifecycle.FetchEntraIdAccessToken`
+frame, which is the SDK path that throws when `PLAYWRIGHT_SERVICE_ACCESS_TOKEN`
+is empty. `PlaywrightFactory.AcquireEntraConnectOptionsAsync` calls
+`InitializeAsync` before `GetConnectOptionsAsync`. No role change and no access
+token. A credential or test-run failure still propagates; local Chromium is
+still not started.
 
 ### Why not tune the recycle instead
 
