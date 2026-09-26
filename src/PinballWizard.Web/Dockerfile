@@ -16,7 +16,7 @@
 # values arrive as ACA environment variables from the Bicep / Key Vault at
 # deploy time and override these defaults.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29 AS build
 WORKDIR /src
 
 # Restore stage: copy only csproj + props files first to maximise Docker
@@ -49,7 +49,7 @@ RUN dotnet publish src/PinballWizard.Web/PinballWizard.Web.csproj \
     /p:UseAppHost=false
 
 # Runtime stage — aspnet (not dotnet/runtime) because Kestrel is the HTTP server.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:2d584d8147faddb0d678c5748d47953e5b8e18621ed4fb7049a91381d9d7746f AS runtime
 WORKDIR /app
 
 RUN groupadd --system pinwiz \
