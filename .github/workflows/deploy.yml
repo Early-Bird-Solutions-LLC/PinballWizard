@@ -78,7 +78,7 @@ on:
       # ^infra/ branch of that gate was unreachable and Bicep edits reached production
       # only via a manual stack run — the gap #859 exists to close.
       - 'infra/**'
-      # deploy/** holds scheduled-cli-job.bicep, the module every one of the 20 ACA
+      # deploy/** holds scheduled-cli-job.bicep, the module every one of the 22 ACA
       # Jobs is built from. Omitting it meant a change to the job definitions could
       # merge and never deploy — the same inert-change defect as #859, one directory
       # over. Found when #875 merged and triggered nothing.
@@ -315,10 +315,10 @@ jobs:
           - image: pinwiz-rag-indexer
             dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
             app_name_var: RAGINDEXER_APP_NAME
-          # CLI image — feeds all 20 ACA *Jobs* (scraper / linker / OPDB sync
+          # CLI image — feeds all 22 ACA *Jobs* (scraper / linker / OPDB sync
           # cron jobs), NOT an ACA *App*. This leg is build + push only; the
           # `deploy-jobs` job below then triggers an `az stack sub create` with
-          # the new :{sha} CLI tag, which repoints all 20 jobs atomically via
+          # the new :{sha} CLI tag, which repoints all 22 jobs atomically via
           # Bicep (every job uses the `cliImageTag` parameter). Using the stack
           # is the only path that satisfies the Deployment Stacks LOCKED
           # INVARIANT (CLAUDE.md #16, DLV-02) — `az containerapp job update` is
@@ -391,7 +391,7 @@ jobs:
             --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Run a Deployment Stack update with the freshly built CLI SHA so all 20 ACA
+  # Run a Deployment Stack update with the freshly built CLI SHA so all 22 ACA
   # Jobs are repointed in one IaC-governed, idempotent operation. This closes
   # the gap where `pinwiz-cli` images merged to main but jobs ran a 26-day-old
   # build until an operator manually re-ran Deploy-SharedResources.ps1 (#859).
@@ -627,7 +627,7 @@ jobs:
           fi
           echo "Stack validation passed — proceeding to the live run."
 
-      - name: Run deployment stack (repoints 20 ACA jobs to pinwiz-cli:${{ github.sha }})
+      - name: Run deployment stack (repoints 22 ACA jobs to pinwiz-cli:${{ github.sha }})
         run: |
           az stack sub create \
             --name "pinwiz-shared-dev" \
@@ -643,7 +643,7 @@ jobs:
             --deny-settings-mode none \
             --yes
 
-      # A green stack run is not evidence the 20 jobs actually moved. #859 exists
+      # A green stack run is not evidence the 22 jobs actually moved. #859 exists
       # precisely because images stayed stale while everything reported success, so
       # this asserts the acceptance criterion rather than assuming it: every
       # pinwiz-job-* container must now reference the SHA just built. Without it,
@@ -669,7 +669,7 @@ jobs:
           # would otherwise report success for zero jobs — a false green of exactly
           # the kind this step exists to prevent.
           if [ -z "$ACTUAL" ]; then
-            echo "::error::No pinwiz-job-* jobs found in $RG. Expected 20 — refusing to"
+            echo "::error::No pinwiz-job-* jobs found in $RG. Expected 22 — refusing to"
             echo "::error::report a successful repoint against an empty result."
             exit 1
           fi
@@ -857,7 +857,7 @@ jobs:
           echo "| \`pinwiz-web\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
           echo "| \`pinwiz-api\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
           echo "| \`pinwiz-rag-indexer\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | 20 ACA Jobs (deployment stack — \`deploy-jobs\` job) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | 22 ACA Jobs (deployment stack — \`deploy-jobs\` job) |" >> $GITHUB_STEP_SUMMARY
 
   report:
     # Deploy-health reporter. Any failed leg (build/deploy, smoke, e2e) opens or
