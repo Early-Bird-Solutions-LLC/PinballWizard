@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
@@ -99,6 +100,43 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
                 upserts++;
             }
 
+            // A title-superset collision can leave the manufacturer slug on the
+            // other era (issue #596: iron-maiden sat on the 1981 machine). The
+            // match above is the machine the year/edition signal selected;
+            // drop the slug from the other era so the next link does not
+            // follow the stale stamp. Same-group edition siblings are not
+            // that collision — the slug fast path returns only the first
+            // holder, and stripping the rest would delete godzilla from
+            // Premium/LE on the second reconcile. Not done on the ambiguous
+            // path — there we refused to guess, and we do not also wipe a
+            // slug we could not replace.
+            if (PageCarriesEraSignal(game))
+            {
+                foreach (var other in partition)
+                {
+                    if (matches.Contains(other)) continue;
+                    if (!matches.Any(selected =>
+                            TitleSupersetEra.IsCrossGroupSuperset(selected, other)
+                            || TitleSupersetEra.IsCrossGroupSuperset(other, selected)))
+                    {
+                        continue;
+                    }
+
+                    if (!other.ManufacturerSlugs.TryGetValue(manufacturer, out var held)
+                        || !string.Equals(held, game.Slug, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    other.ManufacturerSlugs.Remove(manufacturer);
+                    await _repository.UpsertAsync(other, cancellationToken).ConfigureAwait(false);
+                    upserts++;
+                    _logger.LogInformation(
+                        "Reconciler: title-superset collision moved slug '{Slug}' off {MachineId} ('{Title}', year={Year}).",
+                        game.Slug, other.Id, other.Title, other.Year);
+                }
+            }
+
             switch (matchedVia)
             {
                 case MatchOutcome.Slug: matchedBySlug++; break;
@@ -186,6 +224,22 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
                 continue;
             }
 
+            // Same shape as #596: the slug's franchise title equals the
+            // shorter game, and a longer subtitle-game exists. Backfill has
+            // no year or edition signal, so it must not stamp the short
+            // title — including when that short title is an edition family.
+            // A slug already present was skipped above; moving a stale stamp
+            // is the reconciler's job (it has the game page).
+            if (matches.Any(m => TitleSupersetEra.HasLongerSibling(partition, m)))
+            {
+                _logger.LogWarning(
+                    "SlugBackfill: cross-reference slug '{Slug}' (manufacturer={Manufacturer}) matches a shorter title that has a subtitle-superset sibling; not stamping. Candidates: {Candidates}",
+                    slug, manufacturer,
+                    string.Join(", ", matches.Select(m => $"{m.Id}('{m.Title}')")));
+                ambiguous++;
+                continue;
+            }
+
             if (matches.Count == 1)
             {
                 matches[0].ManufacturerSlugs[manufacturer] = slug;
@@ -255,14 +309,42 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
     private (List<Machine> Machines, MatchOutcome Via) FindMatch(
         List<Machine> partition, string manufacturer, GameRecord game)
     {
-        // Pass 1: slug fast path (single machine).
-        foreach (var machine in partition)
-        {
-            if (machine.ManufacturerSlugs.TryGetValue(manufacturer, out var existingSlug)
+        var slugMatches = partition
+            .Where(m => m.ManufacturerSlugs.TryGetValue(manufacturer, out var existingSlug)
                 && string.Equals(existingSlug, game.Slug, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Title-superset era collision (issue #596). The scraped page title is
+        // the bare franchise ("Iron Maiden") while a different OPDB group owns
+        // the subtitle game ("Iron Maiden: Legacy of the Beast"). An exact
+        // title hit on the shorter game is not identity. When the page carries
+        // a year or edition signal, that signal picks the group — and a slug
+        // already sitting on the other era does not win. No signal: leave the
+        // existing slug/title path alone (a captured parity catalog has no
+        // ReleaseYear, and a correct short-title slug must keep matching).
+        var era = TryResolveTitleSuperset(partition, game);
+        if (era.Handled)
+        {
+            if (era.Machines.Count == 0)
             {
-                return ([machine], MatchOutcome.Slug);
+                _logger.LogWarning(
+                    "Reconciler: scraped {GameId} ('{Title}', year={Year}) is a title-superset collision and the year/edition signal did not uniquely identify a machine; not stamping slug '{Slug}'.",
+                    game.GameId, game.Title, game.ReleaseYear, game.Slug);
+                return ([], MatchOutcome.Ambiguous);
             }
+
+            return (era.Machines, ViaFor(era.Machines, slugMatches));
+        }
+
+        // Pass 1: slug fast path (single machine). Unchanged when there is no
+        // signaled superset collision — including a slug shared by an edition
+        // family, where the first holder is enough to count the game matched.
+        // A slug whose machine year conflicts with the page year, and whose
+        // title is a subtitle-superset pair with the year-matching machine,
+        // is the stale #596 stamp — do not let it hide the title match.
+        if (slugMatches.Count > 0 && !SlugConflictsWithEra(slugMatches[0], partition, game))
+        {
+            return ([slugMatches[0]], MatchOutcome.Slug);
         }
 
         // Pass 2: franchise-title match. The scraped game title is the bare
@@ -507,6 +589,62 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
     // ambiguity) when they all share one non-null OPDB group segment. See the
     // year-guard rationale in FindMatch (issue #655 Gap 1).
     private static bool IsEditionFamilyByGroup(List<Machine> matches) => EditionFamily.IsEditionFamilyByGroup(matches);
+
+    // Handled=false: not a signaled collision; caller keeps the slug/title path.
+    // Handled=true and Machines empty: collision whose year/edition signal did
+    // not uniquely pick a group — caller must not stamp the shorter title.
+    private readonly record struct SupersetAttempt(bool Handled, List<Machine> Machines);
+
+    private static SupersetAttempt TryResolveTitleSuperset(List<Machine> partition, GameRecord game)
+    {
+        var scraped = game.Title?.Trim() ?? string.Empty;
+        if (scraped.Length == 0) return new SupersetAttempt(false, []);
+
+        var longSide = partition.Where(m => TitleSupersetEra.IsSubtitleSuperset(scraped, m.Title)).ToList();
+        if (longSide.Count == 0) return new SupersetAttempt(false, []);
+
+        var scrapedFranchise = NormalizeFranchiseTitle(scraped);
+        var shortSide = partition.Where(m =>
+            !TitleSupersetEra.IsSubtitleSuperset(scraped, m.Title)
+            && (string.Equals(m.Title?.Trim(), scraped, StringComparison.OrdinalIgnoreCase)
+                || (scrapedFranchise.Length > 0 && NormalizeFranchiseTitle(m.Title) == scrapedFranchise)))
+            .ToList();
+        if (shortSide.Count == 0) return new SupersetAttempt(false, []);
+
+        var crossGroup = longSide.Any(longer => shortSide.Any(shorter =>
+            shorter.GroupId is null || longer.GroupId is null
+            || !string.Equals(shorter.GroupId, longer.GroupId, StringComparison.OrdinalIgnoreCase)));
+        if (!crossGroup) return new SupersetAttempt(false, []);
+
+        if (!PageCarriesEraSignal(game)) return new SupersetAttempt(false, []);
+
+        var pool = shortSide.Concat(longSide).DistinctBy(m => m.Id).ToList();
+        var chosen = TitleSupersetEra.TryChooseGroup(
+            pool, game.ReleaseYear, game.Editions.Select(e => e.Name).ToList());
+        return new SupersetAttempt(true, chosen?.ToList() ?? []);
+    }
+
+    private static bool PageCarriesEraSignal(GameRecord game) =>
+        game.ReleaseYear is not null || game.Editions.Any(e => !string.IsNullOrWhiteSpace(e.Name));
+
+    private static bool SlugConflictsWithEra(Machine owner, List<Machine> partition, GameRecord game)
+    {
+        if (game.ReleaseYear is not int year || owner.Year is not int ownerYear || ownerYear == year)
+            return false;
+
+        return partition.Any(other =>
+            other.Year == year
+            && (TitleSupersetEra.IsCrossGroupSuperset(owner, other)
+                || TitleSupersetEra.IsCrossGroupSuperset(other, owner)));
+    }
+
+    private static MatchOutcome ViaFor(List<Machine> chosen, List<Machine> slugMatches)
+    {
+        var chosenIds = chosen.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+        var slugIds = slugMatches.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+        if (slugIds.Count > 0 && chosenIds.SetEquals(slugIds)) return MatchOutcome.Slug;
+        return chosen.Count > 1 ? MatchOutcome.Group : MatchOutcome.Title;
+    }
 
     private enum MatchOutcome { None, Slug, Title, Group, Ambiguous }
 }
