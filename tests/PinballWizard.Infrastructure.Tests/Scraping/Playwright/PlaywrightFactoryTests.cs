@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+using Azure.Developer.Playwright;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using NSubstitute;
@@ -355,6 +356,23 @@ public sealed class PlaywrightFactoryTests
         Assert.Empty(samples);
     }
 
+    // Azure.Developer.Playwright 1.0.0 throws the #920 exception from
+    // GetConnectOptionsAsync when no access token has been stored yet. The fake
+    // does that same thing, so skipping Initialize fails this test with the
+    // exception the Stern jobs log, instead of a green assertion on call order
+    // that a reordered production method could still satisfy by accident.
+    [Fact]
+    public async Task AcquireEntraConnectOptionsAsync_InitializesEntraBeforeReadingConnectOptions()
+    {
+        var client = new WorkspaceClientThatRejectsConnectUntilInitialized();
+
+        var options = await PlaywrightFactory.AcquireEntraConnectOptionsAsync(client);
+
+        Assert.Equal(["Initialize", "GetConnectOptions"], client.Calls);
+        Assert.Equal(WorkspaceUrl, options.WsEndpoint);
+        Assert.NotNull(options.Options);
+    }
+
     private const string WorkspaceUrl =
         "wss://eastus.api.playwright.microsoft.com/playwrightworkspaces/test/browsers";
 
@@ -392,6 +410,34 @@ public sealed class PlaywrightFactoryTests
         });
         listener.Start();
         return listener;
+    }
+
+    private sealed class WorkspaceClientThatRejectsConnectUntilInitialized : IPlaywrightWorkspaceBrowserClient
+    {
+        public List<string> Calls { get; } = [];
+
+        private bool _initialized;
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("Initialize");
+            _initialized = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<ConnectOptions<BrowserTypeConnectOptions>> GetConnectOptionsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (!_initialized)
+            {
+                throw SdkAuthenticationException();
+            }
+
+            Calls.Add("GetConnectOptions");
+            return Task.FromResult(new ConnectOptions<BrowserTypeConnectOptions>(
+                WorkspaceUrl,
+                new BrowserTypeConnectOptions()));
+        }
     }
 
     private sealed class CapturingLogger : ILogger<PlaywrightFactory>

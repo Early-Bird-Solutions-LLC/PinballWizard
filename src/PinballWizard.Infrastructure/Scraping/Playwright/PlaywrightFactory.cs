@@ -255,6 +255,19 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     // billed connection minutes and reconnect latency for nothing.
     internal static bool ShouldSkipRecycle(bool isWorkspaceConnection) => isWorkspaceConnection;
 
+    // Entra handshake required by Azure.Developer.Playwright 1.0.0. Calling
+    // GetConnectOptionsAsync first is the #920 failure: that method does not
+    // acquire a token, and PLAYWRIGHT_SERVICE_ACCESS_TOKEN is unset because the
+    // workspace disables local auth. The fixture that rejects GetConnectOptions
+    // until Initialize has run is what keeps this order from regressing.
+    internal static async Task<ConnectOptions<BrowserTypeConnectOptions>> AcquireEntraConnectOptionsAsync(
+        IPlaywrightWorkspaceBrowserClient client,
+        CancellationToken cancellationToken = default)
+    {
+        await client.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        return await client.GetConnectOptionsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     // Connects to a remote Chromium instance on Azure Playwright Workspaces rather
     // than launching a local one. Entra-only auth via the project's single shared
     // TokenCredential (SharedAzureCredential.Instance) — the deployed workspace sets
@@ -290,20 +303,25 @@ public sealed class PlaywrightFactory : IAsyncDisposable
 
         try
         {
-            // NOT disposed here. PlaywrightServiceBrowserClient implements IDisposable
-            // (verified via reflection against the installed 1.0.0 assembly), and the
-            // assembly's own string table contains "RotationTimer"/"TimerCallback" —
-            // evidence, not proof, that it may own ongoing Entra token rotation for the
-            // session it just authenticated. Microsoft's docs don't state the client's
-            // lifetime contract, and there's no live workspace to test disposal timing
-            // against. Per this repo's no-guessing.md, the unverified-but-safer choice
-            // is to hold the client for as long as the browser connection it produced is
-            // in use — disposed in DisposeAsync (RecycleBrowserAsync never reaches a
-            // disposal path here: it's itself a no-op in workspace mode) — rather than
-            // risk cutting short whatever keeps a ~35-45 minute full-catalog run's
-            // connection alive.
-            _workspaceClient = new PlaywrightServiceBrowserClient(credential: SharedAzureCredential.Instance);
-            var connectOptions = await _workspaceClient.GetConnectOptionsAsync<BrowserTypeConnectOptions>();
+            // NOT disposed here. InitializeAsync (inside AcquireEntraConnectOptionsAsync)
+            // starts the SDK's Entra rotation timer — PlaywrightServiceBrowserClient
+            // 1.0.0 assigns RotationTimer there, on a 4-minute period, and refreshes
+            // the token whose lifetime threshold is 15 minutes. A Stern catalog run is
+            // longer than that. DisposeAsync is what stops the timer;
+            // RecycleBrowserAsync is a no-op in workspace mode and never reaches it.
+            //
+            // ServiceAuth is set explicitly. The options getter otherwise honors an
+            // ambient _MPT_AUTH_TYPE, and AccessToken would read
+            // PLAYWRIGHT_SERVICE_ACCESS_TOKEN, which this workspace does not have
+            // (localAuth Disabled). The property wins over that variable.
+            _workspaceClient = new PlaywrightServiceBrowserClient(
+                credential: SharedAzureCredential.Instance,
+                options: new PlaywrightServiceBrowserClientOptions
+                {
+                    ServiceAuth = ServiceAuthType.EntraId,
+                });
+            var connectOptions = await AcquireEntraConnectOptionsAsync(
+                new PlaywrightServiceWorkspaceBrowserClient(_workspaceClient)).ConfigureAwait(false);
             return await playwright.Chromium.ConnectAsync(connectOptions.WsEndpoint, connectOptions.Options)
                 .ConfigureAwait(false);
         }
