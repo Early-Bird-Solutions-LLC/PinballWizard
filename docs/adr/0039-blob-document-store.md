@@ -142,6 +142,8 @@ admin dashboard (`/admin/documents`) that the share of `franchise-wide` records 
 dropped to near-zero for manufacturers whose documents carry per-machine page-1 text
 (Stern, JJP).
 
+The live path for `--relink-all` is no longer a laptop `dotnet run`. [ADR-0057](0057-on-demand-maintenance-jobs.md) adds a manual ACA job, `pinwiz-job-relink-all-*`, that runs that flag against dev. The historical local command above still works for an operator who has data-plane RBAC; the job is the path that does not depend on a workstation.
+
 ## References
 
 - [ADR-0012](0012-cosmos-arm-schema-data-plane-items.md) — Cosmos ARM/data-plane identity model (managed identity pattern this mirrors)

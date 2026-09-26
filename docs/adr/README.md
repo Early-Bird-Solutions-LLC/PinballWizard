@@ -67,6 +67,7 @@ negative) it carries.
 | [0054](0054-unified-machine-resolution.md) | Unified machine resolution: canonical identity + curated aliases + confidence tiers (replaces the slug-only join) | Accepted |
 | [0055](0055-azure-monitor-exporter-explicit-connection-string.md) | Azure Monitor OTel exporters wired explicitly in ServiceDefaults, connection string passed in code (not autodiscovered) | Accepted |
 | [0056](0056-stern-playwright-scrapers-on-azure-workspaces.md) | Stern Playwright scrapers connect to Azure Playwright Workspaces when deployed (fixes #855 OOM) | Accepted |
+| [0057](0057-on-demand-maintenance-jobs.md) | On-demand ACA jobs for `--relink-all` and `--gc-rag-index` | Accepted |
 
 ## Conventions
 

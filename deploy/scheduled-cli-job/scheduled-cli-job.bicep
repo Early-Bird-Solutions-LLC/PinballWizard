@@ -1,5 +1,6 @@
-// Reusable scheduled Azure Container Apps Job that runs the PinballWizard CLI
-// on a cron. One instance per scheduled maintenance op (see shared.bicep).
+// Reusable Azure Container Apps Job that runs the PinballWizard CLI.
+// Scheduled jobs pass a cron. On-demand jobs set triggerType to Manual and
+// are started with `az containerapp job start` (ADR-0057).
 // Politeness: parallelism 1 + retryLimit 0 + caller-set generous timeout.
 
 @description('Job resource name.')
@@ -23,8 +24,15 @@ param managedIdentityId string
 @description('ACR login server; empty to skip the registry block (e.g. quickstart placeholder).')
 param containerRegistryLoginServer string = ''
 
-@description('Cron schedule, e.g. 0 10 * * 0.')
-param cronExpression string
+@description('Schedule or Manual. Manual jobs have no cron and run only when started.')
+@allowed([
+  'Schedule'
+  'Manual'
+])
+param triggerType string = 'Schedule'
+
+@description('Cron schedule, e.g. 0 10 * * 0. Required when triggerType is Schedule. Ignored for Manual.')
+param cronExpression string = ''
 
 @description('Full container command, e.g. [dotnet, PinballWizard.Cli.dll, --refresh-game-overviews].')
 param command string[]
@@ -44,6 +52,19 @@ param cpu string = '0.5'
 @description('Memory.')
 param memory string = '1Gi'
 
+var triggerConfig = triggerType == 'Schedule' ? {
+  scheduleTriggerConfig: {
+    cronExpression: cronExpression
+    parallelism: 1
+    replicaCompletionCount: 1
+  }
+} : {
+  manualTriggerConfig: {
+    parallelism: 1
+    replicaCompletionCount: 1
+  }
+}
+
 resource job 'Microsoft.App/jobs@2023-05-01' = {
   name: jobName
   location: location
@@ -56,8 +77,8 @@ resource job 'Microsoft.App/jobs@2023-05-01' = {
   }
   properties: {
     environmentId: containerAppsEnvironmentId
-    configuration: {
-      triggerType: 'Schedule'
+    configuration: union({
+      triggerType: triggerType
       replicaTimeout: replicaTimeout
       replicaRetryLimit: 0
       registries: empty(containerRegistryLoginServer) ? [] : [
@@ -67,12 +88,7 @@ resource job 'Microsoft.App/jobs@2023-05-01' = {
         }
       ]
       secrets: secrets
-      scheduleTriggerConfig: {
-        cronExpression: cronExpression
-        parallelism: 1
-        replicaCompletionCount: 1
-      }
-    }
+    }, triggerConfig)
     template: {
       containers: [
         {
@@ -84,7 +100,7 @@ resource job 'Microsoft.App/jobs@2023-05-01' = {
           }
           command: command
           // PINWIZ_SERVICE_NAME is appended here, in the module, rather than repeated in
-          // each of the 20 caller blocks in shared.bicep (#875).
+          // each caller block in shared.bicep (#875).
           //
           // ServiceDefaults reads it to set the OpenTelemetry service.name, which Azure
           // Monitor maps to AppRoleName. Without it every scheduled job falls back to

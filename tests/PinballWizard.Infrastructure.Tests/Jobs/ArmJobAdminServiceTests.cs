@@ -39,6 +39,8 @@ public sealed class ArmJobAdminServiceTests
     [InlineData("pinwiz-job-linker-buutj", "Linker")]
     [InlineData("pinwiz-job-opdb-buutj", "Opdb")]
     [InlineData("pinwiz-job-stern-refresh-buutj", "Stern Refresh")]
+    [InlineData("pinwiz-job-relink-all-buutj", "Relink All")]
+    [InlineData("pinwiz-job-gc-rag-index-buutj", "Gc Rag Index")]
     public void DeriveDisplayName_KnownJobNames_ProduceTitleCasedLabels(
         string jobName, string expected)
     {
