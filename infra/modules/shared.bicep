@@ -2722,6 +2722,14 @@ module gcRagIndexJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = 
         name: 'AiSearch__IndexName'
         value: 'pinwiz-rag-v1'
       }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
       { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
     ]
