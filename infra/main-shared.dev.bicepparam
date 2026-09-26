@@ -162,9 +162,9 @@ param wizardCustomDomain = 'pinwiz.ai'
 // Marketplace terms on the subscription.
 param deployCohereRerank = true
 
-// TEMPORARY (#920) — verbose Azure SDK tracing on the three Stern Playwright jobs.
-// Enabled deliberately to diagnose the workspace auth failure: the Playwright SDK's
-// exception carries no status code, so Azure.Core's event source is the only place the
-// real HTTP response is visible. REVERT TO false once #920 is resolved — this is
-// high-volume and bills against the Log Analytics 1 GB cap.
-param enableAzureSdkDiagnostics = true
+// Verbose Azure SDK tracing on the three Stern Playwright jobs. It was turned on
+// to diagnose #920 (the Playwright SDK auth exception carries no status code).
+// That failure was a missing Entra handshake, fixed in PR 979 (2026-09-26), so
+// the trace is off again. It is high-volume and bills against the Log Analytics
+// 1 GB cap. Flip to true only for a bounded diagnosis, then back to false.
+param enableAzureSdkDiagnostics = false
