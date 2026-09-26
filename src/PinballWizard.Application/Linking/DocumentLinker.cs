@@ -769,19 +769,16 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
     private List<Machine> MachinesForEra(IReadOnlyList<string> seedIds)
     {
         var map = new Dictionary<string, Machine>(StringComparer.Ordinal);
-        foreach (var id in seedIds)
+        foreach (var id in seedIds.Where(id => _machinesById.ContainsKey(id)))
         {
-            if (!_machinesById.TryGetValue(id, out var seed)) continue;
+            var seed = _machinesById[id];
             map[seed.Id] = seed;
-            foreach (var other in _machinesById.Values)
+            foreach (var other in _machinesById.Values.Where(other =>
+                string.Equals(other.PartitionKey, seed.PartitionKey, StringComparison.OrdinalIgnoreCase)
+                && (TitleSupersetEra.IsCrossGroupSuperset(seed, other)
+                    || TitleSupersetEra.IsCrossGroupSuperset(other, seed))))
             {
-                if (!string.Equals(other.PartitionKey, seed.PartitionKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (TitleSupersetEra.IsCrossGroupSuperset(seed, other)
-                    || TitleSupersetEra.IsCrossGroupSuperset(other, seed))
-                {
-                    map[other.Id] = other;
-                }
+                map[other.Id] = other;
             }
         }
 

@@ -112,22 +112,14 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
             // slug we could not replace.
             if (PageCarriesEraSignal(game))
             {
-                foreach (var other in partition)
+                foreach (var other in partition.Where(other =>
+                    !matches.Contains(other)
+                    && matches.Any(selected =>
+                        TitleSupersetEra.IsCrossGroupSuperset(selected, other)
+                        || TitleSupersetEra.IsCrossGroupSuperset(other, selected))
+                    && other.ManufacturerSlugs.TryGetValue(manufacturer, out var held)
+                    && string.Equals(held, game.Slug, StringComparison.OrdinalIgnoreCase)))
                 {
-                    if (matches.Contains(other)) continue;
-                    if (!matches.Any(selected =>
-                            TitleSupersetEra.IsCrossGroupSuperset(selected, other)
-                            || TitleSupersetEra.IsCrossGroupSuperset(other, selected)))
-                    {
-                        continue;
-                    }
-
-                    if (!other.ManufacturerSlugs.TryGetValue(manufacturer, out var held)
-                        || !string.Equals(held, game.Slug, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
                     other.ManufacturerSlugs.Remove(manufacturer);
                     await _repository.UpsertAsync(other, cancellationToken).ConfigureAwait(false);
                     upserts++;
