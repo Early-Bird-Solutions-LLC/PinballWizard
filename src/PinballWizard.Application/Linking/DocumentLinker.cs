@@ -769,9 +769,10 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
     private List<Machine> MachinesForEra(IReadOnlyList<string> seedIds)
     {
         var map = new Dictionary<string, Machine>(StringComparer.Ordinal);
-        foreach (var id in seedIds.Where(id => _machinesById.ContainsKey(id)))
+        foreach (var seed in seedIds
+            .Where(id => _machinesById.ContainsKey(id))
+            .Select(id => _machinesById[id]))
         {
-            var seed = _machinesById[id];
             map[seed.Id] = seed;
             foreach (var other in _machinesById.Values.Where(other =>
                 string.Equals(other.PartitionKey, seed.PartitionKey, StringComparison.OrdinalIgnoreCase)

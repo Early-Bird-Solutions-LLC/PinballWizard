@@ -163,9 +163,10 @@ public static class TitleSupersetEra
     {
         ArgumentNullException.ThrowIfNull(names);
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in names.Where(n => !string.IsNullOrWhiteSpace(n)))
+        foreach (var n in names
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim().ToLowerInvariant()))
         {
-            var n = name.Trim().ToLowerInvariant();
             set.Add(n);
             if (n is "limited edition" or "limited") set.Add("le");
             if (n is "prem") set.Add("premium");
