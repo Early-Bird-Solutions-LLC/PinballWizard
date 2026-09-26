@@ -79,7 +79,9 @@ public sealed class ApGamePageScraper : PoliteScraperBase, ISourceScraper
         {
             if (cancellationToken.IsCancellationRequested) yield break;
 
-            var (gameRecord, downloads) = await TryExtractAsync(gameUrl, cancellationToken).ConfigureAwait(false);
+            var rejectedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var (gameRecord, downloads) = await TryExtractAsync(gameUrl, rejectedHosts, cancellationToken)
+                .ConfigureAwait(false);
             if (gameRecord is not null)
             {
                 yield return new ScrapedItem
@@ -89,6 +91,18 @@ public sealed class ApGamePageScraper : PoliteScraperBase, ISourceScraper
                     DiscoveryUrl = gameUrl.ToString(),
                     DiscoveryContext = "American Pinball Game Page",
                 };
+            }
+
+            // A page that published downloadable files and kept none has an empty
+            // extraction. Leave it empty so the link yield guard still fails the
+            // run when every page comes back empty, and name the hosts here so
+            // the miss is visible on this page rather than only as "0 document links".
+            if (downloads.Count == 0 && rejectedHosts.Count > 0)
+            {
+                Logger.LogError(
+                    "AP scraper: {Url} yielded 0 allowed document links. Dropped downloadable files hosted on {Hosts}.",
+                    gameUrl,
+                    string.Join(", ", rejectedHosts));
             }
 
             foreach (var link in downloads)
@@ -107,13 +121,13 @@ public sealed class ApGamePageScraper : PoliteScraperBase, ISourceScraper
     }
 
     private async Task<(GameRecord? Game, IReadOnlyList<DiscoveredLink> Downloads)> TryExtractAsync(
-        Uri gameUrl, CancellationToken cancellationToken)
+        Uri gameUrl, HashSet<string> rejectedDownloadHosts, CancellationToken cancellationToken)
     {
         try
         {
             var html = await GetStringPolitelyAsync(_httpClient, gameUrl, cancellationToken).ConfigureAwait(false);
             var record = ApGamePageExtractor.ExtractGame(html, gameUrl);
-            var downloads = ApGamePageExtractor.ExtractDownloads(html, gameUrl);
+            var downloads = ApGamePageExtractor.ExtractDownloads(html, gameUrl, rejectedDownloadHosts);
             return (record, downloads);
         }
         catch (PolitenessException)
@@ -121,10 +135,16 @@ public sealed class ApGamePageScraper : PoliteScraperBase, ISourceScraper
             // Bubble up — orchestrator handles source-level abort.
             throw;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
-            // propagate via the runtime. One bad page is logged and skipped.
+            // Per-URL failure must not abort the loop. One bad page is logged and skipped.
+            // Clearing the rejected-host set keeps a fetch failure from being reported as
+            // an empty document extraction.
+            rejectedDownloadHosts.Clear();
             Logger.LogWarning(ex, "AP scraper: failed to fetch / extract {Url}; skipping.", gameUrl);
             return (null, []);
         }

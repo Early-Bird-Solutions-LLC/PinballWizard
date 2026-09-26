@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
@@ -196,6 +197,119 @@ public sealed class ApGamePageScraperTests
     }
 
     [Fact]
+    public async Task ScrapeAsync_OffHostDocumentHosts_YieldsFileUrlProvenance()
+    {
+        const string hubspot = "https://48804760.fs1.hubspotusercontent-na1.net/hubfs/48804760/Support%20Files/Houdini%20-%20Game%20Manual.pdf";
+        const string cdn = "http://s4.american-pinball.com/img/support/2018-5/Houdini-Skill-Shot-Fix.pdf";
+        const string hyphenated = "http://american-pinball.com/games/houdini/Houdini-Pinball-Flyer.pdf";
+        const string page = "https://americanpinball.com/games/houdini";
+        const string sitemapXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+              <url><loc>https://americanpinball.com/games/houdini</loc></url>
+            </urlset>
+            """;
+        var houdiniHtml = $"""
+            <html>
+              <head><title>Houdini | American Pinball</title></head>
+              <body>
+                <a href="{hubspot}">Manual</a>
+                <a href="{cdn}">Bulletin</a>
+                <a href="{hyphenated}">Flyer</a>
+                <a href="https://example.com/external.pdf">External</a>
+              </body>
+            </html>
+            """;
+
+        var logger = new ListLogger<ApGamePageScraper>();
+        var (scraper, gate, handler) = BuildScraper(h => h
+            .MapXml($"{BaseUrl}/sitemap.xml", sitemapXml)
+            .MapHtml(page, houdiniHtml),
+            logger);
+
+        var items = await ScrapeAllAsync(scraper);
+
+        Assert.Equal(4, items.Count);
+        Assert.Equal(page, items[0].DiscoveryUrl);
+        var fileUrls = items.Where(i => i.Link is not null).Select(i => i.Link!.FileUrl).ToList();
+        Assert.Equal([hubspot, cdn, hyphenated], fileUrls);
+        Assert.All(items.Where(i => i.Link is not null), item =>
+        {
+            Assert.Equal(page, item.DiscoveryUrl);
+            Assert.Equal("houdini", item.Link!.GameSlug);
+            Assert.Equal("American Pinball Game Page", item.DiscoveryContext);
+            Assert.Equal(SourceType.AmericanPinballGamePage, item.SourceType);
+        });
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Equal(handler.Requests.Select(u => u.AbsoluteUri), gate.Acquired.Select(u => u.AbsoluteUri));
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_ForeignHostOnly_LogsEmptyExtractionAndYieldsNoDocumentLink()
+    {
+        const string page = "https://americanpinball.com/games/galactic-tank-force";
+        const string sitemapXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+              <url><loc>https://americanpinball.com/games/galactic-tank-force</loc></url>
+            </urlset>
+            """;
+        const string html = """
+            <html>
+              <head><title>Galactic Tank Force | American Pinball</title></head>
+              <body><a href="https://example.com/gtf-manual.pdf">Manual</a></body>
+            </html>
+            """;
+
+        var logger = new ListLogger<ApGamePageScraper>();
+        var (scraper, _, _) = BuildScraper(h => h
+            .MapXml($"{BaseUrl}/sitemap.xml", sitemapXml)
+            .MapHtml(page, html),
+            logger);
+
+        var items = await ScrapeAllAsync(scraper);
+
+        var game = Assert.Single(items);
+        Assert.Equal("galactic-tank-force", game.Game!.Slug);
+        Assert.Null(game.Link);
+        var error = Assert.Single(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Contains(page, error.Message, StringComparison.Ordinal);
+        Assert.Contains("0 allowed document links", error.Message, StringComparison.Ordinal);
+        Assert.Contains("example.com", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_PageWithNoFileAnchors_YieldsGameAndDoesNotLogEmptyExtraction()
+    {
+        const string page = "https://americanpinball.com/games/cirqus-voltaire";
+        const string sitemapXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+              <url><loc>https://americanpinball.com/games/cirqus-voltaire</loc></url>
+            </urlset>
+            """;
+        const string html = """
+            <html>
+              <head><title>Cirqus Voltaire | American Pinball</title></head>
+              <body><p>No downloads on this page.</p></body>
+            </html>
+            """;
+
+        var logger = new ListLogger<ApGamePageScraper>();
+        var (scraper, _, _) = BuildScraper(h => h
+            .MapXml($"{BaseUrl}/sitemap.xml", sitemapXml)
+            .MapHtml(page, html),
+            logger);
+
+        var items = await ScrapeAllAsync(scraper);
+
+        var game = Assert.Single(items);
+        Assert.Equal("cirqus-voltaire", game.Game!.Slug);
+        Assert.Null(game.Link);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Error);
+    }
+
+    [Fact]
     public async Task ScrapeAsync_PerPageFetchFailure_DoesNotAbortRun()
     {
         // One bad page in the middle should NOT prevent siblings from yielding.
@@ -328,7 +442,7 @@ public sealed class ApGamePageScraperTests
     }
 
     private static (ApGamePageScraper Scraper, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
-        BuildScraper(Action<QueueingHttpMessageHandler> configureHandler)
+        BuildScraper(Action<QueueingHttpMessageHandler> configureHandler, ILogger<ApGamePageScraper>? logger = null)
     {
         var options = Options.Create(new ApOptions { BaseUrl = BaseUrl });
         var politenessOpts = Options.Create(new PolitenessOptions());
@@ -349,8 +463,27 @@ public sealed class ApGamePageScraperTests
             new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(BaseUrl) },
             sitemapClient,
             gate, politenessOpts,
-            NullLogger<ApGamePageScraper>.Instance);
+            logger ?? NullLogger<ApGamePageScraper>.Instance);
 
         return (scraper, gate, handler);
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
     }
 }
