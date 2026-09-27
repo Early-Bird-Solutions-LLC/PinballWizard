@@ -91,6 +91,55 @@ public sealed class GameOverviewIndexSyncTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task BannerPlusGameProse_KeepsGameParagraph_AndDoesNotDelete()
+    {
+        const string game = "Battle Godzilla and rival kaiju across the city in this SPIKE-2 machine.";
+        var mixed = new Machine
+        {
+            Id = "GweeP-MW95j",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla",
+            OverviewProse = Banner + "\n\n" + game,
+            OverviewSourceUrl = "https://sternpinball.com/game/godzilla/",
+        };
+
+        var synthesizer = new GameOverviewSynthesizer(NullLogger<GameOverviewSynthesizer>.Instance);
+        var chunks = synthesizer.Synthesize(mixed);
+        var overview = Assert.Single(chunks);
+        Assert.Contains(game, overview.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("consent", overview.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cookies", overview.Text, StringComparison.OrdinalIgnoreCase);
+
+        var machines = Substitute.For<IMachineRepository>();
+        machines.StreamByManufacturerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<string>(0) == ScraperManufacturerKey.Stern
+                ? ToAsync(mixed)
+                : ToAsync<Machine>());
+        var indexer = Substitute.For<IRagIndexer>();
+        indexer.UpsertAsync(
+                Arg.Any<ChunkRequest>(),
+                Arg.Any<IReadOnlyList<Chunk>>(),
+                Arg.Any<RagIndexerOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new IndexUpsertResult(1, []));
+
+        var sync = new GameOverviewIndexSync(
+            machines, synthesizer, indexer, NullLogger<GameOverviewIndexSync>.Instance);
+        var result = await sync.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.Upserted);
+        Assert.Equal(0, result.ChunksDeleted);
+        await indexer.DidNotReceive().DeleteByDocumentAndMachineAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await indexer.Received(1).UpsertAsync(
+            Arg.Is<ChunkRequest>(r => r.DocumentId == "overview_GweeP-MW95j" && r.DocumentUrl == mixed.OverviewSourceUrl),
+            Arg.Is<IReadOnlyList<Chunk>>(c => c.Count == 1 && c[0].Text.Contains(game, StringComparison.Ordinal)),
+            Arg.Any<RagIndexerOptions>(),
+            Arg.Any<CancellationToken>());
+    }
+
     private static async IAsyncEnumerable<T> ToAsync<T>(params T[] items)
     {
         foreach (var item in items)

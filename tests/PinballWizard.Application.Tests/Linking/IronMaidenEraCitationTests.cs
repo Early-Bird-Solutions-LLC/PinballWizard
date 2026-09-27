@@ -148,6 +148,9 @@ public sealed class IronMaidenEraCitationTests
         stern1981.ManufacturerSlugs["stern"] = "iron-maiden";
         stern1981.OverviewProse = "With your consent, we store cookies on your browser to personalize your experience across the site.";
         stern1981.OverviewSourceUrl = DiscoveryUrl;
+        stern1981.TrailerUrl = "https://www.youtube.com/watch?v=iron-maiden-2018";
+        stern1981.Editions = [new MachineEdition { Name = "Pro", Description = "2018 Pro copy that belongs on the other era." }];
+        stern1981.Accessories = [new MachineAccessory { Name = "Topper", ProductUrl = "https://shop.sternpinball.com/products/topper" }];
         var stern2018 = Machine(
             "G4dOQ-M2018", "stern", "Stern Pinball", "Iron Maiden: Legacy of the Beast", 2018, "G4dOQ",
             ["pro", "premium", "le"]);
@@ -186,6 +189,10 @@ public sealed class IronMaidenEraCitationTests
         Assert.False(stern1981.ManufacturerSlugs.ContainsKey("stern"));
         Assert.Null(stern1981.OverviewProse);
         Assert.Null(stern1981.OverviewSourceUrl);
+        Assert.Null(stern1981.TrailerUrl);
+        Assert.Empty(stern1981.Editions);
+        Assert.Empty(stern1981.Accessories);
+        Assert.Equal(["widebody"], stern1981.EditionTokens);
         Assert.Equal("iron-maiden", stern2018.ManufacturerSlugs["stern"]);
         Assert.Equal(overview, stern2018.OverviewProse);
         Assert.Equal(DiscoveryUrl, stern2018.OverviewSourceUrl);

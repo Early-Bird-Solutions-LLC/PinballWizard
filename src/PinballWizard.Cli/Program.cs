@@ -749,9 +749,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // Handle --sync-game-overviews (Phase 4.5 W4b — synthesize GameOverview chunks
     // from each Machine's OverviewProse + per-edition scraped content and upsert
     // into AI Search). Mirrors --sync-metadata-cards; gated on the same three
-    // backend services. Skips machines with no overview content. Idempotent:
-    // re-running overwrites in-place (chunk_id hash is stable for the same
-    // machine + document key).
+    // backend services. A machine with nothing left to index has its overview_*
+    // chunks deleted — index GC ignores that prefix. Idempotent: re-running
+    // overwrites in-place when content remains (chunk_id hash is stable for the
+    // same machine + document key).
     if (syncGameOverviews)
     {
         Environment.ExitCode = await RunGameOverviewSyncAsync();

@@ -121,11 +121,14 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
                     && string.Equals(held, game.Slug, StringComparison.OrdinalIgnoreCase)))
                 {
                     other.ManufacturerSlugs.Remove(manufacturer);
-                    // The overview was scraped from the page whose slug just
-                    // moved. Leaving overviewProse / overviewSourceUrl cites
-                    // the old machine for the other era's page (#596).
+                    // The page content was scraped for the slug that just
+                    // moved. Leaving it cites the old machine for the other
+                    // era (#596). EditionTokens stay — those are OPDB's.
                     other.OverviewProse = null;
                     other.OverviewSourceUrl = null;
+                    other.TrailerUrl = null;
+                    other.Editions = [];
+                    other.Accessories = [];
                     await _repository.UpsertAsync(other, cancellationToken).ConfigureAwait(false);
                     upserts++;
                     _logger.LogInformation(
