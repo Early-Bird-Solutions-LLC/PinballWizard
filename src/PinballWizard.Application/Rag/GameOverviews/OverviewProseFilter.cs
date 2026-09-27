@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace PinballWizard.Application.Rag.GameOverviews;
 
 // Cookie-consent and privacy-banner paragraphs that Stern (and the same
@@ -34,12 +36,9 @@ public static class OverviewProseFilter
     {
         if (string.IsNullOrWhiteSpace(prose)) return null;
 
-        var kept = new List<string>();
-        foreach (var part in prose.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (!IsConsentBanner(part))
-                kept.Add(part);
-        }
+        var kept = prose.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => !IsConsentBanner(part))
+            .ToList();
 
         return kept.Count == 0 ? null : string.Join("\n\n", kept);
     }
