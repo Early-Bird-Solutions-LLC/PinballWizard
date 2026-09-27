@@ -121,6 +121,11 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
                     && string.Equals(held, game.Slug, StringComparison.OrdinalIgnoreCase)))
                 {
                     other.ManufacturerSlugs.Remove(manufacturer);
+                    // The overview was scraped from the page whose slug just
+                    // moved. Leaving overviewProse / overviewSourceUrl cites
+                    // the old machine for the other era's page (#596).
+                    other.OverviewProse = null;
+                    other.OverviewSourceUrl = null;
                     await _repository.UpsertAsync(other, cancellationToken).ConfigureAwait(false);
                     upserts++;
                     _logger.LogInformation(
@@ -308,13 +313,17 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
 
         // Title-superset era collision (issue #596). The scraped page title is
         // the bare franchise ("Iron Maiden") while a different OPDB group owns
-        // the subtitle game ("Iron Maiden: Legacy of the Beast"). An exact
-        // title hit on the shorter game is not identity. When the page carries
-        // a year or edition signal, that signal picks the group — and a slug
-        // already sitting on the other era does not win. No signal: leave the
-        // existing slug/title path alone (a captured parity catalog has no
-        // ReleaseYear, and a correct short-title slug must keep matching).
-        var era = TryResolveTitleSuperset(partition, game);
+        // the subtitle game ("Iron Maiden: Legacy of the Beast"). Stern's
+        // document title adds "Game Page" and " - Stern Pinball"; strip that
+        // chrome before the comparison or the longer title never matches and
+        // the slug fast path keeps the short-era stamp. An exact title hit on
+        // the shorter game is not identity. When the page carries a year or
+        // edition signal, that signal picks the group — and a slug already
+        // sitting on the other era does not win. No signal: leave the existing
+        // slug/title path alone (a captured parity catalog has no ReleaseYear,
+        // and a correct short-title slug must keep matching).
+        var matchTitle = TitleForMatching(manufacturer, game.Title);
+        var era = TryResolveTitleSuperset(partition, game, matchTitle);
         if (era.Handled)
         {
             if (era.Machines.Count == 0)
@@ -345,7 +354,7 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         // title — the normalized title with any trailing "(…)" edition
         // parenthetical removed — so the scraped game matches every edition base.
         // Bootstraps the slug map on the first run; Pass 1 wins thereafter.
-        var scrapedFranchise = NormalizeFranchiseTitle(game.Title);
+        var scrapedFranchise = NormalizeFranchiseTitle(matchTitle);
         if (scrapedFranchise.Length == 0) return ([], MatchOutcome.None);
 
         var matches = partition
@@ -587,9 +596,17 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
     // not uniquely pick a group — caller must not stamp the shorter title.
     private readonly record struct SupersetAttempt(bool Handled, List<Machine> Machines);
 
-    private static SupersetAttempt TryResolveTitleSuperset(List<Machine> partition, GameRecord game)
+    private static string TitleForMatching(string manufacturer, string? title)
     {
-        var scraped = game.Title?.Trim() ?? string.Empty;
+        var trimmed = title?.Trim() ?? string.Empty;
+        if (!string.Equals(manufacturer, ScraperManufacturerKey.Stern, StringComparison.OrdinalIgnoreCase))
+            return trimmed;
+        return SternPageTitle.WithoutChrome(trimmed);
+    }
+
+    private static SupersetAttempt TryResolveTitleSuperset(
+        List<Machine> partition, GameRecord game, string scraped)
+    {
         if (scraped.Length == 0) return new SupersetAttempt(false, []);
 
         var longSide = partition.Where(m => TitleSupersetEra.IsSubtitleSuperset(scraped, m.Title)).ToList();

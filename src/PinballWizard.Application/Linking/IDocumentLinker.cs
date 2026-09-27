@@ -69,11 +69,14 @@ public interface IDocumentLinker
     Task<(int Processed, int Linked, int PlatformGeneric, int NotInCatalog, int Failed, int NeedsReview)>
         RunBatchAsync(CancellationToken cancellationToken);
 
-    // Resets algorithm-derived terminal records (Linked / NotInCatalog) back to
-    // Pending so a subsequent RunBatchAsync re-runs the tiers against them — used
-    // when the linker logic changed (e.g. the manufacturer-disambiguation fix)
-    // and previously-Linked documents need re-resolving. Deliberately does NOT
-    // reset ManuallyLinked (Tier-0 admin overrides — human decisions, and they
-    // re-apply first anyway) or PlatformGeneric. Returns the count reset.
+    // Resets algorithm-derived terminal records (Linked / NotInCatalog /
+    // NeedsReview) back to Pending so a subsequent RunBatchAsync re-runs the
+    // tiers against them — used when the linker logic changed and previously
+    // resolved or parked documents need re-evaluating. NeedsReview is included
+    // so a rule change can resolve documents that were ambiguous under the old
+    // rule; a row that is still ambiguous is written back to NeedsReview and
+    // stays uncited. Deliberately does NOT reset ManuallyLinked (Tier-0 admin
+    // overrides — human decisions, and they re-apply first anyway) or
+    // PlatformGeneric. Returns the count reset.
     Task<int> ResetForRelinkAsync(CancellationToken cancellationToken);
 }
