@@ -17,38 +17,28 @@ namespace PinballWizard.Infrastructure.Tests.Scraping.Kineticist;
 public sealed class KineticistTutorialsClientTests
 {
     private const string BaseUrl = "https://www.kineticist.com";
-    private const string CategoryPath = "/news/category/pinball-tutorial";
+    private const string SitemapUrl = BaseUrl + "/sitemap/news.xml";
 
     // ── Inline fixtures ─────────────────────────────────────────────────────────
 
-    // Captures the article link regex (must match /news/{slug} hrefs that end in
-    // tutorial/rules/guide/strategy/pinball keywords but not category/author/tag).
-    private const string CategoryPage1Html = """
-        <!DOCTYPE html>
-        <html>
-        <body>
-          <article>
-            <a href="/news/transformers-pinball-tutorial">Autobots, Transform and Roll Out!</a>
-          </article>
-          <article>
-            <a href="/news/monster-bash-pinball-tutorial">Rock Monster: Learn to Play Williams Monster Bash Pinball</a>
-          </article>
-          <nav class="pagination">
-            <a href="/news/category/pinball-tutorial?page=2">Next</a>
-          </nav>
-        </body>
-        </html>
-        """;
-
-    private const string CategoryPage2Html = """
-        <!DOCTYPE html>
-        <html>
-        <body>
-          <article>
-            <a href="/news/godzilla-pinball-tutorial">Go, Go, Godzilla! Basic Strategy for a Modern Pinball Classic</a>
-          </article>
-        </body>
-        </html>
+    // Shape of https://www.kineticist.com/sitemap/news.xml (probed 2026-09-28):
+    // a sitemaps.org urlset of every /news/{slug}. Tutorials are the slugs with a
+    // "tutorial" token; the rest (interviews, "-pinball" news, "-guide" features,
+    // the category page itself, off-host entries) must be excluded.
+    private const string NewsSitemapXml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://www.kineticist.com/news/moving-units-8</loc><lastmod>2026-09-28T15:21:09.339Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/transformers-pinball-tutorial</loc><lastmod>2026-06-25T12:00:00.000Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/dolly-parton-pinball</loc><lastmod>2026-09-10T12:41:23.983Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/monster-bash-pinball-tutorial</loc><lastmod>2025-10-29T12:00:00.000Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/a-beginners-guide-to-pinball-designers</loc><lastmod>2026-01-01T00:00:00.000Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/simpsons-pinball-party-tutorial-advanced</loc><lastmod>2026-05-01T00:00:00.000Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/category/pinball-tutorial</loc><lastmod>2026-09-23T20:19:29.847Z</lastmod></url>
+        <url><loc>https://www.kineticist.com/news/author/noah-crable</loc></url>
+        <url><loc>https://www.kineticist.com/news/Transformers-Pinball-Tutorial/</loc></url>
+        <url><loc>https://twip.kineticist.com/news/other-host-tutorial</loc></url>
+        </urlset>
         """;
 
     // Real .md body for Transformers (representative of the actual Kineticist format
@@ -191,85 +181,127 @@ public sealed class KineticistTutorialsClientTests
     // ── DiscoverTutorialSlugsAsync ──────────────────────────────────────────────
 
     [Fact]
-    public async Task DiscoverTutorialSlugsAsync_TwoCategoryPages_ReturnsAllSlugs()
+    public async Task DiscoverTutorialSlugsAsync_NewsSitemap_ReturnsOnlyTutorialSlugs()
     {
-        var (client, gate, handler) = BuildClient(h => h
-            .MapHtml(CategoryUrl(1), CategoryPage1Html)
-            .MapHtml(CategoryUrl(2), CategoryPage2Html)
-            .Map(CategoryUrl(3), _ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var (client, gate, handler) = BuildClient(h => h.MapXml(SitemapUrl, NewsSitemapXml));
+
+        var slugs = await client.DiscoverTutorialSlugsAsync(CancellationToken.None);
+
+        string[] expected = ["monster-bash-pinball-tutorial", "simpsons-pinball-party-tutorial-advanced", "transformers-pinball-tutorial"];
+        Assert.Equal(expected, slugs.Order(StringComparer.Ordinal));
+
+        // One machine-consumer request replaces paging the rendered category
+        // listing — and it went through the gate.
+        Assert.Equal(new[] { new Uri(SitemapUrl) }, handler.Requests);
+        Assert.Single(gate.Acquired);
+        Assert.Single(gate.Reported);
+        Assert.Equal(1, gate.LeasesDisposed);
+    }
+
+    [Fact]
+    public async Task DiscoverTutorialSlugsAsync_NotASitemap_ThrowsInsteadOfReturningEmpty()
+    {
+        // A challenge page or an HTML error served with 200 must not read as
+        // "zero tutorials this week".
+        var (client, _, _) = BuildClient(h => h.MapHtml(SitemapUrl, "<!DOCTYPE html><html><body>Checkpoint</body></html>"));
+
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.DiscoverTutorialSlugsAsync(CancellationToken.None));
+
+        Assert.Contains(SitemapUrl, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DiscoverTutorialSlugsAsync_SitemapIndexInsteadOfUrlset_Throws()
+    {
+        const string index = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+              <sitemap><loc>https://www.kineticist.com/sitemap/news.xml</loc></sitemap>
+            </sitemapindex>
+            """;
+        var (client, _, _) = BuildClient(h => h.MapXml(SitemapUrl, index));
+
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.DiscoverTutorialSlugsAsync(CancellationToken.None));
+
+        Assert.Contains("sitemapindex", ex.Message, StringComparison.Ordinal);
+    }
+
+    // ── 429 handling through the real politeness gate ───────────────────────────
+
+    [Fact]
+    public async Task DiscoverTutorialSlugsAsync_429WithRetryAfterThen200_WaitsTheRetryAfterAndCollectsTutorials()
+    {
+        var sitemapCalls = 0;
+        var (client, time, handler) = BuildClientWithRealGate(new PolitenessOptions { RequestDelayMs = 5_000 }, h => h
+            .Map(SitemapUrl, _ => ++sitemapCalls == 1
+                ? TooManyRequests(r => r.Headers.TryAddWithoutValidation("Retry-After", "90"))
+                : Xml(NewsSitemapXml)));
 
         var slugs = await client.DiscoverTutorialSlugsAsync(CancellationToken.None);
 
         Assert.Equal(3, slugs.Count);
         Assert.Contains("transformers-pinball-tutorial", slugs);
-        Assert.Contains("monster-bash-pinball-tutorial", slugs);
-        Assert.Contains("godzilla-pinball-tutorial", slugs);
-
-        // Politeness: every category page fetch went through the gate.
-        // Page 1 and 2 fetched; page 3 returns 404 → pagination stops.
-        Assert.Equal(handler.Requests.Count, gate.Acquired.Count);
-        Assert.Equal(handler.Requests.Count, gate.Reported.Count);
+        Assert.Equal(2, handler.Requests.Count);
+        // The second request waited out the source's Retry-After (90 s), not the
+        // 5 s pacing delay and not a Polly-style 2 s retry.
+        Assert.Equal(new[] { TimeSpan.FromSeconds(90) }, time.Waits);
     }
 
     [Fact]
-    public async Task DiscoverTutorialSlugsAsync_SinglePage_StopsOnEmptyPage()
+    public async Task DiscoverTutorialSlugsAsync_429WithHttpDateRetryAfterThen200_WaitsUntilThatDate()
     {
-        // Page 2 returns HTML with no matching article links → stops pagination.
-        const string emptyPage = "<html><body><p>No more tutorials.</p></body></html>";
-
-        var (client, gate, _) = BuildClient(h => h
-            .MapHtml(CategoryUrl(1), CategoryPage1Html)
-            .MapHtml(CategoryUrl(2), emptyPage));
+        var sitemapCalls = 0;
+        var (client, time, _) = BuildClientWithRealGate(new PolitenessOptions(), h => h
+            .Map(SitemapUrl, _ => ++sitemapCalls == 1
+                ? TooManyRequests(r =>
+                {
+                    r.Headers.TryAddWithoutValidation("Date", "Sun, 27 Sep 2026 11:00:00 GMT");
+                    r.Headers.TryAddWithoutValidation("Retry-After", "Sun, 27 Sep 2026 11:03:00 GMT");
+                })
+                : Xml(NewsSitemapXml)));
 
         var slugs = await client.DiscoverTutorialSlugsAsync(CancellationToken.None);
 
-        Assert.Equal(2, slugs.Count);
-        Assert.Contains("transformers-pinball-tutorial", slugs);
-        Assert.Contains("monster-bash-pinball-tutorial", slugs);
-
-        // Politeness invariants hold even on the empty-page early-exit path.
-        Assert.Equal(gate.Acquired.Count, gate.Reported.Count);
-        Assert.Equal(gate.Acquired.Count, gate.LeasesDisposed);
+        Assert.Equal(3, slugs.Count);
+        Assert.Equal(new[] { TimeSpan.FromMinutes(3) }, time.Waits);
     }
 
     [Fact]
-    public async Task DiscoverTutorialSlugsAsync_AuthorAndTagLinks_Excluded()
+    public async Task DiscoverTutorialSlugsAsync_Persistent429_FailsWithClearErrorAfterTheBudget()
     {
-        const string pageWithAuthorLink = """
-            <html><body>
-            <a href="/news/transformers-pinball-tutorial">Transformers</a>
-            <a href="/news/author/colin-alsheimer">Colin Alsheimer</a>
-            <a href="/news/tag/rules">Rules tag</a>
-            </body></html>
-            """;
+        var options = new PolitenessOptions { Max429Streak = 3, RateLimitBackoffMs = 60_000, MaxRetryAfterSeconds = 600 };
+        var (client, time, handler) = BuildClientWithRealGate(options, h => h
+            .Map(SitemapUrl, _ => TooManyRequests()));
 
-        var (client, _, _) = BuildClient(h =>
-        {
-            h.MapHtml($"{BaseUrl}/news/category/pinball-tutorial", pageWithAuthorLink);
-            h.Map($"{BaseUrl}/news/category/pinball-tutorial?page=2",
-                _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
-        });
+        var ex = await Assert.ThrowsAsync<PolitenessException>(
+            () => client.DiscoverTutorialSlugsAsync(CancellationToken.None));
 
-        var slugs = await client.DiscoverTutorialSlugsAsync(CancellationToken.None);
-
-        Assert.DoesNotContain(slugs, s => s.Contains("colin-alsheimer"));
-        Assert.DoesNotContain(slugs, s => s.Contains("rules"));
-        Assert.Contains("transformers-pinball-tutorial", slugs);
+        Assert.Equal(PolitenessViolation.TooMany429Responses, ex.Violation);
+        Assert.Equal(new Uri(SitemapUrl), ex.Url);
+        Assert.Contains("www.kineticist.com", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("4 times in a row", ex.Message, StringComparison.Ordinal);
+        // Budget: Max429Streak re-sends, each after a doubling backoff — then stop.
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(
+            new[] { TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(240) },
+            time.Waits);
     }
 
     [Fact]
-    public async Task DiscoverTutorialSlugsAsync_NoDuplicateSlugs_AcrossPages()
+    public async Task DiscoverTutorialSlugsAsync_VercelChallenge_FailsOnFirstResponseWithoutRetrying()
     {
-        // Page 2 returns no new slugs → dedup kicks in, loop terminates.
-        var (client, _, _) = BuildClient(h => h
-            .MapHtml(CategoryUrl(1), CategoryPage1Html)
-            .Map(CategoryUrl(2), _ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+        // The live 2026-09-28 response: 429 + x-vercel-mitigated: challenge, no Retry-After.
+        var (client, time, handler) = BuildClientWithRealGate(new PolitenessOptions(), h => h
+            .Map(SitemapUrl, _ => TooManyRequests(r => r.Headers.TryAddWithoutValidation("x-vercel-mitigated", "challenge"))));
 
-        var slugs = await client.DiscoverTutorialSlugsAsync(CancellationToken.None);
+        var ex = await Assert.ThrowsAsync<PolitenessException>(
+            () => client.DiscoverTutorialSlugsAsync(CancellationToken.None));
 
-        // 2 unique slugs from page 1 only.
-        Assert.Equal(2, slugs.Count);
-        Assert.Equal(slugs.Count, slugs.ToHashSet(StringComparer.OrdinalIgnoreCase).Count);
+        Assert.Equal(PolitenessViolation.BotChallenge, ex.Violation);
+        Assert.Single(handler.Requests);
+        Assert.Empty(time.Waits);
     }
 
     // ── FetchArticleAsync ───────────────────────────────────────────────────────
@@ -377,9 +409,45 @@ public sealed class KineticistTutorialsClientTests
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
-    private static string CategoryUrl(int page) => page == 1
-        ? $"{BaseUrl}{CategoryPath}"
-        : $"{BaseUrl}{CategoryPath}?page={page}";
+    private static HttpResponseMessage Xml(string body) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(body, System.Text.Encoding.UTF8, "application/xml"),
+    };
+
+    private static HttpResponseMessage TooManyRequests(Action<HttpResponseMessage>? configure = null)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("Too Many Requests"),
+        };
+        configure?.Invoke(response);
+        return response;
+    }
+
+    private static (KineticistTutorialsClient Client, AutoAdvancingTimeProvider Time, QueueingHttpMessageHandler Handler)
+        BuildClientWithRealGate(PolitenessOptions politeness, Action<QueueingHttpMessageHandler> configureHandler)
+    {
+        politeness.RespectRobotsTxt = false;
+        var time = new AutoAdvancingTimeProvider(new DateTimeOffset(2026, 9, 27, 11, 0, 0, TimeSpan.Zero));
+        var politenessOptions = Options.Create(politeness);
+        var gate = new PolitenessGate(
+            new RobotsTxtCache(new HttpClient(new QueueingHttpMessageHandler()), politenessOptions, NullLogger<RobotsTxtCache>.Instance),
+            new DefaultPerSourcePolitenessResolver(politenessOptions),
+            NullLogger<PolitenessGate>.Instance,
+            time);
+
+        var handler = new QueueingHttpMessageHandler();
+        configureHandler(handler);
+
+        var client = new KineticistTutorialsClient(
+            new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(BaseUrl) },
+            gate,
+            politenessOptions,
+            Options.Create(new KineticistOptions { BaseUrl = BaseUrl }),
+            NullLogger<KineticistTutorialsClient>.Instance);
+
+        return (client, time, handler);
+    }
 
     private static (KineticistTutorialsClient Client, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
         BuildClient(Action<QueueingHttpMessageHandler> configureHandler)

@@ -1,6 +1,7 @@
-using System.Net;
 using System.Text.RegularExpressions;
 using System.Web;
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
@@ -10,36 +11,36 @@ namespace PinballWizard.Infrastructure.Scraping.Kineticist;
 
 /// <summary>
 /// HTTP client for the Kineticist tutorials site. Discovers tutorial articles
-/// from the paginated category listing and fetches each article body as
-/// clean Markdown via the <c>.md</c> URL suffix.
+/// from the news sitemap and fetches each article body as clean Markdown via
+/// the <c>.md</c> URL suffix.
 /// </summary>
 /// <remarks>
 /// <para>
 /// All requests route through <see cref="PoliteScraperBase"/> (LOCKED invariant).
-/// The robots.txt (verified 2026-06-25) allows <c>/news/</c> for all crawlers
-/// and lists <c>ai-train=yes</c>. No crawl-delay is specified; politeness
-/// defaults apply.
+/// The robots.txt (verified 2026-09-28) allows <c>/news/</c> for all crawlers,
+/// lists <c>ai-train=yes</c>, advertises <c>Sitemap: /sitemap.xml</c>, and sets
+/// no crawl-delay; pacing comes from the source's politeness overrides.
 /// </para>
 /// <para>
-/// Discovery uses the paginated category listing at
-/// <c>/news/category/pinball-tutorial?page=N</c>. The listing HTML is parsed
-/// for article links with the pattern <c>/news/{slug}</c>. Each article is then
-/// fetched as <c>/news/{slug}.md</c> which returns clean Markdown containing
+/// Discovery reads the sitemap (<see cref="KineticistOptions.NewsSitemapPath"/>)
+/// — one cached, machine-consumer request — rather than paging the rendered
+/// category listing, which sits behind the site's bot checkpoint. Each tutorial
+/// is then fetched as <c>/news/{slug}.md</c>, which returns clean Markdown with
 /// title, author, date, category, canonical URL, and article body.
 /// </para>
 /// </remarks>
 public sealed partial class KineticistTutorialsClient : PoliteScraperBase
 {
+    private static readonly XNamespace SitemapNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
+
     private readonly HttpClient _http;
     private readonly KineticistOptions _options;
 
-    // Matches article links in the category listing HTML.
-    // Captures the slug from hrefs like /news/transformers-pinball-tutorial
-    // Excludes pagination, category, and author links.
-    [GeneratedRegex(
-        @"href=""(?:/news/)(?!category/|author/|tag/)([a-z0-9][a-z0-9\-]+-(?:tutorial|rules|guide|strategy|pinball)[a-z0-9\-]*)""",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex ArticleLinkRegex();
+    // A tutorial slug carries a "tutorial" token: "laser-war-tutorial",
+    // "simpsons-pinball-party-tutorial-advanced". Single path segment only, so
+    // /news/category/pinball-tutorial and /news/author/... never match.
+    [GeneratedRegex(@"^(?:[a-z0-9]+-)*tutorials?(?:-[a-z0-9]+)*$", RegexOptions.IgnoreCase)]
+    private static partial Regex TutorialSlugRegex();
 
     // Parses the author line from the .md body: "by [Name](/author/name) ·"
     // Also handles plain "by Name ·" without a link.
@@ -81,53 +82,67 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
         _options = options.Value;
     }
 
+    /// <summary>The news sitemap URL that discovery reads.</summary>
+    public Uri NewsSitemapUrl => new($"{_options.BaseUrl.TrimEnd('/')}{_options.NewsSitemapPath}");
+
     /// <summary>
-    /// Discovers all tutorial article slugs from the paginated category listing.
-    /// Uses polite HTTP; deduplicates slugs across pages.
+    /// Discovers tutorial article slugs from the news sitemap. One polite
+    /// request; deduplicated. Any HTTP or politeness failure propagates — an
+    /// unreadable sitemap is a failed discovery, never an empty one.
     /// </summary>
+    /// <exception cref="InvalidDataException">The sitemap body is not a sitemaps.org <c>urlset</c>.</exception>
     public async Task<IReadOnlyList<string>> DiscoverTutorialSlugsAsync(CancellationToken cancellationToken)
     {
-        var slugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var sitemapUrl = NewsSitemapUrl;
+        var xml = await GetStringPolitelyAsync(_http, sitemapUrl, cancellationToken).ConfigureAwait(false);
 
-        for (var page = 1; page <= _options.MaxCategoryPagesToFetch; page++)
+        XElement root;
+        try
         {
-            var url = page == 1
-                ? $"{_options.BaseUrl}{_options.TutorialCategoryPath}"
-                : $"{_options.BaseUrl}{_options.TutorialCategoryPath}?page={page}";
+            using var reader = XmlReader.Create(new StringReader(xml), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
+            root = XDocument.Load(reader).Root
+                ?? throw new InvalidDataException($"Kineticist news sitemap {sitemapUrl} is empty.");
+        }
+        catch (XmlException ex)
+        {
+            throw new InvalidDataException($"Kineticist news sitemap {sitemapUrl} is not valid XML: {ex.Message}", ex);
+        }
 
-            string html;
-            try
+        if (root.Name != SitemapNs + "urlset")
+        {
+            throw new InvalidDataException(
+                $"Kineticist news sitemap {sitemapUrl} has root <{root.Name.LocalName}>, expected a sitemaps.org <urlset>.");
+        }
+
+        var articleHost = new Uri(_options.BaseUrl).Host;
+        var slugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entries = 0;
+        foreach (var loc in root.Elements(SitemapNs + "url").Select(u => u.Element(SitemapNs + "loc")?.Value.Trim()))
+        {
+            entries++;
+            if (!Uri.TryCreate(loc, UriKind.Absolute, out var articleUri)
+                || !string.Equals(articleUri.Host, articleHost, StringComparison.OrdinalIgnoreCase))
             {
-                html = await GetStringPolitelyAsync(_http, new Uri(url), cancellationToken).ConfigureAwait(false);
+                continue;
             }
-            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+
+            var path = articleUri.AbsolutePath.TrimEnd('/');
+            const string newsPrefix = "/news/";
+            if (!path.StartsWith(newsPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                // Past the last page — pagination exhausted.
-                Logger.LogDebug("Kineticist discovery: page {Page} returned 404; pagination exhausted at {Count} articles.", page, slugs.Count);
-                break;
+                continue;
             }
 
-            var matchCount = 0;
-            foreach (Match m in ArticleLinkRegex().Matches(html))
+            var slug = path[newsPrefix.Length..];
+            if (TutorialSlugRegex().IsMatch(slug))
             {
-                var slug = m.Groups[1].Value.Trim().ToLowerInvariant();
-                if (slugs.Add(slug))
-                {
-                    matchCount++;
-                }
-            }
-
-            Logger.LogDebug("Kineticist discovery: page {Page} yielded {New} new slugs (total {Total}).", page, matchCount, slugs.Count);
-
-            // If no new slugs found on this page, pagination is done.
-            if (matchCount == 0)
-            {
-                Logger.LogDebug("Kineticist discovery: page {Page} had no new slugs; stopping pagination.", page);
-                break;
+                slugs.Add(slug.ToLowerInvariant());
             }
         }
 
-        Logger.LogInformation("Kineticist discovery: found {Count} total tutorial slugs.", slugs.Count);
+        Logger.LogInformation(
+            "Kineticist discovery: {Count} tutorial slug(s) among {Entries} news sitemap entries at {SitemapUrl}.",
+            slugs.Count, entries, sitemapUrl);
         return [.. slugs];
     }
 
