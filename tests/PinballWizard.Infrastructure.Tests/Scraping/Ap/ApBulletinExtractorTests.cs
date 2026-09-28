@@ -13,13 +13,18 @@ public sealed class ApBulletinExtractorTests
     private static readonly Uri SupportIndexUrl = new("https://americanpinball.com/support/");
     private static readonly string[] BulletinCategories = ["service-bulletin", "electrical"];
 
+    private static readonly HashSet<string> GameSlugs =
+        ApSitemapClient.ParseGamePagePosts(ApFixtures.Read("game-page-posts.captured.json"))
+            .Select(p => p.Slug)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private const string HubFs = "https://48804760.fs1.hubspotusercontent-na1.net/hubfs/48804760/Support%20Files/";
 
     [Fact]
     public void ExtractBulletins_CapturedHoudiniPage_CollectsServiceBulletinAndElectricalPdfs()
     {
         var extraction = ApBulletinExtractor.ExtractBulletins(
-            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories);
+            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
 
         string[] expected =
         [
@@ -49,7 +54,7 @@ public sealed class ApBulletinExtractorTests
     public void ExtractBulletins_CapturedHoudiniPage_LeavesManualsCodeUpdatesAndFlyerToTheGamePageScraper()
     {
         var extraction = ApBulletinExtractor.ExtractBulletins(
-            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories);
+            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
 
         var urls = extraction.Links.Select(l => l.FileUrl).ToList();
         Assert.DoesNotContain(urls, u => u.Contains("Game%20Manuals", StringComparison.Ordinal));
@@ -62,7 +67,7 @@ public sealed class ApBulletinExtractorTests
     public void ExtractBulletins_CapturedHoudiniPage_TitlesEachLinkFromItsCardHeadings()
     {
         var extraction = ApBulletinExtractor.ExtractBulletins(
-            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories);
+            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
 
         var byUrl = extraction.Links.ToDictionary(l => l.FileUrl, l => l.LinkText);
         Assert.Equal("Houdini - Skill Shot Fix", byUrl[HubFs + "Service%20Bulletin/Houdini%20-%20Skill%20Shot%20Fix.pdf"]);
@@ -76,12 +81,28 @@ public sealed class ApBulletinExtractorTests
     public void ExtractBulletins_CapturedHoudiniPage_BindsOnlyHoudiniTaggedCardsToHoudini()
     {
         var extraction = ApBulletinExtractor.ExtractBulletins(
-            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories);
+            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
 
         // The USB-formatting card carries tag-hot-wheels tag-houdini tag-oktoberfest.
         var shared = Assert.Single(extraction.Links, l => l.GameSlug is null);
         Assert.Equal(HubFs + "Service%20Bulletin/UNIVERSAL%20-%20USB%20drive%20formatting%20procedure.pdf", shared.FileUrl);
         Assert.Equal(9, extraction.Links.Count(l => l.GameSlug == "houdini"));
+    }
+
+    [Fact]
+    public void ExtractBulletins_CardWithAnExtraTopicTag_StaysBoundToItsGame()
+    {
+        // AP also has topic tags (announcements). The captured Houdini-only
+        // bulletin cards with one added must still bind to Houdini.
+        var html = ApFixtures.Read("support-houdini.captured.html").Replace(
+            "category-service-bulletin tag-houdini\"",
+            "category-service-bulletin tag-houdini tag-announcements\"",
+            StringComparison.Ordinal);
+
+        var extraction = ApBulletinExtractor.ExtractBulletins(html, HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
+
+        Assert.Equal(9, extraction.Links.Count(l => l.GameSlug == "houdini"));
+        Assert.Single(extraction.Links, l => l.GameSlug is null);
     }
 
     [Fact]
@@ -91,7 +112,7 @@ public sealed class ApBulletinExtractorTests
             ApFixtures.Read("support-barry-os-bbq-challenge.captured.html"),
             BarrySupportUrl,
             "barry-os-bbq-challenge",
-            BulletinCategories);
+            BulletinCategories, GameSlugs);
 
         Assert.Empty(extraction.Links);
         Assert.Equal(3, extraction.PostCount);
@@ -105,7 +126,7 @@ public sealed class ApBulletinExtractorTests
         // /support/ index links to per-game hubs and carries no bulletin PDFs,
         // on s4.american-pinball.com or anywhere else.
         var html = ApFixtures.Read("support-index.captured.html");
-        var extraction = ApBulletinExtractor.ExtractBulletins(html, SupportIndexUrl, "support", BulletinCategories);
+        var extraction = ApBulletinExtractor.ExtractBulletins(html, SupportIndexUrl, "support", BulletinCategories, GameSlugs);
 
         Assert.DoesNotContain("s4.american-pinball.com", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".pdf", html, StringComparison.OrdinalIgnoreCase);
@@ -121,7 +142,7 @@ public sealed class ApBulletinExtractorTests
         var html = ApFixtures.Read("support-houdini.captured.html")
             .Replace("48804760.fs1.hubspotusercontent-na1.net", "files.example.net", StringComparison.Ordinal);
 
-        var extraction = ApBulletinExtractor.ExtractBulletins(html, HoudiniSupportUrl, "houdini", BulletinCategories);
+        var extraction = ApBulletinExtractor.ExtractBulletins(html, HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
 
         Assert.Empty(extraction.Links);
         Assert.Equal(12, extraction.BulletinPostCount);
@@ -132,7 +153,7 @@ public sealed class ApBulletinExtractorTests
     public void ExtractBulletins_OnlyServiceBulletinCategory_ExcludesElectricalCards()
     {
         var extraction = ApBulletinExtractor.ExtractBulletins(
-            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", ["service-bulletin"]);
+            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", ["service-bulletin"], GameSlugs);
 
         Assert.Equal(4, extraction.Links.Count);
         Assert.Equal(6, extraction.BulletinPostCount);
@@ -142,7 +163,7 @@ public sealed class ApBulletinExtractorTests
     [Fact]
     public void ExtractBulletins_EmptyHtml_ReportsNoPostCards()
     {
-        var extraction = ApBulletinExtractor.ExtractBulletins(string.Empty, HoudiniSupportUrl, "houdini", BulletinCategories);
+        var extraction = ApBulletinExtractor.ExtractBulletins(string.Empty, HoudiniSupportUrl, "houdini", BulletinCategories, GameSlugs);
 
         Assert.Empty(extraction.Links);
         Assert.Equal(0, extraction.PostCount);

@@ -39,12 +39,14 @@ public static class ApBulletinExtractor
         string html,
         Uri supportPageUrl,
         string gameSlug,
-        IReadOnlyCollection<string> bulletinCategorySlugs)
+        IReadOnlyCollection<string> bulletinCategorySlugs,
+        IReadOnlySet<string> gameSlugs)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(supportPageUrl);
         ArgumentException.ThrowIfNullOrWhiteSpace(gameSlug);
         ArgumentNullException.ThrowIfNull(bulletinCategorySlugs);
+        ArgumentNullException.ThrowIfNull(gameSlugs);
 
         var bulletinClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var slug in bulletinCategorySlugs)
@@ -70,7 +72,7 @@ public static class ApBulletinExtractor
 
             bulletinPostCount++;
             var title = CardTitle(card);
-            var cardGameSlug = CardGameSlug(card, gameSlug);
+            var cardGameSlug = CardGameSlug(card, gameSlug, gameSlugs);
             var cardHadPdf = false;
 
             foreach (var anchor in card.QuerySelectorAll("a[href]"))
@@ -112,11 +114,14 @@ public static class ApBulletinExtractor
     // than this hub's, is not this hub's game alone. Binding it to whichever
     // hub was read first would be a guess, so it gets no game slug; the
     // orchestrator records every hub it appeared on as a cross-reference.
-    private static string? CardGameSlug(IElement card, string hubGameSlug)
+    // Only tags that name a game count: AP also has topic tags
+    // (announcements, houdini-news).
+    private static string? CardGameSlug(IElement card, string hubGameSlug, IReadOnlySet<string> gameSlugs)
     {
         var tags = card.ClassList
             .Where(c => c.StartsWith(TagClassPrefix, StringComparison.OrdinalIgnoreCase))
             .Select(c => c[TagClassPrefix.Length..])
+            .Where(gameSlugs.Contains)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 

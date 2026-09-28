@@ -92,6 +92,7 @@ public sealed class ApOptions
     /// slug is logged as a warning: it may be a new game's hub whose
     /// game page is not categorized yet.
     /// </summary>
+    [Required]
     public string[] NonGameSupportPageSlugs { get; set; } = ["register", "updates"];
 
     /// <summary>

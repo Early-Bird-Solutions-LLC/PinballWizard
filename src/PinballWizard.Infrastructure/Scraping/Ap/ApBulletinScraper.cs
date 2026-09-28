@@ -56,7 +56,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
     {
         Logger.LogInformation("American Pinball bulletin scraper starting");
 
-        var supportPages = await DiscoverGameSupportPagesAsync(cancellationToken).ConfigureAwait(false);
+        var (supportPages, gameSlugs) = await DiscoverGameSupportPagesAsync(cancellationToken).ConfigureAwait(false);
         Logger.LogInformation(
             "American Pinball bulletin scraper: {Count} per-game support page(s) to read",
             supportPages.Count);
@@ -68,7 +68,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var extraction = await TryExtractAsync(page, cancellationToken).ConfigureAwait(false);
+            var extraction = await TryExtractAsync(page, gameSlugs, cancellationToken).ConfigureAwait(false);
             if (extraction is null)
             {
                 RecordPageFailure(failedPages, page, "fetch_failed", "the page could not be fetched");
@@ -154,7 +154,8 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
             bulletinCount, supportPages.Count);
     }
 
-    private async Task<List<ApSupportPage>> DiscoverGameSupportPagesAsync(CancellationToken cancellationToken)
+    private async Task<(List<ApSupportPage> Pages, IReadOnlySet<string> GameSlugs)> DiscoverGameSupportPagesAsync(
+        CancellationToken cancellationToken)
     {
         var supportPageId = await ReadSupportPageIdAsync(cancellationToken).ConfigureAwait(false);
         var childPages = await ReadChildPagesAsync(supportPageId, cancellationToken).ConfigureAwait(false);
@@ -200,7 +201,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
                 $"AP bulletins: support page '{_apOptions.SupportPageSlug}' (id {supportPageId}) has {childPages.Count} child page(s) and none is a per-game support page.");
         }
 
-        return pages;
+        return (pages, gameSlugs);
     }
 
     private async Task<int> ReadSupportPageIdAsync(CancellationToken cancellationToken)
@@ -250,12 +251,13 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
         return pages;
     }
 
-    private async Task<ApBulletinExtraction?> TryExtractAsync(ApSupportPage page, CancellationToken cancellationToken)
+    private async Task<ApBulletinExtraction?> TryExtractAsync(
+        ApSupportPage page, IReadOnlySet<string> gameSlugs, CancellationToken cancellationToken)
     {
         try
         {
             var html = await GetStringPolitelyAsync(_httpClient, page.Link, cancellationToken).ConfigureAwait(false);
-            return ApBulletinExtractor.ExtractBulletins(html, page.Link, page.Slug, _apOptions.BulletinCategorySlugs);
+            return ApBulletinExtractor.ExtractBulletins(html, page.Link, page.Slug, _apOptions.BulletinCategorySlugs, gameSlugs);
         }
         catch (PolitenessException)
         {
