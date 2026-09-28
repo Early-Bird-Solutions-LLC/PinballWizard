@@ -272,12 +272,7 @@ public sealed class CgcGamePageScraperTests
             })
             .MapHtml($"{BaseUrl}/coinop/pulp-fiction", "<html/>"));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-        {
-            await foreach (var _ in scraper.ScrapeAsync(cts.Token))
-            {
-            }
-        });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ScrapeAllAsync(scraper, cts.Token));
         Assert.DoesNotContain(handler.Requests, u => u.AbsolutePath == "/coinop/pulp-fiction");
     }
 
@@ -362,10 +357,11 @@ public sealed class CgcGamePageScraperTests
         });
     }
 
-    private static async Task<List<ScrapedItem>> ScrapeAllAsync(CgcGamePageScraper scraper)
+    private static async Task<List<ScrapedItem>> ScrapeAllAsync(
+        CgcGamePageScraper scraper, CancellationToken cancellationToken = default)
     {
         var items = new List<ScrapedItem>();
-        await foreach (var item in scraper.ScrapeAsync(CancellationToken.None))
+        await foreach (var item in scraper.ScrapeAsync(cancellationToken))
         {
             items.Add(item);
         }
