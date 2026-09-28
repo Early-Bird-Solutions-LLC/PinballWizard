@@ -10,7 +10,8 @@ namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 
 /// <summary>
 /// Chicago Gaming Company game-page scraper. Discovers CGC machines
-/// via the <c>/coinop/</c> index page, then fetches each canonical
+/// from the <c>/coinop/{slug}</c> links on the site root (see
+/// <see cref="CgcMenuClient"/>), then fetches each canonical
 /// machine page and yields:
 /// <list type="bullet">
 ///   <item>One <see cref="ScrapedItem"/> with <c>.Game</c> populated.</item>
@@ -20,7 +21,7 @@ namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 /// <remarks>
 /// CGC produces "Remake" editions of classic Bally/Williams machines
 /// (Attack from Mars, Medieval Madness, Monster Bash, Cactus Canyon,
-/// Pulp Fiction). The index page is the canonical filter — the
+/// Pulp Fiction). The site root's links are the canonical filter — the
 /// site's sitemap is incomplete in practice. CGC pages don't expose
 /// JSON-LD product schema; the extractor relies on DOM heuristics
 /// (page <c>&lt;title&gt;</c> with manufacturer suffix stripped, h1
@@ -124,10 +125,17 @@ public sealed class CgcGamePageScraper : PoliteScraperBase, ISourceScraper
             // Bubble up — orchestrator handles source-level abort.
             throw;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Caller cancellation must reach the orchestrator; an HttpClient timeout
+            // (TaskCanceledException with the caller's token still live) is a per-page
+            // failure and falls through to the catch below.
+            throw;
+        }
         catch (Exception ex)
         {
-            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
-            // propagate via the runtime. One bad page is logged and skipped.
+            // Broad catch: per-URL failure must not abort the loop. One bad page is logged
+            // and skipped.
             Logger.LogWarning(ex, "Chicago Gaming scraper: failed to fetch / extract {Url}; skipping.", machineUrl);
             return (null, []);
         }
