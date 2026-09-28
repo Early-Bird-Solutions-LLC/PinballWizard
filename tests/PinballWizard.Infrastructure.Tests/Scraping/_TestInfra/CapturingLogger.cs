@@ -26,3 +26,25 @@ public sealed class CapturingLogger : ILogger
         Entries.Add((logLevel, formatter(state, exception)));
     }
 }
+
+/// <summary>
+/// <see cref="CapturingLogger"/> for components that take an <see cref="ILogger{TCategoryName}"/>.
+/// </summary>
+public sealed class CapturingLogger<T> : ILogger<T>
+{
+    private readonly CapturingLogger _inner = new();
+
+    public List<(LogLevel Level, string Message)> Entries => _inner.Entries;
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => _inner.BeginScope(state);
+
+    public bool IsEnabled(LogLevel logLevel) => _inner.IsEnabled(logLevel);
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter) =>
+        _inner.Log(logLevel, eventId, state, exception, formatter);
+}
