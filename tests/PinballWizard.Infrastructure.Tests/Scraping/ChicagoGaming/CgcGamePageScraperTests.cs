@@ -234,6 +234,78 @@ public sealed class CgcGamePageScraperTests
     }
 
     [Fact]
+    public async Task ScrapeAsync_IndexLinksNoMachines_YieldsNothingAndFetchesNoMachinePage()
+    {
+        // The root loads but its menu no longer links any machine. The
+        // client throws, the scraper yield-breaks, and the orchestrator's
+        // yield guard fails the run instead of recording a quiet success.
+        const string indexHtml = """
+            <html><body>
+              <a href="/arcade/foosball">Foosball</a>
+              <a href="/coinop/cactus-canyon/upgrade">Upgrade</a>
+            </body></html>
+            """;
+        var (scraper, _, handler) = BuildScraper(h => h.MapHtml($"{BaseUrl}/", indexHtml));
+
+        var items = await ScrapeAllAsync(scraper);
+
+        Assert.Empty(items);
+        Assert.Equal([$"{BaseUrl}/"], handler.Requests.Select(u => u.AbsoluteUri));
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_CallerCancelsDuringPageFetch_Throws()
+    {
+        using var cts = new CancellationTokenSource();
+        const string indexHtml = """
+            <html><body>
+              <a href="/coinop/medieval-madness">MM</a>
+              <a href="/coinop/pulp-fiction">Pulp</a>
+            </body></html>
+            """;
+        var (scraper, _, handler) = BuildScraper(h => h
+            .MapHtml($"{BaseUrl}/", indexHtml)
+            .Map($"{BaseUrl}/coinop/medieval-madness", _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            })
+            .MapHtml($"{BaseUrl}/coinop/pulp-fiction", "<html/>"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in scraper.ScrapeAsync(cts.Token))
+            {
+            }
+        });
+        Assert.DoesNotContain(handler.Requests, u => u.AbsolutePath == "/coinop/pulp-fiction");
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_PageFetchTimesOut_SkipsPageAndContinues()
+    {
+        // HttpClient reports its own timeout as TaskCanceledException while
+        // the caller's token is still live. That is one bad page, not a
+        // cancelled run.
+        const string indexHtml = """
+            <html><body>
+              <a href="/coinop/medieval-madness">MM</a>
+              <a href="/coinop/pulp-fiction">Pulp</a>
+            </body></html>
+            """;
+        const string pulpHtml = """<html><head><title>Pulp Fiction Pinball | Chicago Gaming Company</title></head></html>""";
+        var (scraper, _, _) = BuildScraper(h => h
+            .MapHtml($"{BaseUrl}/", indexHtml)
+            .Map($"{BaseUrl}/coinop/medieval-madness", _ => throw new TaskCanceledException("timeout"))
+            .MapHtml($"{BaseUrl}/coinop/pulp-fiction", pulpHtml));
+
+        var items = await ScrapeAllAsync(scraper);
+
+        var game = Assert.Single(items);
+        Assert.Equal("pulp-fiction", game.Game!.Slug);
+    }
+
+    [Fact]
     public async Task ScrapeAsync_PolitenessExceptionFromGate_PropagatesUp()
     {
         // PolitenessException must NOT be swallowed — the orchestrator
