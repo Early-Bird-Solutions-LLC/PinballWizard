@@ -38,11 +38,7 @@ public sealed class ApBulletinExtractorTests
         // Every card links its PDF twice (icon + "Download"), so an exact
         // count of ten also proves the per-page dedup fired.
         Assert.Equal(expected, extraction.Links.Select(l => l.FileUrl).ToArray());
-        Assert.All(extraction.Links, link =>
-        {
-            Assert.Equal("houdini", link.GameSlug);
-            Assert.Equal("American Pinball Support Page", link.DiscoveryContext);
-        });
+        Assert.All(extraction.Links, link => Assert.Equal("American Pinball Support Page", link.DiscoveryContext));
         Assert.Equal(16, extraction.PostCount);
         Assert.Equal(12, extraction.BulletinPostCount);
         Assert.Equal(2, extraction.PostsWithoutDocument);
@@ -74,6 +70,18 @@ public sealed class ApBulletinExtractorTests
             "General - USB Drive Formatting Procedure",
             byUrl[HubFs + "Service%20Bulletin/UNIVERSAL%20-%20USB%20drive%20formatting%20procedure.pdf"]);
         Assert.Equal("Houdini - Knocker Installation", byUrl[HubFs + "Electrical/Houdini%20-%20Knocker%20Kit%20Installation%20Guide.pdf"]);
+    }
+
+    [Fact]
+    public void ExtractBulletins_CapturedHoudiniPage_BindsOnlyHoudiniTaggedCardsToHoudini()
+    {
+        var extraction = ApBulletinExtractor.ExtractBulletins(
+            ApFixtures.Read("support-houdini.captured.html"), HoudiniSupportUrl, "houdini", BulletinCategories);
+
+        // The USB-formatting card carries tag-hot-wheels tag-houdini tag-oktoberfest.
+        var shared = Assert.Single(extraction.Links, l => l.GameSlug is null);
+        Assert.Equal(HubFs + "Service%20Bulletin/UNIVERSAL%20-%20USB%20drive%20formatting%20procedure.pdf", shared.FileUrl);
+        Assert.Equal(9, extraction.Links.Count(l => l.GameSlug == "houdini"));
     }
 
     [Fact]

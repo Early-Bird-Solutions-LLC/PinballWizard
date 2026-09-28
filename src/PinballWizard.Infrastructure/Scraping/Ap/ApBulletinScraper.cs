@@ -22,7 +22,8 @@ namespace PinballWizard.Infrastructure.Scraping.Ap;
 // publish bulletins but yields none (fetch failure, post cards gone, or every
 // PDF off the allowed hosts) is logged, metered, and fails the run after the
 // remaining hubs have been read so the error names every broken hub. A hub
-// with no bulletin posts at all (Barry O's BBQ Challenge today) is normal.
+// with no bulletin posts (Barry O's BBQ Challenge today) is normal; one whose
+// bulletins are all videos is logged as a warning.
 public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
 {
     private readonly HttpClient _httpClient;
@@ -89,12 +90,22 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
                 continue;
             }
 
+            if (extraction.Links.Count == 0 && extraction.RejectedHosts.Count > 0)
+            {
+                RecordPageFailure(failedPages, page, "no_allowed_documents",
+                    $"{extraction.BulletinPostCount} bulletin post(s) link PDFs only on disallowed hosts {string.Join(", ", extraction.RejectedHosts)}");
+                continue;
+            }
+
             if (extraction.Links.Count == 0)
             {
-                var detail = extraction.RejectedHosts.Count > 0
-                    ? $"{extraction.BulletinPostCount} bulletin post(s) link PDFs only on disallowed hosts {string.Join(", ", extraction.RejectedHosts)}"
-                    : $"{extraction.BulletinPostCount} bulletin post(s) link no PDF";
-                RecordPageFailure(failedPages, page, "no_allowed_documents", detail);
+                // AP publishes some bulletins as videos only. A hub whose every
+                // bulletin is a video has nothing to collect; that is content,
+                // not a broken page. It still shows here, and if no hub yields a
+                // PDF the run fails below.
+                Logger.LogWarning(
+                    "AP bulletins: {Url} has {Posts} bulletin post(s) and none links a PDF (video-only).",
+                    page.Link, extraction.BulletinPostCount);
                 continue;
             }
 
@@ -135,7 +146,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
         if (bulletinCount == 0)
         {
             throw new InvalidOperationException(
-                $"AP bulletins: {supportPages.Count} per-game support page(s) were read and none publishes a bulletin post.");
+                $"AP bulletins: {supportPages.Count} per-game support page(s) were read and none yielded a bulletin PDF.");
         }
 
         Logger.LogInformation(
@@ -151,11 +162,21 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
 
         var notGames = new List<string>();
         var selected = ApSupportPageParser.SelectGameSupportPages(childPages, gameSlugs, notGames);
-        if (notGames.Count > 0)
+        var knownNonGames = new HashSet<string>(_apOptions.NonGameSupportPageSlugs ?? [], StringComparer.OrdinalIgnoreCase);
+        var expectedSkips = notGames.Where(knownNonGames.Contains).ToList();
+        var unexpectedSkips = notGames.Where(s => !knownNonGames.Contains(s)).ToList();
+        if (expectedSkips.Count > 0)
         {
             Logger.LogInformation(
-                "AP bulletins: skipping support child page(s) {Slugs}; not a game in category {Category}.",
-                string.Join(", ", notGames), _apOptions.GamePageCategorySlug);
+                "AP bulletins: skipping support child page(s) {Slugs}; configured as not per-game.",
+                string.Join(", ", expectedSkips));
+        }
+
+        if (unexpectedSkips.Count > 0)
+        {
+            Logger.LogWarning(
+                "AP bulletins: skipping support child page(s) {Slugs}; not a game in category {Category} and not in Ap:NonGameSupportPageSlugs. A new game's hub is not read until its game page is categorized.",
+                string.Join(", ", unexpectedSkips), _apOptions.GamePageCategorySlug);
         }
 
         var pages = new List<ApSupportPage>(selected.Count);
@@ -205,9 +226,11 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
         using var response = await SendPolitelyAsync(_httpClient, request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        if (response.Headers.TryGetValues("X-WP-TotalPages", out var values)
-            && int.TryParse(values.FirstOrDefault(), out var totalPages)
-            && totalPages > 1)
+        int? totalPages = response.Headers.TryGetValues("X-WP-TotalPages", out var values)
+            && int.TryParse(values.FirstOrDefault(), out var parsed)
+            ? parsed
+            : null;
+        if (totalPages > 1)
         {
             throw new InvalidOperationException(
                 $"AP bulletins: support page id {supportPageId} has {totalPages} pages of children at per_page=100; refusing to read a truncated set.");
@@ -215,6 +238,12 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var pages = ApSupportPageParser.ParsePages(json);
+        if (totalPages is null && pages.Count >= 100)
+        {
+            Logger.LogWarning(
+                "AP bulletins: support child-page response omitted X-WP-TotalPages on a full page of {Count}; later pages, if any, were not read.",
+                pages.Count);
+        }
         Logger.LogInformation(
             "AP bulletins: support page id {Id} has {Count} child page(s)",
             supportPageId, pages.Count);

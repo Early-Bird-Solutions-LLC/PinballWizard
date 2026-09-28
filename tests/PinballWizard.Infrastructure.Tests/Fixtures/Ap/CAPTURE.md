@@ -77,8 +77,10 @@ Barry O's BBQ Challenge publishes no bulletin posts. Byte counts are as
 downloaded; git normalizes CRLF to LF on commit.
 
 `support-page.captured.html` and `bulletin-urls.captured.txt` (the 2026-07-13
-section) record the pre-redesign flat page. They are kept because the AP
-filename classification tests replay `bulletin-urls.captured.txt`.
+section) record the pre-redesign flat page. `ApDocumentClassificationTests`
+replays `bulletin-urls.captured.txt`, and the HTML is the capture that list was
+derived from, so both stay. Those `s4.american-pinball.com` URLs return 404
+as of 2026-09-28.
 
 ### Re-capture
 

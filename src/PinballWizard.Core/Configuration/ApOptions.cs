@@ -87,6 +87,14 @@ public sealed class ApOptions
     public string SupportPageSlug { get; set; } = "support";
 
     /// <summary>
+    /// Child pages of the support page that are known not to be
+    /// per-game hubs. Any other child whose slug is not a game-page
+    /// slug is logged as a warning: it may be a new game's hub whose
+    /// game page is not categorized yet.
+    /// </summary>
+    public string[] NonGameSupportPageSlugs { get; set; } = ["register", "updates"];
+
+    /// <summary>
     /// WordPress post categories whose cards on a per-game support
     /// page are service bulletins. <c>electrical</c> holds the
     /// install / retrofit guides that the pre-redesign support page

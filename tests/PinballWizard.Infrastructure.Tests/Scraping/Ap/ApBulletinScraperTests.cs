@@ -27,15 +27,10 @@ public sealed class ApBulletinScraperTests
     private const string HoudiniSupport = "https://americanpinball.com/support/houdini/";
     private const string BarrySupport = "https://americanpinball.com/support/barry-os-bbq-challenge/";
 
-    // The captured child-page list names six game hubs; two are captured. The
-    // catalog here is the captured game-page posts narrowed to those two, so
-    // the other four hubs are skipped as not-a-game rather than requested.
-    private const string TwoGameCatalog = """
-        [
-          {"slug":"houdini","link":"https://americanpinball.com/houdini/"},
-          {"slug":"barry-os-bbq-challenge","link":"https://americanpinball.com/barry-os-bbq-challenge/"}
-        ]
-        """;
+    // The captured child-page list names six game hubs; two are captured. Tests
+    // narrow that list to entries taken from the capture, in the order given.
+    private static readonly string BarryThenHoudini = ChildPages("barry-os-bbq-challenge", "houdini", "register", "updates");
+    private static readonly string HoudiniThenBarry = ChildPages("houdini", "barry-os-bbq-challenge");
 
     [Fact]
     public async Task ScrapeAsync_CapturedSupportPages_YieldsHoudiniBulletinPdfsWithPerGameProvenance()
@@ -60,9 +55,12 @@ public sealed class ApBulletinScraperTests
             Assert.Equal(SourceType.ApBulletinPage, item.SourceType);
             Assert.Equal(HoudiniSupport, item.DiscoveryUrl);
             Assert.Equal("American Pinball Support Page", item.DiscoveryContext);
-            Assert.Equal("houdini", item.Link!.GameSlug);
-            Assert.EndsWith(".pdf", item.Link.FileUrl, StringComparison.Ordinal);
+            Assert.EndsWith(".pdf", item.Link!.FileUrl, StringComparison.Ordinal);
         });
+        // The USB-formatting card is tagged for three games, so it is not bound to Houdini.
+        var shared = Assert.Single(items, i => i.Link!.GameSlug is null);
+        Assert.Contains("USB%20drive%20formatting", shared.Link!.FileUrl, StringComparison.Ordinal);
+        Assert.All(items.Where(i => i != shared), i => Assert.Equal("houdini", i.Link!.GameSlug));
 
         Assert.Equal(
             [SupportLookupUrl, ChildPagesUrl, CategoriesUrl, PostsUrl, BarrySupport, HoudiniSupport],
@@ -74,12 +72,63 @@ public sealed class ApBulletinScraperTests
     }
 
     [Fact]
-    public async Task ScrapeAsync_BulletinPdfsMovedOffAllowedHosts_FailsNamingThePageAndHostAndMeters()
+    public async Task ScrapeAsync_BrokenHubReadFirst_KeepsReadingAndFailsNamingEveryBrokenHub()
     {
         var houdini = ApFixtures.Read("support-houdini.captured.html")
             .Replace("48804760.fs1.hubspotusercontent-na1.net", "files.example.net", StringComparison.Ordinal);
         var logger = new CapturingLogger<ApBulletinScraper>();
-        var (scraper, _, handler) = BuildScraper(h => MapDiscovery(h)
+        var (scraper, _, handler) = BuildScraper(h => MapDiscovery(h, HoudiniThenBarry)
+            .MapHtml(HoudiniSupport, houdini)
+            .Map(BarrySupport, _ => new HttpResponseMessage(HttpStatusCode.InternalServerError)),
+            logger);
+
+        using var meter = new FailureMeter();
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => ScrapeAllAsync(scraper));
+
+        // Houdini broke first; Barry was still requested after it.
+        var requested = handler.Requests.Select(u => u.AbsoluteUri).ToList();
+        Assert.True(requested.IndexOf(BarrySupport) > requested.IndexOf(HoudiniSupport));
+        Assert.Contains("2 of 2", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(HoudiniSupport, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("files.example.net", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(BarrySupport, ex.Message, StringComparison.Ordinal);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error
+            && e.Message.Contains(HoudiniSupport, StringComparison.Ordinal)
+            && e.Message.Contains("no_allowed_documents", StringComparison.Ordinal));
+        Assert.Contains(meter.Observations, o => o.Scraper == "American Pinball Bulletins" && o.Reason == "no_allowed_documents");
+        Assert.Contains(meter.Observations, o => o.Scraper == "American Pinball Bulletins" && o.Reason == "fetch_failed");
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_SomeBulletinPdfsOnForeignHost_YieldsTheRestAndWarnsNamingTheHost()
+    {
+        const string electrical = "48804760.fs1.hubspotusercontent-na1.net/hubfs/48804760/Support%20Files/Electrical/";
+        var houdini = ApFixtures.Read("support-houdini.captured.html")
+            .Replace(electrical, "files.example.net/Electrical/", StringComparison.Ordinal);
+        var logger = new CapturingLogger<ApBulletinScraper>();
+        var (scraper, _, _) = BuildScraper(h => MapDiscovery(h)
+            .MapHtml(HoudiniSupport, houdini)
+            .MapHtml(BarrySupport, ApFixtures.Read("support-barry-os-bbq-challenge.captured.html")),
+            logger);
+
+        using var meter = new FailureMeter();
+        var items = await ScrapeAllAsync(scraper);
+
+        Assert.Equal(4, items.Count);
+        Assert.All(items, i => Assert.Contains("/Service%20Bulletin/", i.Link!.FileUrl, StringComparison.Ordinal));
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("files.example.net", StringComparison.Ordinal));
+        Assert.Empty(meter.Observations);
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_HubWhoseBulletinsAreAllVideos_WarnsWithoutCountingAPageFailure()
+    {
+        // The captured Houdini page with every PDF link turned into a non-PDF
+        // link: bulletin posts remain, none carries a file.
+        var houdini = ApFixtures.Read("support-houdini.captured.html")
+            .Replace(".pdf\"", ".html\"", StringComparison.Ordinal);
+        var logger = new CapturingLogger<ApBulletinScraper>();
+        var (scraper, _, _) = BuildScraper(h => MapDiscovery(h)
             .MapHtml(HoudiniSupport, houdini)
             .MapHtml(BarrySupport, ApFixtures.Read("support-barry-os-bbq-challenge.captured.html")),
             logger);
@@ -87,15 +136,31 @@ public sealed class ApBulletinScraperTests
         using var meter = new FailureMeter();
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => ScrapeAllAsync(scraper));
 
-        Assert.Contains(HoudiniSupport, ex.Message, StringComparison.Ordinal);
-        Assert.Contains("files.example.net", ex.Message, StringComparison.Ordinal);
-        var error = Assert.Single(logger.Entries, e => e.Level == LogLevel.Error);
-        Assert.Contains(HoudiniSupport, error.Message, StringComparison.Ordinal);
-        Assert.Contains("no_allowed_documents", error.Message, StringComparison.Ordinal);
-        Assert.Contains(meter.Observations, o => o.Scraper == "American Pinball Bulletins" && o.Reason == "no_allowed_documents");
-        // Every hub was read before failing, so the error lists every broken hub.
-        Assert.Contains(handler.Requests, u => u.AbsoluteUri == HoudiniSupport);
-        Assert.Contains(handler.Requests, u => u.AbsoluteUri == BarrySupport);
+        Assert.Contains("none yielded a bulletin PDF", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning
+            && e.Message.Contains(HoudiniSupport, StringComparison.Ordinal)
+            && e.Message.Contains("video-only", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Empty(meter.Observations);
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_ChildPageNeitherGameNorConfigured_WarnsAndSkipsIt()
+    {
+        var logger = new CapturingLogger<ApBulletinScraper>();
+        var (scraper, _, handler) = BuildScraper(h => MapDiscovery(h)
+            .MapHtml(HoudiniSupport, ApFixtures.Read("support-houdini.captured.html"))
+            .MapHtml(BarrySupport, ApFixtures.Read("support-barry-os-bbq-challenge.captured.html")),
+            logger,
+            new ApOptions { BaseUrl = BaseUrl, NonGameSupportPageSlugs = ["register"] });
+
+        var items = await ScrapeAllAsync(scraper);
+
+        Assert.Equal(10, items.Count);
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains("updates", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("register", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(handler.Requests, u => u.AbsolutePath.Contains("/support/updates", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -131,13 +196,12 @@ public sealed class ApBulletinScraperTests
     [Fact]
     public async Task ScrapeAsync_NoPerGamePagePublishesBulletins_Fails()
     {
-        const string barryOnly = """[{"slug":"barry-os-bbq-challenge","link":"https://americanpinball.com/barry-os-bbq-challenge/"}]""";
-        var (scraper, _, _) = BuildScraper(h => MapDiscovery(h, barryOnly)
+        var (scraper, _, _) = BuildScraper(h => MapDiscovery(h, ChildPages("barry-os-bbq-challenge"))
             .MapHtml(BarrySupport, ApFixtures.Read("support-barry-os-bbq-challenge.captured.html")));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => ScrapeAllAsync(scraper));
 
-        Assert.Contains("none publishes a bulletin post", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("none yielded a bulletin PDF", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -183,12 +247,25 @@ public sealed class ApBulletinScraperTests
         Assert.Empty(gate.Reported);
     }
 
-    private static QueueingHttpMessageHandler MapDiscovery(QueueingHttpMessageHandler handler, string gameCatalog = TwoGameCatalog) =>
+    private static QueueingHttpMessageHandler MapDiscovery(QueueingHttpMessageHandler handler, string? childPages = null) =>
         handler
             .MapJson(SupportLookupUrl, ApFixtures.Read("support-page-lookup.captured.json"))
-            .MapJson(ChildPagesUrl, ApFixtures.Read("support-child-pages.captured.json"))
+            .MapJson(ChildPagesUrl, childPages ?? BarryThenHoudini)
             .MapJson(CategoriesUrl, ApFixtures.Read("game-page-category.captured.json"))
-            .MapJson(PostsUrl, gameCatalog);
+            .MapJson(PostsUrl, ApFixtures.Read("game-page-posts.captured.json"));
+
+    // Entries of the captured child-page list, in the order given.
+    private static string ChildPages(params string[] slugs)
+    {
+        var captured = System.Text.Json.Nodes.JsonNode.Parse(ApFixtures.Read("support-child-pages.captured.json"))!.AsArray();
+        var picked = new System.Text.Json.Nodes.JsonArray();
+        foreach (var slug in slugs)
+        {
+            var entry = captured.Single(n => (string?)n!["slug"] == slug)!;
+            picked.Add(entry.DeepClone());
+        }
+        return picked.ToJsonString();
+    }
 
     private static async Task<List<ScrapedItem>> ScrapeAllAsync(ApBulletinScraper scraper)
     {
@@ -201,9 +278,12 @@ public sealed class ApBulletinScraperTests
     }
 
     private static (ApBulletinScraper Scraper, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
-        BuildScraper(Action<QueueingHttpMessageHandler> configureHandler, ILogger<ApBulletinScraper>? logger = null)
+        BuildScraper(
+            Action<QueueingHttpMessageHandler> configureHandler,
+            ILogger<ApBulletinScraper>? logger = null,
+            ApOptions? apOptions = null)
     {
-        var options = Options.Create(new ApOptions { BaseUrl = BaseUrl });
+        var options = Options.Create(apOptions ?? new ApOptions { BaseUrl = BaseUrl });
         var politenessOpts = Options.Create(new PolitenessOptions());
         var gate = new FakePolitenessGate();
         var handler = new QueueingHttpMessageHandler();

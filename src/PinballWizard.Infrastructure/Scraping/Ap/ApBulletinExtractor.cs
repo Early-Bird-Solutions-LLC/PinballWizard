@@ -33,6 +33,7 @@ public static class ApBulletinExtractor
 
     private const string PostCardSelector = ".type-post";
     private const string CategoryClassPrefix = "category-";
+    private const string TagClassPrefix = "tag-";
 
     public static ApBulletinExtraction ExtractBulletins(
         string html,
@@ -69,6 +70,7 @@ public static class ApBulletinExtractor
 
             bulletinPostCount++;
             var title = CardTitle(card);
+            var cardGameSlug = CardGameSlug(card, gameSlug);
             var cardHadPdf = false;
 
             foreach (var anchor in card.QuerySelectorAll("a[href]"))
@@ -95,7 +97,7 @@ public static class ApBulletinExtractor
                     FileUrl = url,
                     LinkText = title,
                     DiscoveryContext = DiscoveryContext,
-                    GameSlug = gameSlug,
+                    GameSlug = cardGameSlug,
                 });
             }
 
@@ -103,6 +105,25 @@ public static class ApBulletinExtractor
         }
 
         return new ApBulletinExtraction(links, postCount, bulletinPostCount, postsWithoutDocument, rejectedHosts);
+    }
+
+    // A card tagged for several games (the "General" USB-formatting bulletin
+    // carries tag-hot-wheels tag-houdini tag-oktoberfest), or for a game other
+    // than this hub's, is not this hub's game alone. Binding it to whichever
+    // hub was read first would be a guess, so it gets no game slug; the
+    // orchestrator records every hub it appeared on as a cross-reference.
+    private static string? CardGameSlug(IElement card, string hubGameSlug)
+    {
+        var tags = card.ClassList
+            .Where(c => c.StartsWith(TagClassPrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(c => c[TagClassPrefix.Length..])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (tags.Count == 0) return hubGameSlug;
+        return tags.Count == 1 && string.Equals(tags[0], hubGameSlug, StringComparison.OrdinalIgnoreCase)
+            ? hubGameSlug
+            : null;
     }
 
     // The card's headings are the tag label ("Houdini", or "General" for a
