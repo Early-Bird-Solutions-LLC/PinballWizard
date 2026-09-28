@@ -10,7 +10,8 @@ namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 
 /// <summary>
 /// Chicago Gaming Company game-page scraper. Discovers CGC machines
-/// via the <c>/coinop/</c> index page, then fetches each canonical
+/// from the site root's Pinball navigation menu (see
+/// <see cref="CgcMenuClient"/>), then fetches each canonical
 /// machine page and yields:
 /// <list type="bullet">
 ///   <item>One <see cref="ScrapedItem"/> with <c>.Game</c> populated.</item>
@@ -20,7 +21,7 @@ namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 /// <remarks>
 /// CGC produces "Remake" editions of classic Bally/Williams machines
 /// (Attack from Mars, Medieval Madness, Monster Bash, Cactus Canyon,
-/// Pulp Fiction). The index page is the canonical filter — the
+/// Pulp Fiction). The navigation menu is the canonical filter — the
 /// site's sitemap is incomplete in practice. CGC pages don't expose
 /// JSON-LD product schema; the extractor relies on DOM heuristics
 /// (page <c>&lt;title&gt;</c> with manufacturer suffix stripped, h1

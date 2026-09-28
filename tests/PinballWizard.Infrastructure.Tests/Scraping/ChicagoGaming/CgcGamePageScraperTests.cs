@@ -29,7 +29,7 @@ namespace PinballWizard.Infrastructure.Tests.Scraping.ChicagoGaming;
 /// </remarks>
 public sealed class CgcGamePageScraperTests
 {
-    private const string BaseUrl = "https://www.chicago-gaming.com";
+    private const string BaseUrl = CgcCapturedFixtures.BaseUrl;
 
     [Fact]
     public async Task ScrapeAsync_HappyPath_YieldsGameThenLinksWithProvenance()
@@ -60,7 +60,7 @@ public sealed class CgcGamePageScraperTests
             """;
 
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", indexHtml)
+            .MapHtml($"{BaseUrl}/", indexHtml)
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", mmHtml)
             .MapHtml($"{BaseUrl}/coinop/pulp-fiction", pulpHtml));
 
@@ -119,6 +119,62 @@ public sealed class CgcGamePageScraperTests
     }
 
     [Fact]
+    public async Task ScrapeAsync_CapturedSite_DiscoversEveryMachineFromTheSiteRoot()
+    {
+        var (scraper, gate, handler) = BuildScraper(h =>
+        {
+            h.MapHtml($"{BaseUrl}/", CgcCapturedFixtures.Home());
+            foreach (var slug in CgcCapturedFixtures.MachineSlugs)
+            {
+                h.MapHtml($"{BaseUrl}/coinop/{slug}", CgcCapturedFixtures.MachinePage(slug));
+            }
+        });
+
+        var items = await ScrapeAllAsync(scraper);
+
+        var games = items.Where(i => i.Game is not null).Select(i => i.Game!).ToList();
+        Assert.Equal(
+            [
+                ("attack-from-mars", "Attack From Mars! Remake"),
+                ("cactus-canyon", "Cactus Canyon Remake"),
+                ("medieval-madness", "Medieval Madness Merlin Edition Pinball"),
+                ("monster-bash", "Monster Bash Remake"),
+                ("pulp-fiction", "Pulp Fiction Pinball"),
+            ],
+            games.Select(g => (g.Slug, g.Title)).OrderBy(g => g.Slug, StringComparer.Ordinal).ToArray());
+        Assert.All(games, g => Assert.Equal($"{BaseUrl}/coinop/{g.Slug}", g.Source!.ScrapedFrom));
+
+        var linksBySlug = items
+            .Where(i => i.Link is not null)
+            .GroupBy(i => i.Link!.GameSlug!)
+            .ToDictionary(g => g.Key, g => g.Select(i => i.Link!.FileUrl).ToList());
+        Assert.Equal(11, linksBySlug.Values.Sum(l => l.Count));
+        Assert.False(linksBySlug.ContainsKey("cactus-canyon"));
+        Assert.Contains($"{BaseUrl}/manuals/MMR_Manual_Rev_1_2.pdf", linksBySlug["medieval-madness"]);
+        Assert.Contains($"{BaseUrl}/manuals/MB_Manual_Rev_1.pdf", linksBySlug["monster-bash"]);
+        Assert.Contains($"{BaseUrl}/brochures/AFM_Brochure.pdf", linksBySlug["attack-from-mars"]);
+        Assert.Contains($"{BaseUrl}/brochures/Pulp_Fiction_Pinball_Rules_Manual.pdf", linksBySlug["pulp-fiction"]);
+        Assert.Equal(5, linksBySlug["pulp-fiction"].Count);
+
+        // Each item's discovery URL is the machine page it came from, not the site root.
+        foreach (var item in items)
+        {
+            var slug = item.Game?.Slug ?? item.Link!.GameSlug;
+            Assert.Equal($"{BaseUrl}/coinop/{slug}", item.DiscoveryUrl);
+            Assert.Equal("Chicago Gaming Game Page", item.DiscoveryContext);
+            Assert.Equal(SourceType.ChicagoGamingGamePage, item.SourceType);
+        }
+
+        // One root fetch plus one per machine; the upgrade sub-page is never requested.
+        Assert.Equal(1 + CgcCapturedFixtures.MachineSlugs.Length, handler.Requests.Count);
+        Assert.Equal($"{BaseUrl}/", handler.Requests[0].AbsoluteUri);
+        Assert.DoesNotContain(handler.Requests, u => u.AbsolutePath.EndsWith("/upgrade", StringComparison.Ordinal));
+        Assert.Equal(handler.Requests.Select(u => u.AbsoluteUri), gate.Acquired.Select(u => u.AbsoluteUri));
+        Assert.Equal(handler.Requests.Count, gate.Reported.Count);
+        Assert.Equal(handler.Requests.Count, gate.LeasesDisposed);
+    }
+
+    [Fact]
     public async Task ScrapeAsync_PerPageFetchFailure_DoesNotAbortRun()
     {
         // One bad page in the middle should NOT prevent siblings from yielding.
@@ -135,7 +191,7 @@ public sealed class CgcGamePageScraperTests
         const string pulpHtml = """<html><head><title>Pulp | Chicago Gaming Company</title></head></html>""";
 
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", indexHtml)
+            .MapHtml($"{BaseUrl}/", indexHtml)
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", mmHtml)
             .Map($"{BaseUrl}/coinop/broken",
                 _ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError))
@@ -164,13 +220,13 @@ public sealed class CgcGamePageScraperTests
     [Fact]
     public async Task ScrapeAsync_DiscoveryFailure_AbortsThisSourceOnly()
     {
-        // The index page itself fails. The scraper must yield nothing AND
-        // not throw — the orchestrator handles per-source aborts via the
-        // outer try/catch around ScrapeAsync(), but this scraper's contract
-        // is to yield-break cleanly on discovery failure.
+        // The index page itself fails, as /coinop/ did with a 404 in #967.
+        // The scraper must yield nothing AND not throw: it logs the cause
+        // and yield-breaks, and the orchestrator's yield guard (#857) then
+        // fails the run for this source.
         var (scraper, _, _) = BuildScraper(h => h
-            .Map($"{BaseUrl}/coinop/",
-                _ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)));
+            .Map($"{BaseUrl}/",
+                _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -187,7 +243,7 @@ public sealed class CgcGamePageScraperTests
         // explicitly excludes PolitenessException; the per-page
         // TryExtractAsync also rethrows it explicitly.
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", """<html/>""")
+            .MapHtml($"{BaseUrl}/", """<html/>""")
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", "<html/>"));
 
         gate.ThrowOnAcquire = new PolitenessException(
@@ -204,7 +260,7 @@ public sealed class CgcGamePageScraperTests
         // The throw came from the gate, BEFORE any HTTP request fired —
         // so the wire must show zero requests and the gate must show zero
         // reports. A regression that swallowed the exception and let the
-        // run continue would fetch /coinop/ and possibly more pages; both
+        // run continue would fetch the site root and possibly more pages; both
         // are pinned out by these assertions.
         Assert.Empty(handler.Requests);
         Assert.Empty(gate.Reported);
@@ -219,7 +275,7 @@ public sealed class CgcGamePageScraperTests
         // ReportResponseAsync error path on the gate.
         const string indexHtml = """<html><body><a href="/coinop/medieval-madness">MM</a></body></html>""";
         var (scraper, gate, _) = BuildScraper(h => h
-            .MapHtml($"{BaseUrl}/coinop/", indexHtml)
+            .MapHtml($"{BaseUrl}/", indexHtml)
             .MapHtml($"{BaseUrl}/coinop/medieval-madness", "<html/>"));
 
         gate.ThrowOnReport = new PolitenessException(
