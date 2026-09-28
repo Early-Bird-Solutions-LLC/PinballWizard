@@ -34,9 +34,13 @@ public sealed class GameOverviewSynthesizer : IGameOverviewSynthesizer
         var chunks = new List<Chunk>();
         var index = 0;
 
-        if (!string.IsNullOrWhiteSpace(machine.OverviewProse))
+        // Stored overview prose can be a consent banner captured before the
+        // extractor learned to drop it. Filtering here means a sync without a
+        // re-scrape does not re-index that banner.
+        var prose = OverviewProseFilter.WithoutConsentBanner(machine.OverviewProse);
+        if (prose is not null)
         {
-            var text = $"{machine.Title} — Overview\n{machine.OverviewProse.Trim()}";
+            var text = $"{machine.Title} — Overview\n{prose}";
             chunks.Add(new Chunk(index++, text, "Overview", 0, 0, _tokenizer.CountTokens(text)));
         }
 

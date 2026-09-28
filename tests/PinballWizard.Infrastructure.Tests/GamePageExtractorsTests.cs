@@ -107,6 +107,18 @@ public sealed class GamePageExtractorsTests
     }
 
     [Fact]
+    public void SanitizeGameTitle_StripsGamePageAndSternSuffix()
+    {
+        // Live Iron Maiden <title>. "Game Page" is Stern chrome, not the franchise.
+        var title = GamePageExtractors.SanitizeGameTitle(
+            candidates: null,
+            pageTitle: "Iron Maiden Game Page - Stern Pinball",
+            slug: "iron-maiden");
+
+        Assert.Equal("Iron Maiden", title);
+    }
+
+    [Fact]
     public void SanitizeGameTitle_StripsPipeSuffixFromCandidate()
     {
         string?[] candidates = ["JAWS | Stern Pinball"];

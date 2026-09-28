@@ -52,11 +52,14 @@ internal static class LinkDocumentsCommand
 
         if (relinkAll)
         {
-            // --relink-all: reset previously-Linked/NotInCatalog docs to Pending so
-            // the (fixed) tiers re-run against them. Reset is performed ONCE before the
-            // iteration loop; repeating it between passes would undo inter-pass progress.
+            // --relink-all: reset previously-Linked/NotInCatalog/NeedsReview docs to
+            // Pending so the (fixed) tiers re-run against them. NeedsReview is in
+            // the set so documents parked as ambiguous are re-evaluated after a
+            // linker-rule change; a still-ambiguous row is written back to
+            // NeedsReview. Reset is performed ONCE before the iteration loop;
+            // repeating it between passes would undo inter-pass progress.
             // Admin overrides (ManuallyLinked) and PlatformGeneric are intentionally preserved.
-            Console.WriteLine("Re-link mode — resetting Linked/NotInCatalog documents to Pending...");
+            Console.WriteLine("Re-link mode — resetting Linked/NotInCatalog/NeedsReview documents to Pending...");
             var reset = await linker.ResetForRelinkAsync(cancellationToken);
             Console.WriteLine($"Reset {reset} document(s) to Pending.");
 
