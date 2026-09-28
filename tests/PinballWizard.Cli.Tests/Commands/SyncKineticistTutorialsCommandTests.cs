@@ -265,17 +265,15 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
 
         public int Count(string url) => _requests.Count(r => string.Equals(r, url, StringComparison.OrdinalIgnoreCase));
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage(
-            "CodeQuality",
-            "cs/local-not-disposed",
-            Justification = "HttpResponseMessage ownership transfers to the HttpClient caller via SendAsync; the caller disposes it.")]
+        // Unmapped URLs throw (as QueueingHttpMessageHandler does), so a request
+        // the test did not expect fails loudly instead of reading as a 404.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.AbsoluteUri;
             _requests.Add(url);
-            return Task.FromResult(_routes.TryGetValue(url, out var respond)
-                ? respond(request)
-                : new HttpResponseMessage(HttpStatusCode.NotFound));
+            return _routes.TryGetValue(url, out var respond)
+                ? Task.FromResult(respond(request))
+                : throw new InvalidOperationException($"Unexpected request to unmapped URL {url}.");
         }
     }
 }
