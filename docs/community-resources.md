@@ -84,7 +84,7 @@ The full set of community destinations the Wizard knows about. Add destinations 
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter. |
 | Barrels of Fun | `barrelsoffun.com` (storefront `shop.kollectfun.com`) | Distinguish storefront vs. brand site when linking — for "where to buy," storefront; for "about the company," brand site. |
 | Multimorphic | `multimorphic.com` | P3 platform vendor. |
-| Chicago Gaming Company (CGC) | `chicago-gaming.com/coinop/` | Williams/Bally remakes. |
+| Chicago Gaming Company (CGC) | `chicago-gaming.com` | Williams/Bally remakes. Machine pages at `/coinop/{slug}`; there is no `/coinop/` index page. |
 
 ### Manufacturers (historic / defunct)
 
