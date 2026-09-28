@@ -1307,203 +1307,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     }
 
     // Handle --sync-kineticist-tutorials (Domain-2 — index Kineticist gameplay
-    // tutorials as Rulesheet docs in AI Search, ADR-0043). Mirrors
-    // --sync-metadata-cards / --sync-game-overviews. Each tutorial is fetched as
-    // clean Markdown via the .md URL suffix; machine linking uses
-    // IMachineTitleLookupRepository; unresolvable slugs are logged + skipped
-    // (visible degradation, not silent). Idempotent: chunk_id hash is stable for
-    // the same article URL, so re-runs overwrite in place.
+    // tutorials as Rulesheet docs in AI Search, ADR-0043).
     if (syncKineticistTutorials)
     {
-        var kineticistClient = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Kineticist.KineticistTutorialsClient>();
-        var kineticistSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Kineticist.KineticistTutorialsSynthesizer>();
-        var titleLookups = host.Services.GetService<IMachineTitleLookupRepository>();
-        var kineticistIndexer = host.Services.GetService<IRagIndexer>();
-        // ADR-0043 Tier A: OPDB-keyed linking via the Kineticist API. Optional
-        // (registered only when an API key is configured); when absent the
-        // legacy title-lookup path below is used.
-        var kineticistResolver = host.Services.GetService<PinballWizard.Infrastructure.Integrations.Kineticist.IKineticistGameResolver>();
-        var machineRepo = host.Services.GetService<IMachineRepository>();
-        var kineticistOptions = host.Services.GetService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.KineticistOptions>>();
-
-        if (kineticistClient is null || kineticistSynthesizer is null || titleLookups is null || kineticistIndexer is null)
-        {
-            Console.Error.WriteLine(
-                "--sync-kineticist-tutorials requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
-                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
-            Environment.ExitCode = 2;
-            return;
-        }
-
-        var kineticistRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
-
-        Console.WriteLine("Discovering Kineticist tutorial articles...");
-
-        var kineticistSlugs = await kineticistClient.DiscoverTutorialSlugsAsync(cancellationToken);
-        Console.WriteLine($"Found {kineticistSlugs.Count} tutorial slug(s). Fetching and indexing...");
-
-        var kineticistIndexed = 0;
-        var kineticistEditionsLinked = 0;
-        var kineticistSkippedNoMachine = 0;
-        var kineticistSkippedNoContent = 0;
-        var kineticistFailed = 0;
-        var kineticistRawDocFailed = 0;
-        var kineticistIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
-
-        foreach (var slug in kineticistSlugs)
-        {
-            if (cancellationToken.IsCancellationRequested) break;
-
-            var article = await kineticistClient.FetchArticleAsync(slug, cancellationToken);
-            if (article is null)
-            {
-                kineticistSkippedNoContent++;
-                continue;
-            }
-
-            // Resolve the tutorial's target machine(s). Primary path (ADR-0043
-            // Tier A): the Kineticist API maps the game to its OPDB-keyed
-            // editions, which join to our catalog by OPDB id — no fuzzy title
-            // matching. We link the rulesheet to EVERY edition we carry, since
-            // gameplay is edition-agnostic. Fallback when no API key is
-            // configured: the legacy single-machine title-lookup.
-            var targets = new List<(string MachineId, string Title, string Manufacturer)>();
-
-            // Link resolution touches the network (Kineticist API) and Cosmos.
-            // Isolate per-tutorial: a transient API 5xx or repo error must skip
-            // this one tutorial, not abort the whole run (degrade visibly).
-            try
-            {
-                if (kineticistResolver is not null && machineRepo is not null
-                    && !string.IsNullOrWhiteSpace(kineticistOptions?.Value.ApiKey))
-                {
-                    var match = await kineticistResolver.ResolveAsync(article.GameSlug, article.Title, cancellationToken);
-                    if (match is not null)
-                    {
-                        var groupIds = match.EditionOpdbIds
-                            .Select(id => id.Split('-', 2)[0])
-                            .Where(g => !string.IsNullOrWhiteSpace(g))
-                            .Distinct(StringComparer.OrdinalIgnoreCase);
-
-                        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var groupId in groupIds)
-                        {
-                            await foreach (var machine in machineRepo.GetSiblingsByGroupIdAsync(groupId, cancellationToken))
-                            {
-                                if (seen.Add(machine.Id))
-                                {
-                                    targets.Add((machine.Id, machine.Title, machine.ManufacturerDisplayName));
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // Legacy fallback (no API key): title-lookup → first OPDB id only.
-                    var lookupTitle = article.GameSlug.Replace('-', ' ');
-                    var lookup = await titleLookups.GetByTitleAsync(lookupTitle, cancellationToken);
-                    if (lookup is not null && lookup.OpdbIds.Count > 0)
-                    {
-                        var manu = lookup.Manufacturers.Count > 0 ? lookup.Manufacturers[0] : "Unknown";
-                        targets.Add((lookup.OpdbIds[0], lookupTitle, manu));
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Console.Error.WriteLine(
-                    $"  Kineticist: link resolution failed for slug '{article.GameSlug}' ('{article.Title}'): {ex.Message}");
-                kineticistFailed++;
-                continue;
-            }
-
-            if (targets.Count == 0)
-            {
-                Console.Error.WriteLine(
-                    $"  Kineticist: no machine in catalog for slug '{article.GameSlug}'; article '{article.Title}' skipped.");
-                kineticistSkippedNoMachine++;
-                continue;
-            }
-
-            var articleIndexed = false;
-            var articleHadContent = false;
-            foreach (var (machineId, machineTitle, machineManufacturer) in targets)
-            {
-                // Per-edition stable doc id: idempotent re-runs, and editions of
-                // the same game don't collide on the same chunk id.
-                var documentId = $"kineticist_{slug}_{machineId}";
-
-                // Kineticist tutorials are gameplay rulesheets — edition-agnostic
-                // per ADR-0032 — regardless of whether this article resolved to
-                // one machine or fanned out to every sibling edition.
-                var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
-                    MachineId: machineId,
-                    MachineTitle: machineTitle,
-                    Manufacturer: machineManufacturer,
-                    DocumentId: documentId,
-                    DocumentUrl: article.CanonicalUrl,
-                    DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
-                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow,
-                    EditionScope: "franchise-wide");
-
-                var chunks = kineticistSynthesizer.Synthesize(article, chunkRequest);
-                if (chunks.Count == 0)
-                {
-                    continue;
-                }
-                articleHadContent = true;
-
-                try
-                {
-                    var result = await kineticistIndexer.UpsertAsync(chunkRequest, chunks, kineticistIndexerOptions, cancellationToken);
-                    if (result.Failures.Count > 0)
-                    {
-                        foreach (var failure in result.Failures)
-                        {
-                            Console.Error.WriteLine(
-                                $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.Title}' → {machineId}: HTTP {failure.StatusCode} — {failure.ErrorMessage}");
-                        }
-                        kineticistFailed++;
-                    }
-                    else
-                    {
-                        Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → machine {machineId} ({chunks.Count} chunk(s))");
-                        articleIndexed = true;
-                        kineticistEditionsLinked++;
-
-                        var kd = SynthesizedSourceDescriptors.Kineticist;
-                        var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.Title, article.CanonicalUrl, kd.DiscoveryContext,
-                            kd.DocumentType, kd.FileFormat, machineManufacturer,
-                            machineTitle, article.GameSlug, article.PublishedAt ?? DateTimeOffset.UtcNow);
-                        if (!await TryPersistSynthesizedRawDocAsync(kineticistRawDocRepo, synDoc, cancellationToken))
-                        {
-                            kineticistRawDocFailed++;
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Console.Error.WriteLine($"  Failed to index '{article.Title}' → {machineId}: {ex.Message}");
-                    kineticistFailed++;
-                }
-            }
-
-            if (articleIndexed)
-            {
-                kineticistIndexed++;
-            }
-            else if (!articleHadContent)
-            {
-                kineticistSkippedNoContent++;
-            }
-        }
-
-        Console.WriteLine();
-        Console.WriteLine($"--sync-kineticist-tutorials complete: indexed={kineticistIndexed} editions_linked={kineticistEditionsLinked} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed} raw_doc_write_failed={kineticistRawDocFailed}");
-        if (kineticistFailed > 0)
-            Environment.ExitCode = 1;
+        await SyncKineticistTutorialsCommand.RunAsync(host.Services, cancellationToken);
         return;
     }
 
@@ -1701,7 +1508,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                             documentId, article.GameTitle, article.TopicUrl, td.DiscoveryContext,
                             td.DocumentType, td.FileFormat, machineMatch.ManufacturerDisplayName,
                             machineMatch.MachineTitle, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
-                        if (!await TryPersistSynthesizedRawDocAsync(tiltForumsRawDocRepo, synDoc, cancellationToken))
+                        if (!await SynthesizedRawDocWriter.TryPersistAsync(tiltForumsRawDocRepo, synDoc, cancellationToken))
                         {
                             tiltForumsRawDocFailed++;
                         }
@@ -1836,7 +1643,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         documentId, article.Title, article.CanonicalUrl, wd.DiscoveryContext,
                         wd.DocumentType, wd.FileFormat, wd.ManufacturerOverride!,
                         null, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
-                    if (!await TryPersistSynthesizedRawDocAsync(twipRawDocRepo, synDoc, cancellationToken))
+                    if (!await SynthesizedRawDocWriter.TryPersistAsync(twipRawDocRepo, synDoc, cancellationToken))
                     {
                         twipRawDocFailed++;
                     }
@@ -2033,7 +1840,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                             documentId, article.Title, article.Url, fd.DiscoveryContext,
                             fd.DocumentType, fd.FileFormat, manufacturer,
                             docGameTitle, matchedSlug, DateTimeOffset.UtcNow);
-                        if (!await TryPersistSynthesizedRawDocAsync(freshdeskRawDocRepo, synDoc, cancellationToken))
+                        if (!await SynthesizedRawDocWriter.TryPersistAsync(freshdeskRawDocRepo, synDoc, cancellationToken))
                         {
                             freshdeskRawDocFailed++;
                         }
@@ -2188,30 +1995,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 // Honor Environment.ExitCode set by verb handlers; InvokeAsync returns 0 on a handled command, so a handler's ExitCode=2 would otherwise be lost.
 var invokeExitCode = await rootCommand.Parse(args).InvokeAsync();
 return invokeExitCode != 0 ? invokeExitCode : Environment.ExitCode;
-
-// ── Shared synthesized-doc helpers ────────────────────────────────────────────
-
-// Upserts a synthesized DocumentRecord to scraped_documents_raw and immediately
-// sets its LinkStatus to PlatformGeneric so the linker skips it. Returns true on
-// success (or when rawDocRepo is null — no Cosmos configured). Returns false and
-// logs a warning on any transient error so callers can meter the failure without
-// aborting the overall sync run (degrade-visibly, invariant #17).
-static async Task<bool> TryPersistSynthesizedRawDocAsync(
-    IRawDocumentRepository? rawDocRepo, DocumentRecord record, CancellationToken ct)
-{
-    if (rawDocRepo is null) return true; // no doc store configured — not a write failure
-    try
-    {
-        await rawDocRepo.UpsertRawAsync(record, ct);
-        await rawDocRepo.UpdateLinkStatusAsync(record.DocumentId, LinkStatus.PlatformGeneric, "synthesized", null, null, ct);
-        return true;
-    }
-    catch (Exception ex) when (ex is not OperationCanceledException)
-    {
-        Console.Error.WriteLine($"  Warning: raw-doc store write failed for {record.DocumentId}: {ex.Message}");
-        return false;
-    }
-}
 
 // ── Host Builder ──────────────────────────────────────────────────────────────
 
