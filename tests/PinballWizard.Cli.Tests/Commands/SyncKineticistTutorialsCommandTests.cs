@@ -265,6 +265,10 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
 
         public int Count(string url) => _requests.Count(r => string.Equals(r, url, StringComparison.OrdinalIgnoreCase));
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to the HttpClient caller via SendAsync; the caller disposes it.")]
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.AbsoluteUri;

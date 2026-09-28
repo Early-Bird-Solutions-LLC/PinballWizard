@@ -51,15 +51,8 @@ public static class RateLimitSignals
     {
         ArgumentNullException.ThrowIfNull(headers);
 
-        foreach (var name in ChallengeHeaders)
-        {
-            if (headers.TryGetValues(name, out var values)
-                && values.Any(v => v.Contains("challenge", StringComparison.OrdinalIgnoreCase)))
-            {
-                return name;
-            }
-        }
-
-        return null;
+        return ChallengeHeaders.FirstOrDefault(name =>
+            headers.TryGetValues(name, out var values)
+            && values.Any(v => v.Contains("challenge", StringComparison.OrdinalIgnoreCase)));
     }
 }

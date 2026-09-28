@@ -96,51 +96,41 @@ public abstract class PoliteScraperBase
 
         var url = request.RequestUri ?? throw new InvalidOperationException("Request must have a RequestUri.");
 
-        var current = request;
-        try
+        var response = await SendOnceAsync(client, request, url, completionOption, cancellationToken).ConfigureAwait(false);
+        var resendable = IsResendableRateLimit(response, request, request);
+
+        for (var attempt = 1; resendable; attempt++)
         {
-            for (var attempt = 1; ; attempt++)
+            response.Dispose();
+
+            // The gate's per-origin streak limit normally throws first; this
+            // cap only guarantees termination if the streak is reset concurrently.
+            if (attempt > PolitenessOptions.Max429StreakUpperBound)
             {
-                var response = await SendOnceAsync(client, current, url, completionOption, cancellationToken).ConfigureAwait(false);
-
-                if (response.StatusCode != HttpStatusCode.TooManyRequests
-                    || request.Content is not null
-                    || !GateOwnsRateLimit(current))
-                {
-                    return response;
-                }
-
-                response.Dispose();
-
-                // The gate's per-origin streak limit normally throws first; this
-                // cap only guarantees termination if the streak is reset concurrently.
-                if (attempt > PolitenessOptions.Max429StreakUpperBound)
-                {
-                    throw new PolitenessException(
-                        PolitenessViolation.TooMany429Responses,
-                        $"Source {url.Host} kept returning 429 for {url} across {attempt} attempts. Aborting.",
-                        url);
-                }
-
-                Logger.LogInformation(
-                    "429 from {Url} (attempt {Attempt}); re-sending after the politeness gate's backoff.",
-                    url, attempt);
-
-                if (!ReferenceEquals(current, request))
-                {
-                    current.Dispose();
-                }
-                current = CloneWithoutContent(request);
+                throw new PolitenessException(
+                    PolitenessViolation.TooMany429Responses,
+                    $"Source {url.Host} kept returning 429 for {url} across {attempt} attempts. Aborting.",
+                    url);
             }
+
+            Logger.LogInformation(
+                "429 from {Url} (attempt {Attempt}); re-sending after the politeness gate's backoff.",
+                url, attempt);
+
+            using var resend = CloneWithoutContent(request);
+            response = await SendOnceAsync(client, resend, url, completionOption, cancellationToken).ConfigureAwait(false);
+            resendable = IsResendableRateLimit(response, request, resend);
         }
-        finally
-        {
-            if (!ReferenceEquals(current, request))
-            {
-                current.Dispose();
-            }
-        }
+
+        return response;
     }
+
+    // A 429 is re-sent only when the request has no body (safely repeatable)
+    // and was sent through a pipeline that leaves 429 to the gate.
+    private static bool IsResendableRateLimit(HttpResponseMessage response, HttpRequestMessage original, HttpRequestMessage sent) =>
+        response.StatusCode == HttpStatusCode.TooManyRequests
+        && original.Content is null
+        && GateOwnsRateLimit(sent);
 
     private async Task<HttpResponseMessage> SendOnceAsync(
         HttpClient client,
