@@ -11,6 +11,8 @@ using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
 using PinballWizard.Infrastructure.Scraping.Kineticist;
 using PinballWizard.Infrastructure.Scraping.Polite;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace PinballWizard.Cli.Commands;
 
@@ -23,7 +25,8 @@ namespace PinballWizard.Cli.Commands;
 //
 // Exit codes: 0 = at least one tutorial indexed and no per-article failures;
 // 1 = the source refused or failed us (discovery or mid-run), discovery found
-// nothing, nothing was indexed, or any per-article failure; 2 = missing config.
+// nothing, nothing was indexed, or any article failed to fetch, link, or index
+// (a 404 article is a logged skip, not a failure); 2 = missing config.
 internal static class SyncKineticistTutorialsCommand
 {
     internal const int SourceFailureExitCode = 1;
@@ -101,14 +104,24 @@ internal static class SyncKineticistTutorialsCommand
             {
                 article = await kineticistClient.FetchArticleAsync(slug, cancellationToken);
             }
-            catch (PolitenessException ex)
+            catch (Exception ex) when (ex is PolitenessException or BrokenCircuitException)
             {
                 // The host told us to stop (429 budget spent, Retry-After beyond
-                // budget, or a bot challenge). Asking for the next article would
-                // ignore that — stop the run here.
+                // budget, a bot challenge) or the circuit to it is open. Asking for
+                // the next article would ignore that — stop the run here.
                 sourceFailure = ex;
                 sourceFailureSlug = slug;
                 break;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TimeoutRejectedException)
+            {
+                // One article outlived the transient retries; the rest may still be
+                // served. Count it as a failure (exit 1) and move on.
+                var status = ex is HttpRequestException { StatusCode: { } code } ? $"HTTP {(int)code} {code}" : ex.GetType().Name;
+                logger.LogError(ex, "Kineticist: fetching article '{Slug}' failed: {Status}.", slug, status);
+                Console.Error.WriteLine($"  Kineticist: fetching article '{slug}' failed: {status} — {ex.Message}");
+                kineticistFailed++;
+                continue;
             }
 
             if (article is null)
@@ -257,11 +270,14 @@ internal static class SyncKineticistTutorialsCommand
         }
 
         Console.WriteLine();
-        Console.WriteLine($"--sync-kineticist-tutorials {(sourceFailure is null ? "complete" : "aborted")}: discovered={kineticistSlugs.Count} indexed={kineticistIndexed} editions_linked={kineticistEditionsLinked} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed} raw_doc_write_failed={kineticistRawDocFailed}");
+        var outcome = sourceFailure is not null ? "aborted"
+            : cancellationToken.IsCancellationRequested ? "cancelled"
+            : "complete";
+        Console.WriteLine($"--sync-kineticist-tutorials {outcome}: discovered={kineticistSlugs.Count} indexed={kineticistIndexed} editions_linked={kineticistEditionsLinked} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed} raw_doc_write_failed={kineticistRawDocFailed}");
 
         if (sourceFailure is not null)
         {
-            ReportSourceFailure(logger, $"article '{sourceFailureSlug}'", (sourceFailure as PolitenessException)?.Url, sourceFailure);
+            ReportSourceFailure(logger, $"article '{sourceFailureSlug}'", kineticistClient.ArticleMarkdownUrl(sourceFailureSlug!), sourceFailure);
             return;
         }
 
@@ -282,7 +298,8 @@ internal static class SyncKineticistTutorialsCommand
     }
 
     private static bool IsSourceFailure(Exception ex) =>
-        ex is PolitenessException or HttpRequestException or InvalidDataException;
+        ex is PolitenessException or HttpRequestException or InvalidDataException
+            or TimeoutRejectedException or BrokenCircuitException;
 
     private static void ReportSourceFailure(ILogger logger, string stage, Uri? url, Exception ex)
     {

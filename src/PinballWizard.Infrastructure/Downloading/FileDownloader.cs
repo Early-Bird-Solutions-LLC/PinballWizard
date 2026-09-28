@@ -77,7 +77,9 @@ public sealed class FileDownloader : IFileDownloader
             // applies the per-origin delay + robots check before the request (throws
             // PolitenessException on a robots disallow), and disposing the lease stamps
             // "last request time" so the next download to this origin is paced.
-            // Mirrors PoliteScraperBase.SendPolitelyAsync.
+            // Unlike PoliteScraperBase.SendPolitelyAsync it never re-sends after a
+            // 429: its client keeps the host pipeline, and the gate's recorded
+            // backoff paces the next download to the origin instead.
             await using var lease = await _politeness.AcquireForRequestAsync(uri, cancellationToken).ConfigureAwait(false);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, fileUrl);

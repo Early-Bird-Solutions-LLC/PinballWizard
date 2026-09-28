@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Http;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
@@ -220,7 +221,7 @@ public sealed class PoliteScraperBaseTests
             ? RateLimited(retryAfterSeconds: 7)
             : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
 
-        using var httpClient = new HttpClient(handler);
+        using var httpClient = GateOwnedClient(handler);
         var scraper = new TestScraper(gate);
 
         var body = await scraper.GetStringAsync(httpClient, url, CancellationToken.None);
@@ -253,7 +254,7 @@ public sealed class PoliteScraperBaseTests
             return response;
         });
 
-        using var httpClient = new HttpClient(handler);
+        using var httpClient = GateOwnedClient(handler);
         await new TestScraper(gate).GetStringAsync(httpClient, url, CancellationToken.None);
 
         Assert.Equal(TimeSpan.FromMinutes(2), gate.Reported[0].RetryAfter);
@@ -298,7 +299,7 @@ public sealed class PoliteScraperBaseTests
         var handler = new QueueingHttpMessageHandler();
         handler.Map(url.AbsoluteUri, _ => RateLimited(retryAfterSeconds: 5));
 
-        using var httpClient = new HttpClient(handler);
+        using var httpClient = GateOwnedClient(handler);
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{}") };
 
         using var response = await new TestScraper(gate).SendAsync(httpClient, request, CancellationToken.None);
@@ -316,7 +317,7 @@ public sealed class PoliteScraperBaseTests
         var handler = new QueueingHttpMessageHandler();
         handler.Map(url.AbsoluteUri, _ => RateLimited(retryAfterSeconds: null));
 
-        using var httpClient = new HttpClient(handler);
+        using var httpClient = GateOwnedClient(handler);
 
         var ex = await Assert.ThrowsAsync<PolitenessException>(
             () => new TestScraper(gate).GetStringAsync(httpClient, url, CancellationToken.None));
@@ -325,6 +326,30 @@ public sealed class PoliteScraperBaseTests
         Assert.Equal(3, handler.Requests.Count);
         Assert.Equal(3, gate.LeasesDisposed);
     }
+
+    [Fact]
+    public async Task SendPolitelyAsync_429OnPipelineThatMayRetryBelowTheGate_IsReturnedNotResent()
+    {
+        // No GateOwnsRateLimit stamp: the client may be on the host pipeline,
+        // which already retried the 429. Re-sending on top would multiply requests.
+        var gate = new FakePolitenessGate();
+        var url = new Uri("https://example.com/limited");
+        var handler = new QueueingHttpMessageHandler();
+        handler.Map(url.AbsoluteUri, _ => RateLimited(retryAfterSeconds: 5));
+
+        using var httpClient = new HttpClient(handler);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+        using var response = await new TestScraper(gate).SendAsync(httpClient, request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+        Assert.Single(handler.Requests);
+        // Still reported, so the gate records the origin's backoff.
+        Assert.Equal(TimeSpan.FromSeconds(5), Assert.Single(gate.Reported).RetryAfter);
+    }
+
+    private static HttpClient GateOwnedClient(HttpMessageHandler inner) =>
+        new(new GateOwnsRateLimitHandler { InnerHandler = inner });
 
     private static HttpResponseMessage RateLimited(int? retryAfterSeconds)
     {

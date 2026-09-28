@@ -15,9 +15,9 @@ Probing on 2026-09-28 found that the response is not a rate limit. It is a Verce
 
 ## Decision
 
-1. **429 is reported to the gate, never retried below it.** Clients that route through the gate use `AddPoliteResilienceHandler`. It replaces the inherited pipeline with a standard handler whose retry predicate is `IsTransient && status != 429`. 5xx, 408, network errors, and attempt timeouts still retry there.
+1. **429 is reported to the gate, never retried below it.** Clients that route through the gate use `AddPoliteResilienceHandler`. It replaces the inherited pipeline with a standard handler whose retry predicate is `IsTransient && status != 429`, and the circuit breaker uses the same predicate. 5xx, 408, network errors, and attempt timeouts still retry there. The pipeline stamps every request with `GateOwnsRateLimit` (`GateOwnsRateLimitHandler`, outside the resilience handler).
 2. **The gate turns a 429 into a per-origin backoff.** `Retry-After` is honored in both forms (`RateLimitSignals.GetRetryAfter`). An HTTP-date is measured against the response's own `Date` header. Without a `Retry-After`, the backoff is `RateLimitBackoffMs × 2^(streak−1)`, capped at `MaxRetryAfterSeconds`. The next `AcquireForRequestAsync` for that origin waits it out. The streak is per origin, as the `Max429Streak` doc already said, so a healthy origin does not reset a throttled one.
-3. **The retry budget is the per-source policy.** `PoliteScraperBase` re-sends a body-less request after a 429 through a fresh lease. The gate throws `TooMany429Responses` when the streak exceeds `Max429Streak`. It throws `RetryAfterExceedsBudget` when a server asks for more than `MaxRetryAfterSeconds`: the run fails instead of sleeping for hours. `Max429StreakUpperBound` is the hard cap.
+3. **The retry budget is the per-source policy.** `PoliteScraperBase` re-sends a body-less request after a 429 through a fresh lease, but only when the request carries the `GateOwnsRateLimit` stamp. An unstamped client may still be on the host pipeline, which already retried the 429, so re-sending there would multiply the requests; its 429 is reported and returned to the caller as before. The gate throws `TooMany429Responses` when the streak exceeds `Max429Streak`. It throws `RetryAfterExceedsBudget` when a server asks for more than `MaxRetryAfterSeconds`: the run fails instead of sleeping for hours. `Max429StreakUpperBound` is the hard cap.
 4. **A bot challenge is not a rate limit.** A non-success response carrying `x-vercel-mitigated: challenge` or `cf-mitigated: challenge` is reported, then fails with `BotChallenge` without a retry. Waiting cannot pass a challenge, so a retry would only add load.
 5. **Per-source pacing lives in the ingestion-source seed.** `RateLimitBackoffMs` and `MaxRetryAfterSeconds` join `PolitenessOverrides`. `kineticist_tutorials` is set to 5 s between requests and a 60 s base backoff, and `--seed-ingestion-sources` applies it.
 6. **Kineticist discovery reads the news sitemap** (`/sitemap/news.xml`, one cached request). It no longer pages the rendered category listing.
@@ -34,7 +34,7 @@ Probing on 2026-09-28 found that the response is not a rate limit. It is a Verce
 
 **Negative:**
 
-- Only the Kineticist tutorials client uses the polite pipeline in this change. Other gated clients still inherit the host handler that retries 429, until they adopt `AddPoliteResilienceHandler`.
+- Only the Kineticist tutorials client uses the polite pipeline in this change. Other gated clients still inherit the host handler that retries 429, and they get no gate re-send, until they adopt `AddPoliteResilienceHandler`. They do get the per-origin backoff: after a 429, the next request to that origin waits out the `Retry-After` or the policy backoff.
 - Backoff waits happen inside the lease acquire, so a run that meets a real rate limit takes minutes longer. That cost is intended.
 - The challenge markers are vendor headers (Vercel, Cloudflare). A different bot-protection vendor looks like a plain 429 and uses the 429 budget.
 

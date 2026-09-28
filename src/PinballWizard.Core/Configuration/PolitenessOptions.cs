@@ -56,8 +56,11 @@ public sealed class PolitenessOptions
     /// carries no <c>Retry-After</c> header. Doubles with each consecutive
     /// 429 from the same origin and is capped at <see cref="MaxRetryAfterSeconds"/>.
     /// </summary>
-    [Range(1_000, 600_000)]
+    [Range(RateLimitBackoffMsMin, RateLimitBackoffMsMax)]
     public int RateLimitBackoffMs { get; set; } = 30_000;
+
+    /// <summary>Bounds of <see cref="RateLimitBackoffMs"/>; per-source overrides are clamped to them.</summary>
+    public const int RateLimitBackoffMsMin = 1_000, RateLimitBackoffMsMax = 600_000;
 
     /// <summary>
     /// Longest wait a single 429 may impose on an origin. A server-sent
@@ -65,8 +68,11 @@ public sealed class PolitenessOptions
     /// sleeping (the source is asking us to come back later than the run's
     /// budget allows); computed backoff is capped at this value.
     /// </summary>
-    [Range(1, 3_600)]
+    [Range(MaxRetryAfterSecondsMin, MaxRetryAfterSecondsMax)]
     public int MaxRetryAfterSeconds { get; set; } = 600;
+
+    /// <summary>Bounds of <see cref="MaxRetryAfterSeconds"/>; per-source overrides are clamped to them.</summary>
+    public const int MaxRetryAfterSecondsMin = 1, MaxRetryAfterSecondsMax = 3_600;
 
     /// <summary>If true, every request URL is checked against the host's robots.txt before being issued.</summary>
     public bool RespectRobotsTxt { get; set; } = true;

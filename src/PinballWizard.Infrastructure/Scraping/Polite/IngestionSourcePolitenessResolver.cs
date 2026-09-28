@@ -124,8 +124,13 @@ public sealed class IngestionSourcePolitenessResolver : IPerSourcePolitenessReso
             UserAgent = ua,
             RequestDelayMs = overrides.RequestDelayMs ?? defaults.RequestDelayMs,
             Max429Streak = overrides.Max429Streak ?? defaults.Max429Streak,
-            RateLimitBackoffMs = overrides.RateLimitBackoffMs ?? defaults.RateLimitBackoffMs,
-            MaxRetryAfterSeconds = overrides.MaxRetryAfterSeconds ?? defaults.MaxRetryAfterSeconds,
+            // Clamped: a 0 or negative override would turn the 429 backoff off.
+            RateLimitBackoffMs = overrides.RateLimitBackoffMs is { } backoff
+                ? Math.Clamp(backoff, PolitenessOptions.RateLimitBackoffMsMin, PolitenessOptions.RateLimitBackoffMsMax)
+                : defaults.RateLimitBackoffMs,
+            MaxRetryAfterSeconds = overrides.MaxRetryAfterSeconds is { } maxWait
+                ? Math.Clamp(maxWait, PolitenessOptions.MaxRetryAfterSecondsMin, PolitenessOptions.MaxRetryAfterSecondsMax)
+                : defaults.MaxRetryAfterSeconds,
             RespectRobotsTxt = defaults.RespectRobotsTxt,
             RobotsTxtPath = string.IsNullOrWhiteSpace(overrides.RobotsTxtPath) ? defaults.RobotsTxtPath : overrides.RobotsTxtPath,
             RobotsTxtTtlSeconds = defaults.RobotsTxtTtlSeconds,

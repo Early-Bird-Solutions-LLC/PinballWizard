@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Scraping.Kineticist;
+using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Scraping.Polite;
@@ -33,6 +34,34 @@ public sealed class PoliteHttpClientBuilderExtensionsTests
     }
 
     [Fact]
+    public async Task KineticistClientPipeline_StampsRequestsSoTheBaseMayResendAfter429()
+    {
+        var primary = new CountingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var provider = BuildProvider(primary);
+
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(KineticistTutorialsClient));
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("https://www.kineticist.com/sitemap/news.xml"));
+        using var response = await client.SendAsync(request);
+
+        Assert.True(request.Options.TryGetValue(PoliteHttpClientBuilderExtensions.GateOwnsRateLimit, out var owned) && owned);
+    }
+
+    [Fact]
+    public async Task HostDefaultPipeline_DoesNotStampRequests()
+    {
+        // Any gated client not yet on the polite pipeline keeps the host handler,
+        // which retries 429 itself — PoliteScraperBase must not re-send on top.
+        var primary = new CountingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var provider = BuildProvider(primary, otherClient: "some-other-scraper");
+
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("some-other-scraper");
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("https://example.com/"));
+        using var response = await client.SendAsync(request);
+
+        Assert.False(request.Options.TryGetValue(PoliteHttpClientBuilderExtensions.GateOwnsRateLimit, out _));
+    }
+
+    [Fact]
     public async Task KineticistClientPipeline_503_IsStillRetriedAsTransient()
     {
         var primary = new CountingHandler(n => n == 1
@@ -47,7 +76,7 @@ public sealed class PoliteHttpClientBuilderExtensionsTests
         Assert.Equal(2, primary.Calls);
     }
 
-    private static ServiceProvider BuildProvider(CountingHandler primary)
+    private static ServiceProvider BuildProvider(CountingHandler primary, string? otherClient = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
@@ -59,6 +88,10 @@ public sealed class PoliteHttpClientBuilderExtensionsTests
         services.AddKineticistScraping(new ConfigurationBuilder().Build());
         services.AddHttpClient(nameof(KineticistTutorialsClient))
             .ConfigurePrimaryHttpMessageHandler(() => primary);
+        if (otherClient is not null)
+        {
+            services.AddHttpClient(otherClient).ConfigurePrimaryHttpMessageHandler(() => primary);
+        }
 
         return services.BuildServiceProvider();
     }

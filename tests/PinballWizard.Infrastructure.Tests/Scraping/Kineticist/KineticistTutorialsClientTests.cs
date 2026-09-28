@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Http;
 using PinballWizard.Infrastructure.Scraping.Kineticist;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
@@ -372,7 +373,7 @@ public sealed class KineticistTutorialsClientTests
     }
 
     [Fact]
-    public async Task FetchArticleAsync_HttpFailure_ReturnsNull()
+    public async Task FetchArticleAsync_NotFound_ReturnsNull()
     {
         const string slug = "nonexistent-tutorial";
 
@@ -382,12 +383,28 @@ public sealed class KineticistTutorialsClientTests
 
         var article = await client.FetchArticleAsync(slug, CancellationToken.None);
 
-        // HTTP failures log-and-return-null (degrade visibly per Invariant #17).
+        // A removed article is skipped (logged), not a failure.
         Assert.Null(article);
 
         // Politeness: the failed request still went through the gate (acquire + report).
         Assert.Single(gate.Acquired);
         Assert.Single(gate.Reported);
+    }
+
+    [Fact]
+    public async Task FetchArticleAsync_ServerError_PropagatesSoTheRunCountsAFailure()
+    {
+        const string slug = "godzilla-pinball-tutorial";
+
+        var (client, _, _) = BuildClient(h => h
+            .Map($"{BaseUrl}/news/{slug}.md",
+                _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+
+        // Not null: a 503 that outlived the transient retries is a failed fetch,
+        // and must not be reported as an article with no content.
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => client.FetchArticleAsync(slug, CancellationToken.None));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
     }
 
     [Fact]
@@ -440,7 +457,9 @@ public sealed class KineticistTutorialsClientTests
         configureHandler(handler);
 
         var client = new KineticistTutorialsClient(
-            new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(BaseUrl) },
+            // GateOwnsRateLimitHandler stands in for the production polite pipeline
+            // (AddPoliteResilienceHandler), which leaves 429 to the gate.
+            new HttpClient(new GateOwnsRateLimitHandler { InnerHandler = handler }) { BaseAddress = new Uri(BaseUrl) },
             gate,
             politenessOptions,
             Options.Create(new KineticistOptions { BaseUrl = BaseUrl }),

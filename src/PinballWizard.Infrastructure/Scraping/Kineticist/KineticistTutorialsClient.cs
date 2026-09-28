@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Web;
 using System.Xml;
@@ -85,6 +86,9 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
     /// <summary>The news sitemap URL that discovery reads.</summary>
     public Uri NewsSitemapUrl => new($"{_options.BaseUrl.TrimEnd('/')}{_options.NewsSitemapPath}");
 
+    /// <summary>The <c>.md</c> URL <see cref="FetchArticleAsync"/> requests for <paramref name="slug"/>.</summary>
+    public Uri ArticleMarkdownUrl(string slug) => new($"{_options.BaseUrl}/news/{slug}.md");
+
     /// <summary>
     /// Discovers tutorial article slugs from the news sitemap. One polite
     /// request; deduplicated. Any HTTP or politeness failure propagates — an
@@ -149,24 +153,26 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
     /// <summary>
     /// Fetches a single tutorial article as a <see cref="KineticistTutorialArticle"/>
     /// by appending <c>.md</c> to the article's canonical URL.
-    /// Returns <see langword="null"/> when the article cannot be parsed (logged + skipped).
+    /// Returns <see langword="null"/> when the article is gone (404) or cannot be
+    /// parsed (logged + skipped). Any other HTTP failure propagates so the caller
+    /// counts it as a failure, not as an empty article.
     /// </summary>
     public async Task<KineticistTutorialArticle?> FetchArticleAsync(string slug, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(slug);
 
         var articleUrl = $"{_options.BaseUrl}/news/{slug}";
-        var mdUrl = $"{articleUrl}.md";
+        var mdUrl = ArticleMarkdownUrl(slug).AbsoluteUri;
 
         string markdown;
         try
         {
             markdown = await GetStringPolitelyAsync(_http, new Uri(mdUrl), cancellationToken).ConfigureAwait(false);
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            Logger.LogWarning(ex,
-                "Kineticist: failed to fetch article Markdown for slug '{Slug}' at {Url}; skipping.",
+            Logger.LogWarning(
+                "Kineticist: article Markdown for slug '{Slug}' is gone (404 at {Url}); skipping.",
                 slug, mdUrl);
             return null;
         }

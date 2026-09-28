@@ -12,6 +12,7 @@ using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Cli.Commands;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
+using PinballWizard.Infrastructure.Http;
 using PinballWizard.Infrastructure.Scraping.Kineticist;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
@@ -73,7 +74,7 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Persistent429OnDiscovery_FailsTheJobWithUrlAndReasonAfterTheBudget()
+    public async Task RunAsync_Persistent429OnDiscovery_FailsWithUrlAndReasonAfterTheBudget()
     {
         var wire = new StubWire().On(SitemapUrl, _ => Status(HttpStatusCode.TooManyRequests));
         var (services, indexer) = BuildServices(wire, new PolitenessOptions { Max429Streak = 1, RateLimitBackoffMs = 1_000 });
@@ -92,7 +93,7 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Discovery429WithRetryAfterThen200_WaitsAndIndexesTheTutorials()
+    public async Task RunAsync_Discovery429WithRetryAfterThen200_WaitsAndIndexesTheTutorials()
     {
         var sitemapCalls = 0;
         var wire = new StubWire()
@@ -115,7 +116,7 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task BotChallengeOnArticle_StopsTheRunAndFailsWithRemediation()
+    public async Task RunAsync_BotChallengeOnArticle_StopsTheRunAndFailsWithRemediation()
     {
         var wire = new StubWire()
             .On(SitemapUrl, _ => Body(SitemapXml, "application/xml"))
@@ -136,7 +137,7 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task SitemapWithNoTutorials_FailsInsteadOfReportingAnEmptySuccess()
+    public async Task RunAsync_SitemapWithNoTutorials_FailsInsteadOfReportingAnEmptySuccess()
     {
         const string noTutorials = """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -153,7 +154,43 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
         Assert.Contains("0 tutorial slugs discovered", _stderr.ToString(), StringComparison.Ordinal);
     }
 
-    private static (IServiceProvider Services, IRagIndexer Indexer) BuildServices(StubWire wire, PolitenessOptions politeness)
+    [Fact]
+    public async Task RunAsync_NoTutorialMatchesTheCatalog_FailsBecauseNothingWasIndexed()
+    {
+        var wire = new StubWire()
+            .On(SitemapUrl, _ => Body(SitemapXml, "application/xml"))
+            .On($"{BaseUrl}/news/godzilla-pinball-tutorial.md", _ => Body(GodzillaMd, "text/markdown"))
+            .On($"{BaseUrl}/news/jaws-pinball-tutorial.md", _ => Body(GodzillaMd, "text/markdown"));
+        var (services, indexer) = BuildServices(wire, new PolitenessOptions { RequestDelayMs = 250 }, catalogKnowsTheGames: false);
+
+        await SyncKineticistTutorialsCommand.RunAsync(services, CancellationToken.None);
+
+        Assert.Equal(1, Environment.ExitCode);
+        Assert.Contains("0 of 2 discovered tutorials were indexed", _stderr.ToString(), StringComparison.Ordinal);
+        await indexer.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default!, default);
+    }
+
+    [Fact]
+    public async Task RunAsync_OneArticleServerError_CountsAFailureAndKeepsGoing()
+    {
+        var wire = new StubWire()
+            .On(SitemapUrl, _ => Body(SitemapXml, "application/xml"))
+            .On($"{BaseUrl}/news/godzilla-pinball-tutorial.md", _ => Status(HttpStatusCode.ServiceUnavailable))
+            .On($"{BaseUrl}/news/jaws-pinball-tutorial.md", _ => Body(GodzillaMd.Replace("godzilla", "jaws", StringComparison.Ordinal), "text/markdown"));
+        var (services, indexer) = BuildServices(wire, new PolitenessOptions { RequestDelayMs = 250 });
+
+        await SyncKineticistTutorialsCommand.RunAsync(services, CancellationToken.None);
+
+        // The 503 is a failure (exit 1), not "no content"; the other article still indexes.
+        Assert.Equal(1, Environment.ExitCode);
+        Assert.Contains("fetching article 'godzilla-pinball-tutorial' failed: HTTP 503", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("indexed=1", _stdout.ToString(), StringComparison.Ordinal);
+        Assert.Contains("failed=1", _stdout.ToString(), StringComparison.Ordinal);
+        await indexer.ReceivedWithAnyArgs(1).UpsertAsync(default!, default!, default!, default);
+    }
+
+    private static (IServiceProvider Services, IRagIndexer Indexer) BuildServices(
+        StubWire wire, PolitenessOptions politeness, bool catalogKnowsTheGames = true)
     {
         politeness.RespectRobotsTxt = false;
         var politenessOptions = Options.Create(politeness);
@@ -163,7 +200,9 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
             NullLogger<PolitenessGate>.Instance);
 
         var client = new KineticistTutorialsClient(
-            new HttpClient(wire) { BaseAddress = new Uri(BaseUrl) },
+            // As registered in production: AddPoliteResilienceHandler stamps requests
+            // so the base re-sends after a 429 through the gate.
+            new HttpClient(new GateOwnsRateLimitHandler { InnerHandler = wire }) { BaseAddress = new Uri(BaseUrl) },
             gate,
             politenessOptions,
             Options.Create(new KineticistOptions { BaseUrl = BaseUrl }),
@@ -175,7 +214,7 @@ public sealed class SyncKineticistTutorialsCommandTests : IDisposable
 
         var titleLookups = Substitute.For<IMachineTitleLookupRepository>();
         titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => new MachineTitleLookup
+            .Returns(call => !catalogKnowsTheGames ? null : new MachineTitleLookup
             {
                 Id = call.Arg<string>(),
                 PartitionKey = call.Arg<string>(),

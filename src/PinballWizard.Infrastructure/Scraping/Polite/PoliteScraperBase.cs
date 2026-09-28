@@ -62,10 +62,14 @@ public abstract class PoliteScraperBase
     /// (see <see cref="RateLimitSignals.GetBotChallengeMarker"/>) throws
     /// <see cref="PolitenessException"/> with <see cref="PolitenessViolation.BotChallenge"/>
     /// immediately — no retry can pass it. Any other 429 on a request without
-    /// a body is re-sent through a fresh lease, which waits out the backoff the
-    /// gate recorded (the source's <c>Retry-After</c>, or the policy backoff);
-    /// the gate's per-origin streak limit is the retry budget and throws once
-    /// exhausted. A 429 on a request with a body is returned to the caller.
+    /// a body, sent through a pipeline stamped
+    /// <see cref="PoliteHttpClientBuilderExtensions.GateOwnsRateLimit"/>, is
+    /// re-sent through a fresh lease, which waits out the backoff the gate
+    /// recorded (the source's <c>Retry-After</c>, or the policy backoff); the
+    /// gate's per-origin streak limit is the retry budget and throws once
+    /// exhausted. Otherwise the 429 is returned to the caller: a request with a
+    /// body is not safely repeatable, and an unstamped pipeline may already have
+    /// retried the 429 below the gate.
     /// </remarks>
     protected Task<HttpResponseMessage> SendPolitelyAsync(
         HttpClient client,
@@ -99,7 +103,9 @@ public abstract class PoliteScraperBase
             {
                 var response = await SendOnceAsync(client, current, url, completionOption, cancellationToken).ConfigureAwait(false);
 
-                if (response.StatusCode != HttpStatusCode.TooManyRequests || request.Content is not null)
+                if (response.StatusCode != HttpStatusCode.TooManyRequests
+                    || request.Content is not null
+                    || !GateOwnsRateLimit(current))
                 {
                     return response;
                 }
@@ -177,6 +183,9 @@ public abstract class PoliteScraperBase
             throw;
         }
     }
+
+    private static bool GateOwnsRateLimit(HttpRequestMessage sent) =>
+        sent.Options.TryGetValue(PoliteHttpClientBuilderExtensions.GateOwnsRateLimit, out var owned) && owned;
 
     private static HttpRequestMessage CloneWithoutContent(HttpRequestMessage original)
     {
