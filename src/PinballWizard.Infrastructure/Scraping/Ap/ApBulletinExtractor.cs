@@ -1,52 +1,119 @@
+using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Infrastructure.Scraping.Ap;
 
-// Extracts service bulletin links from the AP /support/ page. Pure functions — no I/O.
-// Bulletin PDFs are hosted exclusively on s4.american-pinball.com (CDN subdomain).
+// What one per-game support page yielded. PostCount is every WordPress post
+// card on the page, BulletinPostCount the cards in a bulletin category, and
+// PostsWithoutDocument the bulletin cards that carried no PDF at all (AP
+// publishes some bulletins as YouTube videos). RejectedHosts names the hosts
+// of bulletin PDFs that were dropped because they are not AP document hosts.
+public sealed record ApBulletinExtraction(
+    IReadOnlyList<DiscoveredLink> Links,
+    int PostCount,
+    int BulletinPostCount,
+    int PostsWithoutDocument,
+    IReadOnlyCollection<string> RejectedHosts);
+
+// Extracts service-bulletin PDFs from an AP per-game support page
+// (/support/{game-slug}/). Pure functions — no I/O.
+//
+// Each document on the page is an Elementor loop card rendering one WordPress
+// post. The card carries WordPress's own post_class output
+// ("type-post category-service-bulletin tag-houdini"), so bulletins are
+// selected by category — the site's machine-readable classification — rather
+// than by section headings. Manuals, code updates, and flyers on the same page
+// belong to the game-page scraper and are not bulletins.
 public static class ApBulletinExtractor
 {
     private static readonly HtmlParser Parser = new();
 
-    private const string BulletinCdnHost = "s4.american-pinball.com";
-    private const string DiscoveryCtx = "American Pinball Support Page";
+    public const string DiscoveryContext = "American Pinball Support Page";
 
-    public static List<DiscoveredLink> ExtractBulletins(string html, Uri supportPageUrl)
+    private const string PostCardSelector = ".type-post";
+    private const string CategoryClassPrefix = "category-";
+
+    public static ApBulletinExtraction ExtractBulletins(
+        string html,
+        Uri supportPageUrl,
+        string gameSlug,
+        IReadOnlyCollection<string> bulletinCategorySlugs)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(supportPageUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameSlug);
+        ArgumentNullException.ThrowIfNull(bulletinCategorySlugs);
+
+        var bulletinClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var slug in bulletinCategorySlugs)
+        {
+            if (!string.IsNullOrWhiteSpace(slug))
+            {
+                bulletinClasses.Add(CategoryClassPrefix + slug.Trim());
+            }
+        }
 
         using var doc = Parser.ParseDocument(html);
         var links = new List<DiscoveredLink>();
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rejectedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var postCount = 0;
+        var bulletinPostCount = 0;
+        var postsWithoutDocument = 0;
 
-        foreach (var anchor in doc.QuerySelectorAll("a[href]"))
+        foreach (var card in doc.QuerySelectorAll(PostCardSelector))
         {
-            var href = anchor.GetAttribute("href");
-            if (string.IsNullOrWhiteSpace(href)) continue;
+            postCount++;
+            if (!card.ClassList.Any(bulletinClasses.Contains)) continue;
 
-            if (!Uri.TryCreate(supportPageUrl, href, out var absolute)) continue;
+            bulletinPostCount++;
+            var title = CardTitle(card);
+            var cardHadPdf = false;
 
-            // CDN-only filter: must be s4.american-pinball.com
-            if (!string.Equals(absolute.Host, BulletinCdnHost, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            if (!absolute.AbsolutePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var url = absolute.ToString();
-            if (!seenUrls.Add(url)) continue;
-
-            var text = anchor.TextContent?.Trim();
-            links.Add(new DiscoveredLink
+            foreach (var anchor in card.QuerySelectorAll("a[href]"))
             {
-                FileUrl = url,
-                LinkText = string.IsNullOrEmpty(text) ? null : text,
-                DiscoveryContext = DiscoveryCtx,
-            });
+                var href = anchor.GetAttribute("href");
+                if (string.IsNullOrWhiteSpace(href)) continue;
+                if (!Uri.TryCreate(supportPageUrl, href, out var absolute)) continue;
+                if (!absolute.AbsolutePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+
+                cardHadPdf = true;
+                if (!ApHosts.IsAllowedDocumentHost(absolute.Host))
+                {
+                    rejectedHosts.Add(absolute.Host);
+                    continue;
+                }
+
+                // AbsoluteUri keeps the percent-encoding the page published;
+                // HubSpot file names contain spaces.
+                var url = absolute.AbsoluteUri;
+                if (!seenUrls.Add(url)) continue;
+
+                links.Add(new DiscoveredLink
+                {
+                    FileUrl = url,
+                    LinkText = title,
+                    DiscoveryContext = DiscoveryContext,
+                    GameSlug = gameSlug,
+                });
+            }
+
+            if (!cardHadPdf) postsWithoutDocument++;
         }
 
-        return links;
+        return new ApBulletinExtraction(links, postCount, bulletinPostCount, postsWithoutDocument, rejectedHosts);
+    }
+
+    // The card's headings are the tag label ("Houdini", or "General" for a
+    // bulletin shared across games) followed by the bulletin title. The
+    // anchors themselves only say "Download".
+    private static string? CardTitle(IElement card)
+    {
+        var parts = card.QuerySelectorAll("h1, h2")
+            .Select(h => h.TextContent.Trim())
+            .Where(t => t.Length > 0)
+            .ToList();
+        return parts.Count == 0 ? null : string.Join(" - ", parts);
     }
 }

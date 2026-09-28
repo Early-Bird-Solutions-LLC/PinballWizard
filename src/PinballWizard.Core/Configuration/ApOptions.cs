@@ -41,7 +41,7 @@ public sealed class ApOptions
     public string GamePathPrefix { get; set; } = "/games/";
 
     /// <summary>
-    /// Hosts a child sitemap or game permalink may use. The Yoast
+    /// Hosts a child sitemap, game permalink, or support page may use. The Yoast
     /// index lives on <c>americanpinball.com</c> after the
     /// <c>www.american-pinball.com</c> redirect, so both names are
     /// required. Any other host in the index is skipped.
@@ -73,4 +73,26 @@ public sealed class ApOptions
     /// <summary>Safety cap on category pagination. A full page at the cap is logged.</summary>
     [Range(1, 20)]
     public int MaxCategoryPages { get; set; } = 5;
+
+    /// <summary>WordPress REST pages collection path.</summary>
+    [Required]
+    public string PagesEndpointPath { get; set; } = "/wp-json/wp/v2/pages";
+
+    /// <summary>
+    /// Slug of the top-level support page. Its WordPress child pages
+    /// are the per-game support hubs (<c>/support/{game-slug}/</c>)
+    /// that publish the service bulletins.
+    /// </summary>
+    [Required]
+    public string SupportPageSlug { get; set; } = "support";
+
+    /// <summary>
+    /// WordPress post categories whose cards on a per-game support
+    /// page are service bulletins. <c>electrical</c> holds the
+    /// install / retrofit guides that the pre-redesign support page
+    /// listed alongside the bulletins.
+    /// </summary>
+    [Required]
+    [MinLength(1)]
+    public string[] BulletinCategorySlugs { get; set; } = ["service-bulletin", "electrical"];
 }
