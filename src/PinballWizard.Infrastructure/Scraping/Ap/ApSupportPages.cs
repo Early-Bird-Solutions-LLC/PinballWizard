@@ -23,17 +23,8 @@ public static class ApSupportPageParser
             throw new JsonException("AP pages response was not a JSON array.");
         }
 
-        foreach (var item in doc.RootElement.EnumerateArray())
+        foreach (var item in doc.RootElement.EnumerateArray().Where(item => IsTopLevelPage(item, slug)))
         {
-            if (!item.TryGetProperty("slug", out var slugElement)) continue;
-            if (!string.Equals(slugElement.GetString(), slug, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!item.TryGetProperty("parent", out var parentElement)
-                || !parentElement.TryGetInt32(out var parent)
-                || parent != 0)
-            {
-                continue;
-            }
-
             if (item.TryGetProperty("id", out var idElement) && idElement.TryGetInt32(out var id))
             {
                 return id;
@@ -42,6 +33,13 @@ public static class ApSupportPageParser
 
         return null;
     }
+
+    private static bool IsTopLevelPage(JsonElement item, string slug) =>
+        item.TryGetProperty("slug", out var slugElement)
+        && string.Equals(slugElement.GetString(), slug, StringComparison.OrdinalIgnoreCase)
+        && item.TryGetProperty("parent", out var parentElement)
+        && parentElement.TryGetInt32(out var parent)
+        && parent == 0;
 
     // Returns (slug, link) for each page in a WordPress pages collection.
     // Entries missing either field are skipped. A non-array body throws.

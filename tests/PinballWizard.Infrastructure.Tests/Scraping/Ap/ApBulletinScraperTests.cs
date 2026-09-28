@@ -259,9 +259,8 @@ public sealed class ApBulletinScraperTests
     {
         var captured = System.Text.Json.Nodes.JsonNode.Parse(ApFixtures.Read("support-child-pages.captured.json"))!.AsArray();
         var picked = new System.Text.Json.Nodes.JsonArray();
-        foreach (var slug in slugs)
+        foreach (var entry in slugs.Select(slug => captured.Single(n => (string?)n!["slug"] == slug)!))
         {
-            var entry = captured.Single(n => (string?)n!["slug"] == slug)!;
             picked.Add(entry.DeepClone());
         }
         return picked.ToJsonString();

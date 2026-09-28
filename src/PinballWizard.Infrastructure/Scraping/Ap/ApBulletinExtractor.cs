@@ -48,14 +48,10 @@ public static class ApBulletinExtractor
         ArgumentNullException.ThrowIfNull(bulletinCategorySlugs);
         ArgumentNullException.ThrowIfNull(gameSlugs);
 
-        var bulletinClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var slug in bulletinCategorySlugs)
-        {
-            if (!string.IsNullOrWhiteSpace(slug))
-            {
-                bulletinClasses.Add(CategoryClassPrefix + slug.Trim());
-            }
-        }
+        var bulletinClasses = bulletinCategorySlugs
+            .Where(slug => !string.IsNullOrWhiteSpace(slug))
+            .Select(slug => CategoryClassPrefix + slug.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         using var doc = Parser.ParseDocument(html);
         var links = new List<DiscoveredLink>();
@@ -75,9 +71,8 @@ public static class ApBulletinExtractor
             var cardGameSlug = CardGameSlug(card, gameSlug, gameSlugs);
             var cardHadPdf = false;
 
-            foreach (var anchor in card.QuerySelectorAll("a[href]"))
+            foreach (var href in card.QuerySelectorAll("a[href]").Select(anchor => anchor.GetAttribute("href")))
             {
-                var href = anchor.GetAttribute("href");
                 if (string.IsNullOrWhiteSpace(href)) continue;
                 if (!Uri.TryCreate(supportPageUrl, href, out var absolute)) continue;
                 if (!absolute.AbsolutePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;

@@ -47,7 +47,6 @@ internal static class ApFixtures
 
     private static string JoinRelative(string directory, params ReadOnlySpan<string> segments)
     {
-        var path = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         foreach (var segment in segments)
         {
             if (string.IsNullOrEmpty(segment)
@@ -58,10 +57,9 @@ internal static class ApFixtures
             {
                 throw new InvalidOperationException($"Path segment must be a single relative name: {segment}");
             }
-
-            path += Path.DirectorySeparatorChar + segment;
         }
 
-        return path;
+        string[] parts = [directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), .. segments];
+        return string.Join(Path.DirectorySeparatorChar, parts);
     }
 }
