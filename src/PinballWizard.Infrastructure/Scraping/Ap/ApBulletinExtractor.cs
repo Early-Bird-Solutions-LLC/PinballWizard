@@ -71,12 +71,8 @@ public static class ApBulletinExtractor
             var cardGameSlug = CardGameSlug(card, gameSlug, gameSlugs);
             var cardHadPdf = false;
 
-            foreach (var href in card.QuerySelectorAll("a[href]").Select(anchor => anchor.GetAttribute("href")))
+            foreach (var absolute in PdfLinks(card, supportPageUrl))
             {
-                if (string.IsNullOrWhiteSpace(href)) continue;
-                if (!Uri.TryCreate(supportPageUrl, href, out var absolute)) continue;
-                if (!absolute.AbsolutePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
-
                 cardHadPdf = true;
                 if (!ApHosts.IsAllowedDocumentHost(absolute.Host))
                 {
@@ -103,6 +99,14 @@ public static class ApBulletinExtractor
 
         return new ApBulletinExtraction(links, postCount, bulletinPostCount, postsWithoutDocument, rejectedHosts);
     }
+
+    private static IEnumerable<Uri> PdfLinks(IElement card, Uri pageUrl) =>
+        card.QuerySelectorAll("a[href]")
+            .Select(anchor => anchor.GetAttribute("href"))
+            .Where(href => !string.IsNullOrWhiteSpace(href))
+            .Select(href => Uri.TryCreate(pageUrl, href, out var absolute) ? absolute : null)
+            .OfType<Uri>()
+            .Where(uri => uri.AbsolutePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
 
     // A card tagged for several games (the "General" USB-formatting bulletin
     // carries tag-hot-wheels tag-houdini tag-oktoberfest), or for a game other
