@@ -93,10 +93,11 @@ public sealed class FileDownloader : IFileDownloader
             using var response = await _httpClient.SendAsync(request,
                 HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-            // Feed the response status into the gate's 429-streak tracker (and honor
-            // any Retry-After) before we act on the status ourselves.
+            // Feed the response status into the gate's 429-streak tracker (which records
+            // any Retry-After as this origin's backoff) before we act on the status ourselves.
             await _politeness.ReportResponseAsync(
-                uri, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken).ConfigureAwait(false);
+                uri, response.StatusCode, RateLimitSignals.GetRetryAfter(response.Headers, DateTimeOffset.UtcNow),
+                cancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.NotModified)
             {

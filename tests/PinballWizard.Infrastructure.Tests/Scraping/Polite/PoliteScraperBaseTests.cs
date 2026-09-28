@@ -209,6 +209,133 @@ public sealed class PoliteScraperBaseTests
         Assert.True(content.Disposed);
     }
 
+    [Fact]
+    public async Task SendPolitelyAsync_429ThenOk_ReportsBothAndResendsThroughAFreshLease()
+    {
+        var gate = new FakePolitenessGate();
+        var url = new Uri("https://example.com/limited");
+        var handler = new QueueingHttpMessageHandler();
+        var calls = 0;
+        handler.Map(url.AbsoluteUri, _ => ++calls == 1
+            ? RateLimited(retryAfterSeconds: 7)
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
+
+        using var httpClient = new HttpClient(handler);
+        var scraper = new TestScraper(gate);
+
+        var body = await scraper.GetStringAsync(httpClient, url, CancellationToken.None);
+
+        Assert.Equal("ok", body);
+        Assert.Equal(2, handler.Requests.Count);
+        // Each attempt acquired its own lease (so the gate could apply the backoff)
+        // and every response — the 429 included — was reported.
+        Assert.Equal(2, gate.Acquired.Count);
+        Assert.Equal(2, gate.LeasesDisposed);
+        Assert.Equal(
+            new[] { HttpStatusCode.TooManyRequests, HttpStatusCode.OK },
+            gate.Reported.Select(r => r.Status));
+        Assert.Equal(TimeSpan.FromSeconds(7), gate.Reported[0].RetryAfter);
+    }
+
+    [Fact]
+    public async Task SendPolitelyAsync_429WithHttpDateRetryAfter_ReportsResolvedWait()
+    {
+        var gate = new FakePolitenessGate();
+        var url = new Uri("https://example.com/limited");
+        var handler = new QueueingHttpMessageHandler();
+        var calls = 0;
+        handler.Map(url.AbsoluteUri, _ =>
+        {
+            if (++calls > 1) return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") };
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.TryAddWithoutValidation("Date", "Sun, 27 Sep 2026 11:00:00 GMT");
+            response.Headers.TryAddWithoutValidation("Retry-After", "Sun, 27 Sep 2026 11:02:00 GMT");
+            return response;
+        });
+
+        using var httpClient = new HttpClient(handler);
+        await new TestScraper(gate).GetStringAsync(httpClient, url, CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromMinutes(2), gate.Reported[0].RetryAfter);
+    }
+
+    [Fact]
+    public async Task SendPolitelyAsync_BotChallenge_ThrowsWithoutRetrying()
+    {
+        var gate = new FakePolitenessGate();
+        var url = new Uri("https://www.kineticist.com/news/category/pinball-tutorial");
+        var handler = new QueueingHttpMessageHandler();
+        handler.Map(url.AbsoluteUri, _ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            {
+                Content = new StringContent("<title>Vercel Security Checkpoint</title>"),
+            };
+            response.Headers.TryAddWithoutValidation("x-vercel-mitigated", "challenge");
+            return response;
+        });
+
+        using var httpClient = new HttpClient(handler);
+
+        var ex = await Assert.ThrowsAsync<PolitenessException>(
+            () => new TestScraper(gate).GetStringAsync(httpClient, url, CancellationToken.None));
+
+        Assert.Equal(PolitenessViolation.BotChallenge, ex.Violation);
+        Assert.Equal(url, ex.Url);
+        Assert.Contains("x-vercel-mitigated", ex.Message, StringComparison.Ordinal);
+        // One request, reported to the gate, lease released — no second knock.
+        Assert.Single(handler.Requests);
+        Assert.Single(gate.Reported);
+        Assert.Equal(HttpStatusCode.TooManyRequests, gate.Reported[0].Status);
+        Assert.Equal(1, gate.LeasesDisposed);
+    }
+
+    [Fact]
+    public async Task SendPolitelyAsync_429OnRequestWithBody_IsReturnedNotResent()
+    {
+        var gate = new FakePolitenessGate();
+        var url = new Uri("https://example.com/search");
+        var handler = new QueueingHttpMessageHandler();
+        handler.Map(url.AbsoluteUri, _ => RateLimited(retryAfterSeconds: 5));
+
+        using var httpClient = new HttpClient(handler);
+        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{}") };
+
+        using var response = await new TestScraper(gate).SendAsync(httpClient, request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+        Assert.Single(handler.Requests);
+        Assert.Single(gate.Reported);
+    }
+
+    [Fact]
+    public async Task SendPolitelyAsync_Persistent429_StopsWhenTheGateSpendsTheBudget()
+    {
+        var gate = new FakePolitenessGate { ThrowOnReportAfter429s = 3 };
+        var url = new Uri("https://example.com/limited");
+        var handler = new QueueingHttpMessageHandler();
+        handler.Map(url.AbsoluteUri, _ => RateLimited(retryAfterSeconds: null));
+
+        using var httpClient = new HttpClient(handler);
+
+        var ex = await Assert.ThrowsAsync<PolitenessException>(
+            () => new TestScraper(gate).GetStringAsync(httpClient, url, CancellationToken.None));
+
+        Assert.Equal(PolitenessViolation.TooMany429Responses, ex.Violation);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(3, gate.LeasesDisposed);
+    }
+
+    private static HttpResponseMessage RateLimited(int? retryAfterSeconds)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("slow down") };
+        if (retryAfterSeconds is { } s)
+        {
+            response.Headers.TryAddWithoutValidation("Retry-After", s.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return response;
+    }
+
     // --- helpers ---
 
     private sealed class NoOpLease : IAsyncDisposable

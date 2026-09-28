@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Core.Configuration;
 
@@ -56,6 +57,16 @@ public abstract class PoliteScraperBase
     /// transient retries (5xx, network errors) are handled by the
     /// <see cref="HttpClient"/>'s configured resilience pipeline.
     /// </summary>
+    /// <remarks>
+    /// A 429 is always reported to the gate. A bot-protection challenge
+    /// (see <see cref="RateLimitSignals.GetBotChallengeMarker"/>) throws
+    /// <see cref="PolitenessException"/> with <see cref="PolitenessViolation.BotChallenge"/>
+    /// immediately — no retry can pass it. Any other 429 on a request without
+    /// a body is re-sent through a fresh lease, which waits out the backoff the
+    /// gate recorded (the source's <c>Retry-After</c>, or the policy backoff);
+    /// the gate's per-origin streak limit is the retry budget and throws once
+    /// exhausted. A 429 on a request with a body is returned to the caller.
+    /// </remarks>
     protected Task<HttpResponseMessage> SendPolitelyAsync(
         HttpClient client,
         HttpRequestMessage request,
@@ -81,23 +92,108 @@ public abstract class PoliteScraperBase
 
         var url = request.RequestUri ?? throw new InvalidOperationException("Request must have a RequestUri.");
 
+        var current = request;
+        try
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                var response = await SendOnceAsync(client, current, url, completionOption, cancellationToken).ConfigureAwait(false);
+
+                if (response.StatusCode != HttpStatusCode.TooManyRequests || request.Content is not null)
+                {
+                    return response;
+                }
+
+                response.Dispose();
+
+                // The gate's per-origin streak limit normally throws first; this
+                // cap only guarantees termination if the streak is reset concurrently.
+                if (attempt > PolitenessOptions.Max429StreakUpperBound)
+                {
+                    throw new PolitenessException(
+                        PolitenessViolation.TooMany429Responses,
+                        $"Source {url.Host} kept returning 429 for {url} across {attempt} attempts. Aborting.",
+                        url);
+                }
+
+                Logger.LogInformation(
+                    "429 from {Url} (attempt {Attempt}); re-sending after the politeness gate's backoff.",
+                    url, attempt);
+
+                if (!ReferenceEquals(current, request))
+                {
+                    current.Dispose();
+                }
+                current = CloneWithoutContent(request);
+            }
+        }
+        finally
+        {
+            if (!ReferenceEquals(current, request))
+            {
+                current.Dispose();
+            }
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendOnceAsync(
+        HttpClient client,
+        HttpRequestMessage request,
+        Uri url,
+        HttpCompletionOption completionOption,
+        CancellationToken cancellationToken)
+    {
         await using var lease = await Politeness.AcquireForRequestAsync(url, cancellationToken).ConfigureAwait(false);
 
         var response = await client.SendAsync(request, completionOption, cancellationToken).ConfigureAwait(false);
         try
         {
-            await Politeness.ReportResponseAsync(url, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken).ConfigureAwait(false);
+            var retryAfter = RateLimitSignals.GetRetryAfter(response.Headers, DateTimeOffset.UtcNow);
+            await Politeness.ReportResponseAsync(url, response.StatusCode, retryAfter, cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode && RateLimitSignals.GetBotChallengeMarker(response.Headers) is { } marker)
+            {
+                Logger.LogError(
+                    "{Host} answered {Url} with a bot-protection challenge (HTTP {Status}, {Marker}: challenge). " +
+                    "Not retrying: a challenge cannot be waited out. Ask the site operator to allow this crawler's User-Agent.",
+                    url.Host, url, (int)response.StatusCode, marker);
+                throw new PolitenessException(
+                    PolitenessViolation.BotChallenge,
+                    $"{url.Host} answered {url} with a bot-protection challenge (HTTP {(int)response.StatusCode}, " +
+                    $"{marker}: challenge). Retrying cannot pass it; the site operator must allow this crawler.",
+                    url);
+            }
+
             return response;
         }
         catch
         {
-            // ReportResponseAsync can throw (429-streak abort). The caller never
-            // receives the message in that case, so this method owns disposal.
-            // ResponseHeadersRead leaves the connection checked out until the
-            // content is disposed; dropping the message on the floor pins it.
+            // ReportResponseAsync can throw (429-streak abort), as can the
+            // challenge check. The caller never receives the message in that
+            // case, so this method owns disposal. ResponseHeadersRead leaves the
+            // connection checked out until the content is disposed; dropping the
+            // message on the floor pins it.
             response.Dispose();
             throw;
         }
+    }
+
+    private static HttpRequestMessage CloneWithoutContent(HttpRequestMessage original)
+    {
+        var clone = new HttpRequestMessage(original.Method, original.RequestUri)
+        {
+            Version = original.Version,
+            VersionPolicy = original.VersionPolicy,
+        };
+        foreach (var header in original.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+        foreach (var option in original.Options)
+        {
+            clone.Options.TryAdd(option.Key, option.Value);
+        }
+        return clone;
     }
 
     /// <summary>
