@@ -410,64 +410,9 @@ public sealed class ApSitemapClientTests
 
     private const string BaseUrl = "https://www.american-pinball.com";
 
-    private static string FixtureFile(string fileName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+    private static string FixtureFile(string fileName) => ApFixtures.PathOf(fileName);
 
-        // A rooted name is reduced to its file name so it cannot replace the fixture directory.
-        var segment = Path.IsPathRooted(fileName) ? Path.GetFileName(fileName) : fileName;
-        if (string.IsNullOrEmpty(segment)
-            || segment.Contains("..", StringComparison.Ordinal)
-            || segment.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || segment.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"Fixture file name must be a single relative segment: {fileName}");
-        }
-
-        var root = Path.GetFullPath(FixtureDir()).TrimEnd(Path.DirectorySeparatorChar);
-        return root + Path.DirectorySeparatorChar + segment;
-    }
-
-    private static string FixtureDir()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(JoinRelative(dir.FullName, "PinballWizard.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        if (dir is null)
-        {
-            throw new InvalidOperationException("Could not locate repo root from the test assembly.");
-        }
-
-        return JoinRelative(
-            dir.FullName,
-            "tests",
-            "PinballWizard.Infrastructure.Tests",
-            "Fixtures",
-            "Ap");
-    }
-
-    private static string JoinRelative(string directory, params ReadOnlySpan<string> segments)
-    {
-        var path = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        foreach (var segment in segments)
-        {
-            if (string.IsNullOrEmpty(segment)
-                || Path.IsPathRooted(segment)
-                || segment.Contains("..", StringComparison.Ordinal)
-                || segment.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-                || segment.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException($"Path segment must be a single relative name: {segment}");
-            }
-
-            path += Path.DirectorySeparatorChar + segment;
-        }
-
-        return path;
-    }
+    private static string FixtureDir() => ApFixtures.Directory();
 
     private static string PostsUrl(int page, int pageSize) =>
         $"{BaseUrl}/wp-json/wp/v2/posts?categories=114&per_page={pageSize}&page={page}&_fields=slug,link";
