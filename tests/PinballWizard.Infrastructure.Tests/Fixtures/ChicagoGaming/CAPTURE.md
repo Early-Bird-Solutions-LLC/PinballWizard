@@ -2,7 +2,8 @@
 
 **Do not hand-author files in this directory.** They are captured verbatim from the
 live source so tests assert against reality, not against an assumed shape (TEST-05,
-#758).
+#758). The only change is line endings: the site serves mixed CRLF/LF, and
+`.gitattributes` normalizes them to LF on commit.
 
 Captured 2026-09-28T17:00:29Z for #967. The `/coinop/` machines index returned 404
 from 2026-08-23, so discovery now reads the site root. The Pinball dropdown in the

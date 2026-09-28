@@ -37,9 +37,9 @@ public sealed class ChicagoGamingOptions
     public string BaseUrl { get; set; } = "https://www.chicago-gaming.com";
 
     /// <summary>
-    /// Path to the page whose links list every CGC machine. The site
-    /// root carries them in its "Pinball" header menu. Discovery
-    /// extracts <c>/coinop/{slug}</c> anchors from this page.
+    /// Path to the page whose links list every CGC machine. Discovery
+    /// extracts every <c>/coinop/{slug}</c> anchor from this page; on
+    /// the site root they come from the "Pinball" header menu.
     /// </summary>
     [Required]
     public string MachinesIndexPath { get; set; } = "/";

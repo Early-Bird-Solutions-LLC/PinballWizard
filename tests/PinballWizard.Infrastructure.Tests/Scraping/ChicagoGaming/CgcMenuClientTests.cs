@@ -46,11 +46,12 @@ public sealed class CgcMenuClientTests
     }
 
     [Fact]
-    public void CapturedSitemap_OmitsShippingMachines_SoItCannotBeTheDiscoverySource()
+    public void CapturedSitemap_Snapshot_OmitsCactusCanyonAndPulpFiction()
     {
-        // Pins why discovery reads the navigation menu instead of the
-        // machine-consumer sitemap: the sitemap is a 2019 snapshot that
-        // lists only three of the five machines the site sells.
+        // Documents the captured evidence, not production code: discovery
+        // reads the site root instead of the machine-consumer sitemap
+        // because the sitemap is a 2019 snapshot that lists only three of
+        // the five machines the site sells.
         var sitemap = CgcCapturedFixtures.Sitemap();
 
         Assert.Contains("<loc>https://www.chicago-gaming.com/coinop/medieval-madness</loc>", sitemap, StringComparison.Ordinal);

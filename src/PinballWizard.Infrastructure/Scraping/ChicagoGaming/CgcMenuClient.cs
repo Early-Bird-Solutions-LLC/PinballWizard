@@ -8,8 +8,10 @@ namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 
 /// <summary>
 /// Reads the page at <see cref="ChicagoGamingOptions.MachinesIndexPath"/>
-/// (the site root) and returns the set of canonical machine URLs
-/// linked from its site-wide "Pinball" navigation menu.
+/// (the site root) and returns every canonical <c>/coinop/{slug}</c>
+/// machine URL linked anywhere on it. Today those links come from the
+/// "Pinball" dropdown in the shared site header; the parser does not
+/// depend on that menu's markup.
 /// </summary>
 /// <remarks>
 /// CGC removed the dedicated <c>/coinop/</c> index in August 2026
