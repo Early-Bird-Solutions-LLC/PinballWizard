@@ -10,11 +10,12 @@ namespace PinballWizard.Core.Configuration;
 /// </summary>
 /// <remarks>
 /// Phase 1.3 of the manufacturer-scraper fan-out. The CGC sitemap
-/// at <c>/sitemap.xml</c> is incomplete in practice (omits Pulp
-/// Fiction and Cactus Canyon as of 2026-05) so discovery uses the
-/// <see cref="MachinesIndexPath"/> page (<c>/coinop/</c>) instead.
-/// That page lists every machine and is the canonical filter — same
-/// pattern as Barrels of Fun's <c>/product-category/machines/</c>.
+/// at <c>/sitemap.xml</c> is a 2019 generator snapshot that omits
+/// Pulp Fiction and Cactus Canyon (re-verified 2026-09-28), so
+/// discovery reads the machine links from the <see cref="MachinesIndexPath"/>
+/// page instead. The dedicated <c>/coinop/</c> index returned 404 from
+/// August 2026 (#967); the site root's header navigation is now the
+/// only page that lists every coin-op machine.
 /// <para>
 /// CGC produces "Remake" editions of classic Bally/Williams pinball
 /// machines (Attack from Mars, Medieval Madness, Monster Bash,
@@ -36,11 +37,12 @@ public sealed class ChicagoGamingOptions
     public string BaseUrl { get; set; } = "https://www.chicago-gaming.com";
 
     /// <summary>
-    /// Path to the index page that lists every CGC machine.
-    /// Discovery extracts <c>/coinop/{slug}</c> anchors from this page.
+    /// Path to the page whose links list every CGC machine. Discovery
+    /// extracts every <c>/coinop/{slug}</c> anchor from this page; on
+    /// the site root they come from the "Pinball" header menu.
     /// </summary>
     [Required]
-    public string MachinesIndexPath { get; set; } = "/coinop/";
+    public string MachinesIndexPath { get; set; } = "/";
 
     /// <summary>
     /// URL path prefix that identifies a CGC machine page. URLs
