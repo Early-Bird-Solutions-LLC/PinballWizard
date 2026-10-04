@@ -119,4 +119,12 @@ public sealed class PolitenessOverrides
     /// <summary>Maximum consecutive 429s before the source aborts the run.</summary>
     [JsonPropertyName("max429Streak")]
     public int? Max429Streak { get; set; }
+
+    /// <summary>Base backoff after a 429 without <c>Retry-After</c>, in milliseconds.</summary>
+    [JsonPropertyName("rateLimitBackoffMs")]
+    public int? RateLimitBackoffMs { get; set; }
+
+    /// <summary>Longest <c>Retry-After</c> the run will wait out before aborting, in seconds.</summary>
+    [JsonPropertyName("maxRetryAfterSeconds")]
+    public int? MaxRetryAfterSeconds { get; set; }
 }

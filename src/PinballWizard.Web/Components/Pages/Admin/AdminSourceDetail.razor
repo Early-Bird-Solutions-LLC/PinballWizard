@@ -128,6 +128,8 @@
                 @KeyValue("robots.txt path",    p?.RobotsTxtPath               ?? $"{po.RobotsTxtPath} (default)")
                 @KeyValue("User-Agent suffix",  p?.UserAgentSuffix             ?? "none (default)")
                 @KeyValue("Max 429 streak",     p?.Max429Streak?.ToString()    ?? $"{po.Max429Streak} (default)")
+                @KeyValue("429 backoff (ms)",   p?.RateLimitBackoffMs?.ToString() ?? $"{po.RateLimitBackoffMs} (default)")
+                @KeyValue("Max Retry-After (s)", p?.MaxRetryAfterSeconds?.ToString() ?? $"{po.MaxRetryAfterSeconds} (default)")
             </MudStack>
         </MudPaper>
 

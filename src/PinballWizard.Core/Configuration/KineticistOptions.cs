@@ -8,11 +8,12 @@ namespace PinballWizard.Core.Configuration;
 /// gameplay tutorials as Rulesheet documents via the <c>.md</c> URL suffix.
 /// </summary>
 /// <remarks>
-/// The site exposes clean Markdown at <c>/news/{slug}.md</c>; the tutorial
-/// listing is paged at <c>/news/category/pinball-tutorial?page=N</c>.
-/// The robots.txt (verified 2026-06-25) sets <c>ai-train=yes</c> and
-/// allows <c>/news/</c> for all crawlers including <c>ClaudeBot</c>.
-/// No <c>Crawl-delay</c> is specified; politeness defaults apply.
+/// The site exposes clean Markdown at <c>/news/{slug}.md</c>. Tutorials are
+/// discovered from the news sitemap that robots.txt advertises, not by
+/// paging the rendered category listing. The robots.txt (verified
+/// 2026-09-28) sets <c>ai-train=yes</c>, allows <c>/news/</c> for all
+/// crawlers, and specifies no <c>Crawl-delay</c>; pacing comes from the
+/// <c>kineticist_tutorials</c> ingestion source's politeness overrides.
 /// </remarks>
 public sealed class KineticistOptions
 {
@@ -25,18 +26,14 @@ public sealed class KineticistOptions
     public string BaseUrl { get; set; } = "https://www.kineticist.com";
 
     /// <summary>
-    /// Path to the paginated tutorial category listing.
-    /// Articles are discovered from <c>/news/category/pinball-tutorial?page=N</c>.
+    /// Path to the news sitemap (a sitemaps.org <c>urlset</c> listing every
+    /// <c>/news/{slug}</c> article), reachable from the sitemap index at
+    /// <c>/sitemap.xml</c>. One cached request replaces paging
+    /// <c>/news/category/pinball-tutorial?page=N</c>; tutorials are the entries
+    /// whose slug carries a <c>tutorial</c> token (61 of 825 on 2026-09-28).
     /// </summary>
-    public string TutorialCategoryPath { get; set; } = "/news/category/pinball-tutorial";
-
-    /// <summary>
-    /// Defensive cap on the number of category pages to fetch per run.
-    /// The catalogue has ~50 articles across 2 pages as of 2026-06-25;
-    /// default of 20 leaves headroom without bounding a runaway loop.
-    /// </summary>
-    [Range(1, 200)]
-    public int MaxCategoryPagesToFetch { get; set; } = 20;
+    [Required]
+    public string NewsSitemapPath { get; set; } = "/sitemap/news.xml";
 
     /// <summary>
     /// Base URL of the Kineticist public API (v1). The games catalog is

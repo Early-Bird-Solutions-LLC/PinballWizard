@@ -41,12 +41,38 @@ public sealed class PolitenessOptions
     [Range(250, 60_000)]
     public int RequestDelayMs { get; set; } = 2_000;
 
+    /// <summary>Upper bound of <see cref="Max429Streak"/>; also the hard cap on 429 re-sends per request.</summary>
+    public const int Max429StreakUpperBound = 10;
+
     /// <summary>
     /// Maximum number of consecutive HTTP 429 responses tolerated from
     /// a single source before the gate throws and aborts the scrape.
     /// </summary>
-    [Range(1, 10)]
+    [Range(1, Max429StreakUpperBound)]
     public int Max429Streak { get; set; } = 3;
+
+    /// <summary>
+    /// Base backoff in milliseconds applied to an origin after a 429 that
+    /// carries no <c>Retry-After</c> header. Doubles with each consecutive
+    /// 429 from the same origin and is capped at <see cref="MaxRetryAfterSeconds"/>.
+    /// </summary>
+    [Range(RateLimitBackoffMsMin, RateLimitBackoffMsMax)]
+    public int RateLimitBackoffMs { get; set; } = 30_000;
+
+    /// <summary>Bounds of <see cref="RateLimitBackoffMs"/>; per-source overrides are clamped to them.</summary>
+    public const int RateLimitBackoffMsMin = 1_000, RateLimitBackoffMsMax = 600_000;
+
+    /// <summary>
+    /// Longest wait a single 429 may impose on an origin. A server-sent
+    /// <c>Retry-After</c> longer than this aborts the run instead of
+    /// sleeping (the source is asking us to come back later than the run's
+    /// budget allows); computed backoff is capped at this value.
+    /// </summary>
+    [Range(MaxRetryAfterSecondsMin, MaxRetryAfterSecondsMax)]
+    public int MaxRetryAfterSeconds { get; set; } = 600;
+
+    /// <summary>Bounds of <see cref="MaxRetryAfterSeconds"/>; per-source overrides are clamped to them.</summary>
+    public const int MaxRetryAfterSecondsMin = 1, MaxRetryAfterSecondsMax = 3_600;
 
     /// <summary>If true, every request URL is checked against the host's robots.txt before being issued.</summary>
     public bool RespectRobotsTxt { get; set; } = true;
