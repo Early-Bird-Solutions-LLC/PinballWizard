@@ -548,6 +548,24 @@ public static class PinballWizardTelemetry
         unit: "{page}",
         description: "Storefront product page where JsonLdProductParser.FindFirstProduct returned null and the extractor fell back to Open Graph / H1. Structured fields (editions, price, status) will be absent from the resulting GameRecord. Tagged with source (JJP | BoF | Multimorphic) and url. Non-zero rate on BoF/Multimorphic indicates those sites have dropped JSON-LD; non-zero on JJP signals an unexpected Shopify theme regression. Paired with a LogWarning at the point of degradation (invariant #17 / OBS-01).");
 
+    // ── Per-page document extraction failure counter (OBS-01 / OBS-04) ──────
+    //
+    // Incremented by a scraper when one discovered page that should publish
+    // documents produced none: the fetch failed, the page no longer renders
+    // the post cards the extractor reads, or its documents are all on hosts
+    // outside the allow-list. The run-level yield guard only fires when a
+    // whole scraper collects nothing; this names the single page that broke
+    // while its siblings still yield.
+    //
+    // Tags:
+    //   scraper — ISourceScraper.Name
+    //   reason  — fetch_failed | no_post_cards | no_allowed_documents
+    // Deliberately not tagged with the page URL; the paired Error log names it.
+    public static readonly Counter<long> ScraperPageExtractionFailures = Meter.CreateCounter<long>(
+        "pinwiz.scraper.page_extraction_failed_total",
+        unit: "{page}",
+        description: "A discovered page that should publish documents produced none — fetch failed (fetch_failed), the post cards the extractor reads are gone (no_post_cards), or every document is on a host outside the allow-list (no_allowed_documents). Tagged with scraper and reason. Paired with an Error log naming the page, and the scraper run fails (OBS-01).");
+
 
     // ── Community-resource load failure counter (invariant #17 / OBS-01) ────
     //

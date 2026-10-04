@@ -15,7 +15,7 @@ public static class ServiceCollectionExtensions
     /// Registers the AP scraper:
     /// <list type="bullet">
     ///   <item>Binds <see cref="ApOptions"/> from configuration section <c>Ap</c> with validation.</item>
-    ///   <item>Registers typed <see cref="HttpClient"/>s for <see cref="ApSitemapClient"/> and <see cref="ApGamePageScraper"/> with the polite User-Agent.</item>
+    ///   <item>Registers typed <see cref="HttpClient"/>s for <see cref="ApSitemapClient"/>, <see cref="ApGamePageScraper"/>, and <see cref="ApBulletinScraper"/> with the polite User-Agent.</item>
     ///   <item>Bridges the typed-client registration into the <see cref="ISourceScraper"/> enumerable.</item>
     /// </list>
     /// </summary>
@@ -60,6 +60,8 @@ public static class ServiceCollectionExtensions
             var ap = sp.GetRequiredService<IOptions<ApOptions>>().Value;
             client.BaseAddress = new Uri(ap.BaseUrl);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+            // WordPress REST page discovery (JSON) and the per-game support hubs (HTML).
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
             client.Timeout = TimeSpan.FromSeconds(60);
         });

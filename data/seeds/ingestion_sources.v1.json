@@ -171,7 +171,7 @@
     "politenessOverrides": null,
     "sourceGroup": "American Pinball",
     "discoveryStatus": "Active",
-    "discoveryNotes": "Service bulletins published at american-pinball.com/support/ — single static HTML page with anchor-tab layout per game (Houdini, Oktoberfest, Hot Wheels, Galactic Tank Force, Legends of Valhalla, Barry O's BBQ Challenge). Bulletin PDFs hosted on CDN subdomain s4.american-pinball.com under /img/support/YYYY-M/{filename}.pdf. No robots.txt restrictions found. ApBulletinScraper wired.",
+    "discoveryNotes": "Since the 2026 redesign, /support/ (canonical host americanpinball.com) links to one support hub per game, /support/{game-slug}/, instead of listing bulletin PDFs. The hubs are discovered from WordPress REST as the child pages of the support page, filtered to the game-page category slugs (register and updates are skipped). On each hub, bulletins are the post cards in the service-bulletin and electrical categories. Their PDFs are on HubSpot's file CDN (hubspotusercontent-na1.net). robots.txt disallows only /wp-admin/. ApBulletinScraper wired.",
     "discoveryDate": "2026-05-26"
   },
   {
