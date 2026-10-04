@@ -1,4 +1,5 @@
 using System.Globalization;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
@@ -25,21 +26,14 @@ public static class GamePageExtractors
         "newsletter",
     };
 
-    // Stern's <title> / templated H1 suffix. Both pipe and dash variants are
-    // observed in the wild; strip whichever is present.
-    private static readonly string[] SternTitleSuffixes =
-    {
-        " | Stern Pinball",
-        " - Stern Pinball",
-    };
-
     /// <summary>
     /// Picks the best title from raw page candidates, falling back to a cleaned
     /// <c>document.title</c> and finally a slug-cased title.
     /// Rejects banner/menu/signup text (cookie consent, privacy choices, "Sign up
     /// for X Updates!", etc.) which otherwise win the H1 race against the real
     /// game heading. Strips trailing " | Stern Pinball" / " - Stern Pinball"
-    /// from whichever candidate or page-title fallback is selected.
+    /// and a trailing " Game Page" from whichever candidate or page-title
+    /// fallback is selected.
     /// </summary>
     public static string SanitizeGameTitle(
         IReadOnlyList<string?>? candidates,
@@ -135,17 +129,8 @@ public static class GamePageExtractors
 
     private static string? StripSternSuffix(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        var trimmed = text.Trim();
-        foreach (var suffix in SternTitleSuffixes)
-        {
-            if (trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                trimmed = trimmed[..^suffix.Length].Trim();
-                break;
-            }
-        }
-        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+        var stripped = SternPageTitle.WithoutChrome(text);
+        return string.IsNullOrEmpty(stripped) ? null : stripped;
     }
 
     private static string SlugToTitle(string slug)
