@@ -76,4 +76,33 @@ public sealed class GamePageContentExtractorTests
         Assert.DoesNotContain("consent", prose, StringComparison.Ordinal);                   // cookie text excluded
         Assert.DoesNotContain("Sign up", prose, StringComparison.Ordinal);                   // footer excluded
     }
+
+    [Fact]
+    public void ExtractOverviewProse_DropsConsentBannerInsideMain()
+    {
+        // The live Iron Maiden overview was the CMP banner, which sits in the
+        // same content root as the game copy. Scoping to <main> is not enough.
+        var html = """
+        <html><body><main>
+          <p>With your consent, we and other third-party service providers may store cookies on your browser to personalize your experience.</p>
+          <p>Iron Maiden: Legacy of the Beast brings the band's iconography to the playfield in a SPIKE-2 machine.</p>
+        </main></body></html>
+        """;
+        var prose = GamePageContentExtractor.ExtractOverviewProse(Parse(html));
+        Assert.Contains("Legacy of the Beast", prose, StringComparison.Ordinal);
+        Assert.DoesNotContain("consent", prose, StringComparison.Ordinal);
+        Assert.DoesNotContain("cookies", prose, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractOverviewProse_BannerOnly_ReturnsNull()
+    {
+        var html = """
+        <html><body><main>
+          <p>With your consent, we and other third-party service providers may store cookies on your browser to personalize your experience.</p>
+          <p>Your privacy choices and manage preferences are available in the cookie settings panel on this page.</p>
+        </main></body></html>
+        """;
+        Assert.Null(GamePageContentExtractor.ExtractOverviewProse(Parse(html)));
+    }
 }

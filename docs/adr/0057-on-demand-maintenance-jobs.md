@@ -20,6 +20,8 @@ Two manual-trigger Container Apps Jobs, defined in `infra/modules/shared.bicep` 
 
 They use `cliImageTag`, the shared user-assigned identity `pinwiz-aca-id-dev` (`AZURE_CLIENT_ID`), Cosmos and App Insights env, and the existing `pinwiz-job-*` failure alert. Relink also gets the linker's blob endpoint and Storage Blob Data Contributor grant, because page-1 reads come from `pinwiz-raw`. GC also gets `AiSearch:Endpoint` / `pinwiz-rag-v1` and Search Index Data Contributor, because it deletes orphan chunks. The GC job also needs the Foundry endpoint (`AiFoundry:ProjectEndpoint`, and `AiFoundry:EmbeddingDeploymentName` the same way) because dependency injection constructs `IChunkEmbedder` when the indexer is resolved, even though GC only deletes chunks. Neither job has a cron. An operator starts one execution with `az containerapp job start`. Relink completes before GC: GC only deletes pairs that no longer have a fan-out row.
 
+`--relink-all` resets `Linked`, `NotInCatalog`, and `NeedsReview` to Pending. `NeedsReview` is in that set so a later linker rule re-evaluates documents parked as ambiguous (the 2018 Iron Maiden manuals, #596). A row that is still ambiguous is written back to `needs_review` with no fan-out row. The nightly `--download-and-link` job does not reset `NeedsReview`. Game-overview chunks (`overview_*`) are not backed by `scraped_documents`, so this GC ignores them; `--sync-game-overviews` deletes a machine's `overview_*` chunks when that machine has nothing left to index, and that sync runs before GC.
+
 The module's `triggerType` parameter defaults to `Schedule`, so the existing twenty jobs keep their crons.
 
 ## Consequences

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
+using PinballWizard.Application.Rag.GameOverviews;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
@@ -72,18 +73,20 @@ public static class GamePageContentExtractor
     }
 
     // Joins descriptive <p> blocks from the page into overview prose.
-    // Scopes to <main> when present so cookie-consent banners, nav, and footer
-    // newsletter copy don't pollute the game-overview prose. Falls back to the whole
-    // document when there is no <main> (other manufacturers / test fixtures).
+    // Scopes to <main> when present so nav and footer newsletter copy don't
+    // pollute the game-overview prose. Falls back to the whole document when
+    // there is no <main> (other manufacturers / test fixtures).
+    // Cookie-consent paragraphs are dropped even inside <main> — Stern's CMP
+    // banner is what got stored as the Iron Maiden overview (#596).
     // Short fragments (under 40 characters) — nav labels, captions — are skipped.
     // Returns null when no qualifying paragraphs are found.
     public static string? ExtractOverviewProse(IDocument doc)
     {
-        // Scope to <main> when present so cookie-consent banners, nav, and footer
-        // newsletter copy don't pollute the game-overview prose. Fall back to the
-        // whole document when there's no <main> (other manufacturers / test fixtures).
-        // The answer model tolerates incidental marketing inside <main>; we only
-        // exclude non-content chrome, never real game prose.
+        // Scope to <main> when present so nav and footer newsletter copy don't
+        // pollute the game-overview prose. Fall back to the whole document when
+        // there's no <main> (other manufacturers / test fixtures).
+        // Consent-banner paragraphs are dropped wherever they sit: the live
+        // Iron Maiden overview was the cookie banner itself.
         IParentNode scope = doc.QuerySelector("main") ?? (IParentNode)doc;
 
         var sb = new StringBuilder();
@@ -91,6 +94,7 @@ public static class GamePageContentExtractor
         {
             var t = p.TextContent?.Trim();
             if (string.IsNullOrEmpty(t) || t.Length < 40) continue;   // skip nav/labels/short fragments
+            if (OverviewProseFilter.IsConsentBanner(t)) continue;
             if (sb.Length > 0) sb.Append("\n\n");
             sb.Append(t);
         }

@@ -181,7 +181,7 @@ var syncMetadataCardsOption = new Option<bool>("--sync-metadata-cards")
 
 var syncGameOverviewsOption = new Option<bool>("--sync-game-overviews")
 {
-    Description = "Synthesize and index GameOverview documents from each Machine's scraped game-page OverviewProse + per-edition content. Mirrors --sync-metadata-cards. No-op for machines without overview content. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
+    Description = "Synthesize and index GameOverview documents from each Machine's scraped game-page OverviewProse + per-edition content. Mirrors --sync-metadata-cards. Machines with nothing left to index have their overview_* chunks deleted — index GC ignores that prefix. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
 };
 
 var syncKineticistTutorialsOption = new Option<bool>("--sync-kineticist-tutorials")
@@ -226,12 +226,12 @@ var refreshGameOverviewsOption = new Option<bool>("--refresh-game-overviews")
 
 var linkDocumentsOption = new Option<bool>("--link-documents")
 {
-    Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+    Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric, NeedsReview) are skipped. Re-evaluating NeedsReview requires --relink-all. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
 var relinkAllOption = new Option<bool>("--relink-all")
 {
-    Description = "Re-run the linker over ALL previously-linked documents: first resets every Linked / NotInCatalog record in scraped_documents_raw back to Pending (preserving ManuallyLinked admin overrides and PlatformGeneric), then runs the standard --link-documents pass. Use after the linker logic changes (e.g. the manufacturer-disambiguation fix) so existing mislabeled links are re-resolved. Implies --link-documents. Requires Cosmos to be configured."
+    Description = "Re-run the linker over previously resolved documents: first resets every Linked, NotInCatalog, and NeedsReview record in scraped_documents_raw back to Pending (preserving ManuallyLinked admin overrides and PlatformGeneric), then runs the standard --link-documents pass. NeedsReview is reset so a linker-rule change re-evaluates documents parked as ambiguous; a row that is still ambiguous is written back to NeedsReview and stays uncited. Use after the linker logic changes so existing mislabeled or parked links are re-resolved. Implies --link-documents. Requires Cosmos to be configured."
 };
 
 var downloadDocumentsOption = new Option<bool>("--download-documents")
@@ -727,11 +727,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // the enclosing action scope.
     async Task<int> RunGameOverviewSyncAsync()
     {
-        var machineRepo = host.Services.GetService<IMachineRepository>();
-        var synthesizer = host.Services.GetService<IGameOverviewSynthesizer>();
-        var indexer = host.Services.GetService<IRagIndexer>();
-
-        if (machineRepo is null || synthesizer is null || indexer is null)
+        var sync = host.Services.GetService<GameOverviewIndexSync>();
+        if (sync is null)
         {
             Console.Error.WriteLine(
                 "Game overview sync requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
@@ -740,77 +737,22 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         Console.WriteLine("Synthesizing game overview documents from Cosmos machines...");
-
-        var upserted = 0;
-        var skipped = 0;
-        var failed = 0;
-        var indexerOptions = new RagIndexerOptions();
-
-        string[] allManufacturers =
-        [
-            ScraperManufacturerKey.Stern,
-            ScraperManufacturerKey.Jjp,
-            ScraperManufacturerKey.AmericanPinball,
-            ScraperManufacturerKey.Spooky,
-            ScraperManufacturerKey.PinballBrothers,
-            ScraperManufacturerKey.BarrelsOfFun,
-            ScraperManufacturerKey.ChicagoGaming,
-            ScraperManufacturerKey.Multimorphic,
-        ];
-
-        foreach (var manufacturer in allManufacturers)
-        {
-            await foreach (var machine in machineRepo.StreamByManufacturerAsync(manufacturer, cancellationToken))
-            {
-                var chunks = synthesizer.Synthesize(machine);
-                if (chunks.Count == 0 || string.IsNullOrWhiteSpace(machine.OverviewSourceUrl))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                var chunkRequest = new ChunkRequest(
-                    MachineId: machine.Id,
-                    MachineTitle: machine.Title,
-                    Manufacturer: machine.ManufacturerDisplayName,
-                    DocumentId: $"overview_{machine.Id}",
-                    DocumentUrl: machine.OverviewSourceUrl,
-                    DocumentType: DocumentType.GameOverview,
-                    LastScrapedUtc: machine.LastSeenAt == default ? null : machine.LastSeenAt);
-
-                try
-                {
-                    var result = await indexer.UpsertAsync(chunkRequest, chunks, indexerOptions, cancellationToken);
-                    if (result.Failures.Count > 0)
-                    {
-                        foreach (var failure in result.Failures)
-                            Console.Error.WriteLine($"  AI Search rejected chunk '{failure.ChunkId}' for {machine.Title} ({machine.Id}): HTTP {failure.StatusCode} — {failure.ErrorMessage}");
-                        failed++;
-                    }
-                    else
-                    {
-                        upserted++;
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Console.Error.WriteLine($"  Failed to index game overview for {machine.Title} ({machine.Id}): {ex.Message}");
-                    failed++;
-                }
-            }
-        }
+        var result = await sync.RunAsync(cancellationToken);
 
         Console.WriteLine();
-        Console.WriteLine($"Game overview sync complete: upserted={upserted} skipped(no-content)={skipped} failed={failed}");
-        return failed > 0 ? 1 : 0;
+        Console.WriteLine(
+            $"Game overview sync complete: upserted={result.Upserted} " +
+            $"deleted={result.ChunksDeleted} skipped(no-content)={result.Skipped} failed={result.Failed}");
+        return result.Failed > 0 ? 1 : 0;
     }
 
     // Handle --sync-game-overviews (Phase 4.5 W4b — synthesize GameOverview chunks
     // from each Machine's OverviewProse + per-edition scraped content and upsert
     // into AI Search). Mirrors --sync-metadata-cards; gated on the same three
-    // backend services. Skips machines with no overview content. Idempotent:
-    // re-running overwrites in-place (chunk_id hash is stable for the same
-    // machine + document key).
+    // backend services. A machine with nothing left to index has its overview_*
+    // chunks deleted — index GC ignores that prefix. Idempotent: re-running
+    // overwrites in-place when content remains (chunk_id hash is stable for the
+    // same machine + document key).
     if (syncGameOverviews)
     {
         Environment.ExitCode = await RunGameOverviewSyncAsync();
@@ -849,8 +791,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // Handle --link-documents / --relink-all (document-to-machine linking pass;
     // processes all pending, failed, and not_in_catalog records in
     // scraped_documents_raw via the 5-tier algorithm and fans resolved documents
-    // into scraped_documents). --relink-all first resets prior Linked/NotInCatalog
-    // records to Pending so they re-resolve. Gated on IDocumentLinker (Cosmos).
+    // into scraped_documents). --relink-all first resets prior Linked,
+    // NotInCatalog, and NeedsReview records to Pending so they re-resolve.
+    // Gated on IDocumentLinker (Cosmos).
     // Handle --download-documents (fetch not-yet-downloaded raw documents so the
     // linker's page-text tiers can read page-1 content). Runs before linking.
     // Gated on DocumentDownloadService (Cosmos).
