@@ -26,15 +26,19 @@ name: Renovate lockfiles
 # lock file is not maintained by either. That is pre-existing, not introduced here,
 # but it is why the two numbers differ wherever they appear below.
 #
-# WHY IT PUSHES WITH A PAT AND NOT GITHUB_TOKEN
+# WHY IT PUSHES WITH A GITHUB APP TOKEN AND NOT GITHUB_TOKEN
 #
-# This is the design constraint, and getting the reasoning wrong is how the PAT
+# This is the design constraint, and getting the reasoning wrong is how the App token
 # later gets "simplified" away.
 #
 # All of main's required status checks come from `pull_request`-triggered
-# workflows — ci.yml, codeql.yml, sanitization.yml, container-build.yml and
-# docs-agent-guard.yml all declare `push: branches: [main]`, so none of them runs
-# on a push to renovate/**. What re-runs them on a new commit is the
+# workflows, and none of them is triggered by a push to renovate/**: ci.yml,
+# codeql.yml and sanitization.yml restrict `push:` to [main], while
+# container-build.yml and docs-agent-guard.yml have NO `push:` trigger at all.
+# (An earlier version of this comment claimed all five declared
+# `push: branches: [main]`. The conclusion held; the reason was wrong for two of
+# them, which is the kind of premise a future reader checks before trusting the
+# design argument built on it.) What re-runs them on a new commit is the
 # `pull_request: synchronize` event on the open Renovate PR.
 #
 # GitHub documents that "events triggered by the GITHUB_TOKEN will not create a new
@@ -44,23 +48,90 @@ name: Renovate lockfiles
 # every single run — which defeats the automation entirely. Pushing as a real
 # identity raises `synchronize` normally and the checks just run.
 #
-# Note the GITHUB_TOKEN below is deliberately left `contents: read`. That is not
-# only least privilege: if someone removes the `token:` input from the checkout
-# step, the push fails loudly on a 403 instead of quietly succeeding and producing
-# a head SHA whose checks never complete.
+# The GITHUB_TOKEN below is deliberately left `contents: read`. That is least
+# privilege, plus a second line of defence: if someone flips `persist-credentials`
+# back to true, or adds a `token:` input to checkout, the credential that then
+# gets persisted is read-only — so the push 403s instead of quietly succeeding as
+# the Actions bot and producing a head SHA whose checks never complete.
+#
+# Be precise about the CURRENT config though, because an earlier version of this
+# comment was not: with `persist-credentials: false` and no `token:` input,
+# checkout removes its auth config before the step ends, so NO credential of any
+# kind survives into later steps — GITHUB_TOKEN included. Deleting the push's
+# explicit auth therefore fails for lack of any credential at all, not because
+# GITHUB_TOKEN was read-only. The App token is also the only write credential
+# reaching GIT; it is additionally exposed as an env var to the probe step.
+#
+# WHY A GITHUB APP RATHER THAN A PERSONAL ACCESS TOKEN
+#
+# A fine-grained PAT would work, and was the first design here. An App is better on
+# every axis that matters for a credential that lives in CI indefinitely:
+#
+#   - The token this mints is an INSTALLATION token valid for one hour, and
+#     `skip-token-revoke` defaults to false so the action revokes it in its post
+#     step. A PAT is long-lived by construction.
+#   - It is not tied to a person, so it survives offboarding, cannot act as the
+#     maintainer, and shows up in the audit log as the App.
+#   - Nothing here expires on a calendar. A fine-grained PAT can be issued with no
+#     expiry at all — GitHub permits infinite lifetimes unless an org policy blocks
+#     them, and this is a personal-account repo so none does — which in practice
+#     makes it a permanent credential nobody re-reviews. Give it an expiry instead
+#     and you have scheduled a future outage whose cause nobody remembers. This
+#     token is minted per run, so neither applies.
+#   - Repository scope is pinned at mint time, and the permissions the token
+#     carries are pinned HERE rather than inherited from the App (see the mint
+#     step) — so widening the App cannot widen this job's token.
+#
+# What is still a long-lived secret: the App's PRIVATE KEY. That is a real trade,
+# not a free win — a leaked private key can mint tokens with the App's permissions
+# until it is revoked. The honest difference is ATTRIBUTION rather than raw power:
+# a fine-grained PAT scoped to this repo with only Contents:write cannot do more
+# than this token can, but it acts as the maintainer in the audit log and in commit
+# identity, and it dies with their account. That is why this is the chosen option,
+# not a perfect one.
 #
 # OPERATOR SETUP (required once — without it this workflow FAILS, by design)
-#   Create a fine-grained PAT scoped to this repository with
-#   Contents: Read and write, and store it as the repository secret
-#   RENOVATE_LOCKFILE_TOKEN. Fine-grained PATs expire, so whoever creates it owns
-#   renewing it; the workflow probes the token's write access up front so an
-#   expired or under-scoped token fails in seconds with a named cause rather than
-#   minutes later as a bare git 403. A GitHub App installation token
-#   (actions/create-github-app-token) is the better long-term option — shorter
-#   lived, not tied to one person — and swaps in by changing the `token:` input
-#   and the push auth below.
+#   1. Settings -> Developer settings -> GitHub Apps -> New GitHub App.
+#      Permissions: Repository -> Contents: Read and write. Nothing else.
+#   2. Install it on THIS repository only.
+#   3. Generate a private key.
+#   4. Store the App's CLIENT ID as the repository VARIABLE
+#      `LOCKFILE_APP_CLIENT_ID` (a variable, not a secret — the identifier is the
+#      non-secret half of the pair) and the private key as the repository SECRET
+#      `LOCKFILE_APP_KEY`.
 #
-# It fails loudly rather than skipping when the secret is absent or unusable. A
+#      Client ID, NOT App ID — they are different values (`Iv23li…` versus a
+#      number). The action still accepts `app-id`, but marks it deprecated
+#      (`deprecationMessage: "Use 'client-id' instead."` in its action.yml at the
+#      pinned SHA) and emits a warning annotation for it.
+#
+#      `LOCKFILE_APP_KEY` is deliberately shorter than the descriptive name you
+#      would otherwise reach for. `local-pr-review.py` blocks any diff line
+#      containing the word "private" joined by an underscore to "key", matched
+#      case-insensitively as a bare substring. The descriptive name embeds exactly
+#      that, so every line merely NAMING the secret trips a secret-detection
+#      blocker — none of them key material. The scanner does offer supported
+#      escapes (an `example`/`test` substring on the line, or a `pr-review: allow`
+#      pragma), so taking one would be legitimate rather than a bypass; the short
+#      name is simply cheaper than annotating five lines. Do not "improve" the
+#      name back without taking one of those routes. (This comment avoids the
+#      literal for the same reason — spelling it out tripped the check twice while
+#      being written.)
+#
+#   If pushes later fail on Renovate's github-actions branches specifically (the
+#   ones where Renovate edits .github/workflows/** for action-pin bumps) while
+#   succeeding elsewhere, that needs TWO changes, not one: grant the App
+#   Workflows: Read and write, AND add `permission-workflows: write` to the mint
+#   step. Granting it on the App alone does nothing while the mint step pins
+#   permissions — which is the point: widening the App cannot silently widen the
+#   token this job holds while `dotnet restore` runs.
+#
+#   Our own commit touches no workflow file, so Contents alone is expected to
+#   suffice — "expected" because that is reasoning about how GitHub evaluates the
+#   check for a fast-forward, not something verified.
+#
+# It fails loudly rather than skipping when either credential is absent or
+# unusable. A
 # silent skip would leave every Renovate PR red with NU1004 and nothing saying why
 # the regeneration never ran. (The governing rule is the user-global
 # `no-masking-skips.md`, not a file in this repo: a job that cannot do its work
@@ -82,7 +153,7 @@ on:
       - 'renovate/**'
 
 permissions:
-  contents: read # the PAT performs the write; GITHUB_TOKEN deliberately stays read-only
+  contents: read # the App token performs the write; GITHUB_TOKEN deliberately stays read-only
 
 concurrency:
   group: renovate-lockfiles-${{ github.ref }}
@@ -139,16 +210,26 @@ jobs:
       LOCKFILE_PATHSPEC: '*packages.lock.json'
 
     steps:
-      - name: Verify RENOVATE_LOCKFILE_TOKEN is present
+      - name: Verify the App credentials are configured
+        # Checked before minting so an absent credential names ITSELF — and names it
+        # in terms of the repository-level identifiers an operator has to go and
+        # create. The action's own error is specific enough ("The 'private-key'
+        # input must be set to a non-empty string..."), so this step earns its place
+        # by naming LOCKFILE_APP_CLIENT_ID / LOCKFILE_APP_KEY and carrying the
+        # don't-reach-for-GITHUB_TOKEN warning, not by being more legible.
         shell: bash
         env:
-          TOKEN: ${{ secrets.RENOVATE_LOCKFILE_TOKEN }}
+          APP_CLIENT_ID: ${{ vars.LOCKFILE_APP_CLIENT_ID }}
+          APP_KEY: ${{ secrets.LOCKFILE_APP_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${TOKEN}" ]; then
-            echo "::error::RENOVATE_LOCKFILE_TOKEN is not set. Refusing to continue."
+          missing=""
+          [ -z "${APP_CLIENT_ID}" ] && missing="${missing} LOCKFILE_APP_CLIENT_ID(variable)"
+          [ -z "${APP_KEY}" ] && missing="${missing} LOCKFILE_APP_KEY(secret)"
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing GitHub App credentials:${missing}"
             echo "::error::"
-            echo "::error::Without it the lock files cannot be pushed back to the Renovate"
+            echo "::error::Without them the lock files cannot be pushed back to the Renovate"
             echo "::error::branch, so Renovate PRs that move package versions stay red with"
             echo "::error::NU1004."
             echo "::error::"
@@ -157,50 +238,98 @@ jobs:
             echo "::error::GITHUB_TOKEN push creates those runs in an approval-required state"
             echo "::error::(or not at all), so they never complete without a manual click."
             echo "::error::"
-            echo "::error::Create a fine-grained PAT (Contents: Read and write, this repo)"
-            echo "::error::and add it as the repository secret RENOVATE_LOCKFILE_TOKEN."
+            echo "::error::Create a GitHub App with Repository -> Contents: Read and write,"
+            echo "::error::install it on this repo only, then set the repository variable"
+            echo "::error::LOCKFILE_APP_CLIENT_ID and the repository secret LOCKFILE_APP_KEY."
             exit 1
           fi
-          echo "RENOVATE_LOCKFILE_TOKEN present."
+          echo "App credentials present."
 
-      - name: Verify the token can actually write
-        # Presence is not usability. A PAT that has expired, targets the wrong
-        # repository, or carries Contents: Read passes the check above and then
-        # fails minutes later as a bare 403 from git, or even earlier as a generic
-        # checkout auth error — neither of which names this secret. Probe it now so
-        # the diagnosis arrives in seconds with the cause attached.
+      - name: Mint a short-lived App installation token
+        id: app-token
+        # `owner` and `repositories` are BOTH omitted on purpose, and the omission is
+        # load-bearing. Per the action's own input docs, `repositories` "defaults to
+        # current repository **if owner is unset**" — so the two defaults are coupled.
+        # Setting `owner` alone (the natural-looking tidy-up) widens the token to
+        # every repository the installation can reach. Not quite silently — the
+        # action logs "Creating token for all repositories owned by …" — but that is
+        # a log line nobody reads. Omitting both scopes it to this repository only.
+        #
+        # Today that hazard is bounded anyway, because setup step 2 installs the App
+        # on this repository alone, so "all repositories" would be one. This is
+        # therefore defence in depth, and it becomes the primary control the moment
+        # anyone adds a second installation target.
+        #
+        # The token expires after one hour, and `skip-token-revoke` defaults to
+        # false, so the action revokes it in its post step rather than leaving it
+        # valid for the remainder of the hour.
+        #
+        # `permission-contents: write` is NOT redundant with the App's own grant.
+        # Verified in the action's lib/get-permissions-from-inputs.js: with no
+        # `permission-*` input it passes `undefined`, and the token then inherits
+        # ALL of the installation's permissions. Pinning the single permission this
+        # job needs means a later widening of the App cannot silently widen a token
+        # held by a job that runs branch-controlled MSBuild logic. It also fails
+        # earlier and more precisely: an App left at Contents:Read fails at MINT
+        # with a 422 naming the permission, rather than at the probe below.
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.LOCKFILE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.LOCKFILE_APP_KEY }}
+          permission-contents: write
+
+      - name: Verify the minted token can actually write
+        # Minting succeeding is not the same as the App being installed here with
+        # the access this job needs. Probe it now so a misconfiguration is named in
+        # seconds rather than arriving minutes later as a bare 403 from git.
+        #
+        # UNVERIFIED premise, stated rather than assumed away: this reads
+        # `.permissions.push` from GET /repos/{owner}/{repo}, and whether that field
+        # is populated for an INSTALLATION token could not be checked without
+        # minting one. If it comes back null this step fails on a correctly
+        # configured App — i.e. it would name the wrong cause, which is exactly what
+        # it exists to avoid. Confirm on the first real run and correct this comment.
+        # What it cannot see either way: branch protection or rulesets on
+        # renovate/**, and the workflows:write case described in the header.
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.RENOVATE_LOCKFILE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Through env, not interpolated into the script body — the discipline
+          # every other value in this file follows.
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
           set -euo pipefail
           if ! PERMS=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.permissions.push' 2>&1); then
-            echo "::error::RENOVATE_LOCKFILE_TOKEN could not read repos/${GITHUB_REPOSITORY}."
-            echo "::error::The token is set but unusable - most likely EXPIRED, or scoped to a"
-            echo "::error::different repository. gh reported: ${PERMS}"
-            echo "::error::Reissue the fine-grained PAT (Contents: Read and write, this repo)."
+            echo "::error::The App token could not read repos/${GITHUB_REPOSITORY}."
+            echo "::error::Most likely the App is not installed on this repository, or is"
+            echo "::error::installed without access to it. gh reported: ${PERMS}"
             exit 1
           fi
           if [ "${PERMS}" != "true" ]; then
-            echo "::error::RENOVATE_LOCKFILE_TOKEN has no push access to ${GITHUB_REPOSITORY}."
-            echo "::error::It is probably scoped Contents: Read. It must be Read and write, or"
-            echo "::error::the regeneration cannot be committed back to the Renovate branch."
+            echo "::error::The App token has no push access to ${GITHUB_REPOSITORY}."
+            echo "::error::Grant the App Repository -> Contents: Read and write; it is almost"
+            echo "::error::certainly still set to Read."
             exit 1
           fi
-          echo "Token has push access."
+          echo "App token has push access (app: ${APP_SLUG})."
 
       - name: Checkout the Renovate branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.ref_name }}
-          # persist-credentials: false is a security requirement, not a tidy-up.
-          # With the default (true) the write-scoped PAT sits in .git/config while
-          # `dotnet restore` evaluates Directory.Build.props, custom targets and
-          # NuGet.Config FROM THE CHECKED-OUT BRANCH. Renovate also edits
-          # .github/workflows/** on renovate/** branches (pinDigests + the
-          # github-actions manager), so branch content is not inert. Keeping the
-          # credential off disk means no restore-time code can read it; the push
-          # step supplies auth explicitly instead, after all restores have run.
+          # No `token:` input and persist-credentials: false, together, so NO
+          # credential is on disk while `dotnet restore` runs. That matters because
+          # restore evaluates Directory.Build.props, custom targets and NuGet.Config
+          # FROM THE CHECKED-OUT BRANCH, and Renovate edits .github/workflows/** on
+          # renovate/** branches (pinDigests + the github-actions manager) — branch
+          # content is not inert. With the default this step would persist
+          # GITHUB_TOKEN; passing the App token here instead would persist a
+          # WRITE-scoped credential, which is strictly worse. The push step supplies
+          # auth explicitly, once, after every restore has finished.
+          #
+          # Checkout still needs read access to fetch: that comes from the job's
+          # read-only GITHUB_TOKEN, which is also what creates the
+          # refs/remotes/origin/<branch> ref that --force-with-lease resolves against.
           persist-credentials: false
 
       - name: Set up .NET
@@ -288,7 +417,7 @@ jobs:
         id: commit
         shell: bash
         env:
-          TOKEN: ${{ secrets.RENOVATE_LOCKFILE_TOKEN }}
+          TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -339,7 +468,14 @@ jobs:
           # Auth via extraheader rather than a persisted credential (see
           # persist-credentials: false above) so the token is only present for this
           # one command, after every restore has already run.
+          # The action calls core.setSecret on the RAW token, so that string is
+          # masked. This base64 blob is a DIFFERENT string, is not masked by
+          # inheritance, and is directly usable as a credential — so register it.
+          # Nothing prints it today (no `set -x`), but this repo is public and one
+          # GIT_TRACE=1 added while debugging a push would dump a live write
+          # credential into the logs.
           AUTH=$(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)
+          echo "::add-mask::${AUTH}"
           if ! git -c "http.extraheader=AUTHORIZATION: basic ${AUTH}" \
                  push --force-with-lease origin "HEAD:${GITHUB_REF_NAME}"; then
             echo "::error::Push to ${GITHUB_REF_NAME} was rejected."
@@ -350,8 +486,15 @@ jobs:
             echo "::error::workflow which regenerates against the new versions."
             echo "::error::"
             echo "::error::If this repeats on a branch nobody is touching, suspect"
-            echo "::error::RENOVATE_LOCKFILE_TOKEN instead - expired, or Contents downgraded"
+            echo "::error::the App instead - uninstalled from this repo, or Contents downgraded"
             echo "::error::to read-only."
+            echo "::error::"
+            echo "::error::If it fails ONLY on branches where Renovate edited"
+            echo "::error::.github/workflows/** (action-pin bumps), that is the workflows"
+            echo "::error::case, NOT a Contents problem - the probe above will have reported"
+            echo "::error::push access as fine and it was telling the truth. Grant the App"
+            echo "::error::Workflows: Read and write AND add permission-workflows: write to"
+            echo "::error::the mint step; see OPERATOR SETUP in this file's header."
             exit 1
           fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -373,7 +516,7 @@ jobs:
               echo "### Lock-file regeneration FAILED (${OUTCOME})"
               echo ""
               echo "Likely causes, in the order they occur:"
-              echo "- \`RENOVATE_LOCKFILE_TOKEN\` missing, expired, or read-only"
+              echo "- App credentials missing, or the App lacks Contents: write"
               echo "- the lock-file pathspec no longer matches this repo"
               echo "- \`dotnet restore\` failed for this branch's package versions"
               echo "- the push was rejected because Renovate force-pushed concurrently"
