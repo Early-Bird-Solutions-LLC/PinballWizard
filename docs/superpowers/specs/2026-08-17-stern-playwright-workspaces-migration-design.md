@@ -233,8 +233,14 @@ at implementation time — flagged here rather than guessed.
 
 ### D. Error handling — fail loud, no local-Chromium fallback
 
+> **Reversed 2026-09-25 (ADR-0056).** PR #972 (2026-09-24) launched local Chromium
+> after "Could not authenticate with the service". That carve-out is withdrawn.
+> Authentication failure is a configuration error: the factory logs and meters
+> `outcome=failure`, then the exception propagates. The paragraph below is the
+> decision again, for authentication as well as for every other connect failure.
+
 If `ConnectAsync` (or the `GetConnectOptionsAsync` call preceding it) throws — connection
-failure, auth failure, workspace throttling — let it propagate. No fallback to
+failure, workspace throttling — let it propagate. No fallback to
 `LaunchAsync` in the deployed path. This was a deliberate choice, not an omission: a
 local-Chromium fallback would silently reintroduce the exact OOM risk this design
 eliminates, on whatever night the Workspace happens to be unavailable, with no signal

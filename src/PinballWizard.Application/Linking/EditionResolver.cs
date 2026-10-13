@@ -72,6 +72,14 @@ public static class EditionResolver
         return null;
     }
 
+    // Filename first, then the discovery anchor. Group-level documents are
+    // not edition-specific — callers check IsGroupLevelDoc before using this.
+    public static string? ExtractDocumentEditionToken(string? filename, string? linkText)
+    {
+        var fromFile = ExtractEditionToken(filename ?? string.Empty);
+        return fromFile ?? ExtractEditionTokenFromLinkText(linkText);
+    }
+
     /// <summary>
     /// True when the document signals an all-editions document. Markers are
     /// matched in the filename and, when supplied, the discovery link text — a

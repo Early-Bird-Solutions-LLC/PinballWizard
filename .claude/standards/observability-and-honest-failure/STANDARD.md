@@ -13,12 +13,12 @@ failures. The system should look healthy from a dashboard, not just from
 green tests.
 
 **RULE OBS-01** (no-masking-fallback)
-WHEN:   a code path has a degraded or fallback branch
-THEN:   the degradation is visible to the user and never presents synthetic/placeholder/stale content as real output
-NEVER:  convert a transport/primary failure into fabricated success (the 2026-06-11 "Hello world!" leak)
-CHECK:  (qualitative — /local-review) — ask "if the primary path silently died, would anyone know?"
+WHEN:   a dependency this process is configured to use fails, or a code path would switch to a different provider so the operation can continue
+THEN:   the failure propagates and fails the operation. The configured provider is an explicit choice. The other provider is not a recovery path. Synthetic, placeholder, or stale content is never presented as real output.
+NEVER:  swallow a configured-dependency failure by switching providers and letting the operation succeed. Azure Playwright Workspace authentication failure must not launch local Chromium. A local Chromium failure must not connect to Azure Playwright. Logging and metering the failure does not make that switch honest. NEVER convert a transport/primary failure into fabricated success (the 2026-06-11 "Hello world!" leak).
+CHECK:  dotnet test tests/PinballWizard.Core.Tests/PinballWizard.Core.Tests.csproj --filter "FullyQualifiedName~Obs01NoMaskingFallbackTests" --nologo
 SEV:    🔴
-REF:    INVARIANTS#17 · incident-2026-06-11 · PR#363
+REF:    INVARIANTS#17 · incident-2026-06-11 · PR#363 · PR#972
 
 **RULE OBS-02** (health-endpoints)
 WHEN:   adding or modifying a hosted service (Api / Web / Worker)
@@ -46,7 +46,7 @@ REF:    INVARIANTS#17 · CLAUDE.md (showcase obligations: metered degradation)
 
 ## Definition of Done
 
-- OBS-01: degraded paths are visible; no fabricated success.
+- OBS-01: a configured-dependency failure fails the operation. Switching providers (workspace ↔ local Chromium) does not pass, including when the failure was logged and metered. No fabricated success. The CHECK scans `src/**/*.cs` catch bodies (that glob includes `PlaywrightFactory.cs`) for a provider switch inside a catch.
 - OBS-02: health endpoints intact.
 - OBS-03: no secret/PII in logs (/local-review cat 8 passes).
 - OBS-04: failures are logged + metered.

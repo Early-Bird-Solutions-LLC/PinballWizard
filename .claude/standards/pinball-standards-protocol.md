@@ -71,7 +71,7 @@ marking the work unit done. (Domain rule sets are defined in each
 |---|---|
 | **new scraper** | PROV-01..03 · POLITE-01..04 · TEST-02 (SourceAlias contract test passes) · DLV-03 (zero-warning build) |
 | **new Cosmos read/write** | COSMOS-01..04 · TEST (CrossPartitionQueryAllowListTests passes) · OBS-04 (RU/duration metered) |
-| **new degraded/fallback path** | OBS-01 (visible) · OBS-04 (log+meter) · TEST-01 (fixture proves the failure is observable) |
+| **new degraded/fallback path** | OBS-01 (a configured-dependency failure propagates; switching providers is not a success) · OBS-04 (log+meter the failure) · TEST-01 (fixture proves the failure is observable and that the operation fails without switching providers) |
 | **infra script change** | DLV-02 (Deployment Stacks only) · DLV-05 (no hardcoded sub IDs) |
 | **any production-code change** | DLV-01 (identity) · DLV-03 (zero-warning) · DLV-04 (conventional commit) · the applicable-by-glob domains above |
 

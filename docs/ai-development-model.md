@@ -170,9 +170,10 @@ Three standing rules make this concrete:
 
 - **Verify before completion.** "Done", "fixed", and "passing" are claims that require running
   the check and reading the output first — not predictions. A green build is shown, not asserted.
-- **No masking fallbacks.** Failures degrade visibly and are logged; synthetic or placeholder
-  output is never presented as real (Invariant #17). A fallback that hides the underlying
-  failure is a bug, not resilience.
+- **No masking fallbacks.** A configured dependency that fails fails the operation — switching
+  to another provider to keep going is not a recovery path, and logging and metering the failure
+  does not make it one. Synthetic or placeholder output is never presented as real
+  (Invariant #17). A fallback that hides the underlying failure is a bug, not resilience.
 - **No guessing.** A configuration value, API parameter, or flag is verified from source or
   current docs — never recalled from memory and hoped to be right. See
   [`.claude/rules/no-guessing.md`](../.claude/rules/no-guessing.md).

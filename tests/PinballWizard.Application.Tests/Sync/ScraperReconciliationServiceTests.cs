@@ -142,6 +142,103 @@ public sealed class ScraperReconciliationServiceTests
     }
 
     [Fact]
+    public async Task TitleSuperset_NoYearOrEdition_KeepsExistingSlug()
+    {
+        // Parity catalogs carry no ReleaseYear. A short-title slug that is
+        // already correct (Star Trek vs Star Trek: The Next Generation) must
+        // keep matching; the era rule only fires when the page brought a signal.
+        var shorter = MakeMachine("G-SHORT", "stern", "Star Trek");
+        shorter.Year = 2013;
+        shorter.GroupId = "GSHORT";
+        shorter.ManufacturerSlugs["stern"] = "star-trek";
+        var longer = MakeMachine("G-LONG", "stern", "Star Trek: The Next Generation");
+        longer.Year = 1993;
+        longer.GroupId = "GLONG";
+        StubPartition("stern", shorter, longer);
+
+        var result = await _service.ReconcileAsync(CatalogOf(new GameRecord
+        {
+            GameId = "game_star-trek",
+            Title = "Star Trek",
+            Slug = "star-trek",
+            GamePageUrl = "https://sternpinball.com/game/star-trek/",
+        }), CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedBySlug);
+        Assert.Equal(0, result.AmbiguousTitle);
+        Assert.Equal("star-trek", shorter.ManufacturerSlugs["stern"]);
+        Assert.Empty(longer.ManufacturerSlugs);
+    }
+
+    [Fact]
+    public async Task TitleSuperset_YearAndEdition_MovesSlugOffShorterEra()
+    {
+        var maiden1981 = MakeMachine("G4yZN-MDEP7", "stern", "Iron Maiden", "Stern Electronics");
+        maiden1981.Year = 1981;
+        maiden1981.GroupId = "G4yZN";
+        maiden1981.EditionTokens = ["widebody"];
+        maiden1981.ManufacturerSlugs["stern"] = "iron-maiden";
+        var lotb2018 = MakeMachine("G4dOQ-M2018", "stern", "Iron Maiden: Legacy of the Beast", "Stern Pinball");
+        lotb2018.Year = 2018;
+        lotb2018.GroupId = "G4dOQ";
+        lotb2018.EditionTokens = ["pro", "premium", "le"];
+        StubPartition("stern", maiden1981, lotb2018);
+
+        var result = await _service.ReconcileAsync(CatalogOf(new GameRecord
+        {
+            GameId = "game_iron-maiden",
+            Title = "Iron Maiden",
+            Slug = "iron-maiden",
+            GamePageUrl = "https://sternpinball.com/game/iron-maiden/",
+            ReleaseYear = 2018,
+            Editions =
+            {
+                new EditionInfo { Name = "Pro" },
+                new EditionInfo { Name = "Premium" },
+                new EditionInfo { Name = "LE" },
+            },
+        }), CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByTitle);
+        Assert.Equal(0, result.MatchedBySlug);
+        Assert.Equal(0, result.AmbiguousTitle);
+        Assert.False(maiden1981.ManufacturerSlugs.ContainsKey("stern"));
+        Assert.Equal("iron-maiden", lotb2018.ManufacturerSlugs["stern"]);
+        Assert.Equal(1981, maiden1981.Year);
+        Assert.Equal("Iron Maiden", maiden1981.Title);
+    }
+
+    [Fact]
+    public async Task TitleSuperset_ConflictingYearAndEdition_DoesNotStampEither()
+    {
+        var maiden1981 = MakeMachine("G4yZN-MDEP7", "stern", "Iron Maiden", "Stern Electronics");
+        maiden1981.Year = 1981;
+        maiden1981.GroupId = "G4yZN";
+        maiden1981.EditionTokens = ["widebody"];
+        maiden1981.ManufacturerSlugs["stern"] = "iron-maiden";
+        var lotb2018 = MakeMachine("G4dOQ-M2018", "stern", "Iron Maiden: Legacy of the Beast", "Stern Pinball");
+        lotb2018.Year = 2018;
+        lotb2018.GroupId = "G4dOQ";
+        lotb2018.EditionTokens = ["pro", "premium", "le"];
+        StubPartition("stern", maiden1981, lotb2018);
+
+        var result = await _service.ReconcileAsync(CatalogOf(new GameRecord
+        {
+            GameId = "game_iron-maiden",
+            Title = "Iron Maiden",
+            Slug = "iron-maiden",
+            GamePageUrl = "https://sternpinball.com/game/iron-maiden/",
+            ReleaseYear = 1981,
+            Editions = { new EditionInfo { Name = "LE" } },
+        }), CancellationToken.None);
+
+        Assert.Equal(1, result.AmbiguousTitle);
+        Assert.Equal(0, result.Upserts);
+        Assert.Equal("iron-maiden", maiden1981.ManufacturerSlugs["stern"]);
+        Assert.Empty(lotb2018.ManufacturerSlugs);
+    }
+
+    [Fact]
     public async Task AmbiguousTitle_LogsAndSkips()
     {
         // Two Machines in the same partition with the same normalized
@@ -291,6 +388,35 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(1, result.MatchedByGroup);
         Assert.Equal(0, result.AmbiguousTitle);
         Assert.Equal(2, result.Upserts);
+        Assert.Equal("godzilla", pro.ManufacturerSlugs["stern"]);
+        Assert.Equal("godzilla", premLe.ManufacturerSlugs["stern"]);
+    }
+
+    [Fact]
+    public async Task SameGroupSlugAlreadySet_SecondReconcile_KeepsSlugOnEveryBase()
+    {
+        // The slug fast path returns only the first holder. A later reconcile
+        // of a page that also carries a year must not treat the other edition
+        // as a stale stamp and delete godzilla from Premium/LE.
+        var pro = MakeMachine("GweeP-MW95j", "stern", "Godzilla (Pro)");
+        pro.GroupId = "GweeP"; pro.Year = 2021;
+        pro.ManufacturerSlugs["stern"] = "godzilla";
+        var premLe = MakeMachine("GweeP-Ml9pZ", "stern", "Godzilla (Premium/LE)");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+        premLe.ManufacturerSlugs["stern"] = "godzilla";
+        StubPartition("stern", pro, premLe);
+
+        var result = await _service.ReconcileAsync(CatalogOf(new GameRecord
+        {
+            GameId = "game_godzilla",
+            Title = "Godzilla",
+            Slug = "godzilla",
+            GamePageUrl = "https://sternpinball.com/game/godzilla/",
+            ReleaseYear = 2021,
+            Editions = { new EditionInfo { Name = "Pro" }, new EditionInfo { Name = "Premium" } },
+        }), CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedBySlug);
         Assert.Equal("godzilla", pro.ManufacturerSlugs["stern"]);
         Assert.Equal("godzilla", premLe.ManufacturerSlugs["stern"]);
     }
@@ -751,6 +877,66 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(2, result.Upserts);
         Assert.Equal("iron-man", pro.ManufacturerSlugs["stern"]);
         Assert.Equal("iron-man", vault.ManufacturerSlugs["stern"]);
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_ShorterTitleWithSupersetSibling_IsNotStamped()
+    {
+        var maiden1981 = MakeMachine("G4yZN-MDEP7", "stern", "Iron Maiden");
+        maiden1981.Year = 1981;
+        maiden1981.GroupId = "G4yZN";
+        var lotb2018 = MakeMachine("G4dOQ-M2018", "stern", "Iron Maiden: Legacy of the Beast");
+        lotb2018.Year = 2018;
+        lotb2018.GroupId = "G4dOQ";
+        StubPartition("stern", maiden1981, lotb2018);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/iron-maiden/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.Ambiguous);
+        Assert.Equal(0, result.Upserts);
+        Assert.Empty(maiden1981.ManufacturerSlugs);
+        Assert.Empty(lotb2018.ManufacturerSlugs);
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_ShorterEditionFamilyWithSupersetSibling_IsNotStamped()
+    {
+        var pro = MakeMachine("G4yZN-PRO", "stern", "Iron Maiden");
+        pro.GroupId = "G4yZN";
+        var le = MakeMachine("G4yZN-LE", "stern", "Iron Maiden");
+        le.GroupId = "G4yZN";
+        var lotb = MakeMachine("G4dOQ-M2018", "stern", "Iron Maiden: Legacy of the Beast");
+        lotb.GroupId = "G4dOQ";
+        StubPartition("stern", pro, le, lotb);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/iron-maiden/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.Ambiguous);
+        Assert.Equal(0, result.MatchedGroup);
+        Assert.Equal(0, result.Upserts);
+        Assert.Empty(pro.ManufacturerSlugs);
+        Assert.Empty(le.ManufacturerSlugs);
+        Assert.Empty(lotb.ManufacturerSlugs);
     }
 
     [Fact]

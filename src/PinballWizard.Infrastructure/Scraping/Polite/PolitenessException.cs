@@ -45,4 +45,10 @@ public enum PolitenessViolation
 
     /// <summary>The source returned HTTP 429 too many times in a row; we abort to avoid worsening the situation.</summary>
     TooMany429Responses,
+
+    /// <summary>The source's <c>Retry-After</c> asks us to wait longer than the configured budget; we stop rather than sleep past it.</summary>
+    RetryAfterExceedsBudget,
+
+    /// <summary>The source answered with a bot-protection challenge (e.g. Vercel / Cloudflare checkpoint). Retrying cannot pass it; an operator allowance is needed.</summary>
+    BotChallenge,
 }

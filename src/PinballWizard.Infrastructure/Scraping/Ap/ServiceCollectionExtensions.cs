@@ -36,7 +36,9 @@ public static class ServiceCollectionExtensions
             var ap = sp.GetRequiredService<IOptions<ApOptions>>().Value;
             client.BaseAddress = new Uri(ap.BaseUrl);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+            // Sitemap XML and the WordPress game-page category JSON share this client.
             client.DefaultRequestHeaders.Accept.ParseAdd("application/xml");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 

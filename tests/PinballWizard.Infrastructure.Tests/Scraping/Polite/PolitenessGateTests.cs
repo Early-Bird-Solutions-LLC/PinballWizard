@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Scraping.Polite;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Scraping.Polite;
@@ -26,15 +27,21 @@ public sealed class PolitenessGateTests
     private static RobotsTxtCache CreateRobotsCache(string? robotsBody = null) =>
         new(new HttpClient(new StubRobotsHandler(robotsBody)), Options.Create(DefaultOptions), NullLogger<RobotsTxtCache>.Instance);
 
-    private static PolitenessGate CreateGate(PolitenessOptions? options = null, RobotsTxtCache? robots = null)
+    private static PolitenessGate CreateGate(
+        PolitenessOptions? options = null,
+        RobotsTxtCache? robots = null,
+        TimeProvider? timeProvider = null)
     {
         var opts = options ?? DefaultOptions;
         var resolver = new DefaultPerSourcePolitenessResolver(Options.Create(opts));
         return new PolitenessGate(
             robots ?? CreateRobotsCache(),
             resolver,
-            NullLogger<PolitenessGate>.Instance);
+            NullLogger<PolitenessGate>.Instance,
+            timeProvider);
     }
+
+    private static readonly DateTimeOffset T0 = new(2026, 9, 27, 11, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task AcquireForRequestAsync_FirstAcquire_DoesNotDelay()
@@ -157,11 +164,11 @@ public sealed class PolitenessGateTests
 
         await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
         await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
-        Assert.Equal(2, gate.ConsecutiveTooManyRequests);
+        Assert.Equal(2, gate.GetConsecutiveTooManyRequests(url));
 
         await gate.ReportResponseAsync(url, HttpStatusCode.OK, retryAfter: null, CancellationToken.None);
 
-        Assert.Equal(0, gate.ConsecutiveTooManyRequests);
+        Assert.Equal(0, gate.GetConsecutiveTooManyRequests(url));
     }
 
     [Fact]
@@ -188,11 +195,134 @@ public sealed class PolitenessGateTests
         var url = new Uri("https://example.com/x");
 
         await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
-        Assert.Equal(1, gate.ConsecutiveTooManyRequests);
+        Assert.Equal(1, gate.GetConsecutiveTooManyRequests(url));
 
         // 404 is not a rate-limit signal — streak unchanged.
         await gate.ReportResponseAsync(url, HttpStatusCode.NotFound, retryAfter: null, CancellationToken.None);
-        Assert.Equal(1, gate.ConsecutiveTooManyRequests);
+        Assert.Equal(1, gate.GetConsecutiveTooManyRequests(url));
+    }
+
+    [Fact]
+    public async Task ReportResponseAsync_429WithRetryAfter_NextAcquireForOriginWaitsThatLong()
+    {
+        var time = new AutoAdvancingTimeProvider(T0);
+        var gate = CreateGate(timeProvider: time);
+        var url = new Uri("https://example.com/x");
+
+        await using (await gate.AcquireForRequestAsync(url, CancellationToken.None))
+        {
+            await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, TimeSpan.FromSeconds(7), CancellationToken.None);
+        }
+
+        await using (await gate.AcquireForRequestAsync(url, CancellationToken.None))
+        {
+        }
+
+        // The Retry-After (7 s) dominates the 250 ms pacing delay, and the report
+        // itself did not sleep — the wait belongs to the next request.
+        Assert.Equal(new[] { TimeSpan.FromSeconds(7) }, time.Waits);
+        Assert.Equal(T0 + TimeSpan.FromSeconds(7), time.GetUtcNow());
+    }
+
+    [Fact]
+    public async Task ReportResponseAsync_429WithoutRetryAfter_AppliesDoublingPolicyBackoff()
+    {
+        var options = DefaultOptions;
+        options.RateLimitBackoffMs = 30_000;
+        options.Max429Streak = 3;
+        var time = new AutoAdvancingTimeProvider(T0);
+        var gate = CreateGate(options, timeProvider: time);
+        var url = new Uri("https://example.com/x");
+
+        for (var i = 0; i < 3; i++)
+        {
+            await using (await gate.AcquireForRequestAsync(url, CancellationToken.None))
+            {
+                await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
+            }
+        }
+        await using (await gate.AcquireForRequestAsync(url, CancellationToken.None))
+        {
+        }
+
+        Assert.Equal(
+            new[] { TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(120) },
+            time.Waits);
+    }
+
+    [Fact]
+    public async Task ReportResponseAsync_PolicyBackoff_IsCappedAtMaxRetryAfter()
+    {
+        var options = DefaultOptions;
+        options.RateLimitBackoffMs = 60_000;
+        options.MaxRetryAfterSeconds = 90;
+        var time = new AutoAdvancingTimeProvider(T0);
+        var gate = CreateGate(options, timeProvider: time);
+        var url = new Uri("https://example.com/x");
+
+        await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
+        await gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
+        await using (await gate.AcquireForRequestAsync(url, CancellationToken.None))
+        {
+        }
+
+        // 60 s then 120 s requested; 120 s is capped to the 90 s budget.
+        Assert.Equal(new[] { TimeSpan.FromSeconds(90) }, time.Waits);
+    }
+
+    [Fact]
+    public async Task ReportResponseAsync_RetryAfterBeyondBudget_ThrowsInsteadOfSleeping()
+    {
+        var options = DefaultOptions;
+        options.MaxRetryAfterSeconds = 600;
+        var time = new AutoAdvancingTimeProvider(T0);
+        var gate = CreateGate(options, timeProvider: time);
+        var url = new Uri("https://example.com/x");
+
+        var ex = await Assert.ThrowsAsync<PolitenessException>(() =>
+            gate.ReportResponseAsync(url, HttpStatusCode.TooManyRequests, TimeSpan.FromHours(2), CancellationToken.None));
+
+        Assert.Equal(PolitenessViolation.RetryAfterExceedsBudget, ex.Violation);
+        Assert.Contains("example.com", ex.Message, StringComparison.Ordinal);
+        Assert.Empty(time.Waits);
+    }
+
+    [Fact]
+    public async Task ReportResponseAsync_429Streak_IsTrackedPerOrigin()
+    {
+        var options = DefaultOptions;
+        options.Max429Streak = 1;
+        var gate = CreateGate(options, timeProvider: new AutoAdvancingTimeProvider(T0));
+        var limited = new Uri("https://limited.example.com/x");
+        var healthy = new Uri("https://healthy.example.com/x");
+
+        await gate.ReportResponseAsync(limited, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
+
+        // A success on another origin neither resets the limited origin's streak
+        // nor is the healthy origin charged for the limited one's 429.
+        await gate.ReportResponseAsync(healthy, HttpStatusCode.OK, retryAfter: null, CancellationToken.None);
+        Assert.Equal(1, gate.GetConsecutiveTooManyRequests(limited));
+        Assert.Equal(0, gate.GetConsecutiveTooManyRequests(healthy));
+
+        await gate.ReportResponseAsync(healthy, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None);
+        var ex = await Assert.ThrowsAsync<PolitenessException>(() =>
+            gate.ReportResponseAsync(limited, HttpStatusCode.TooManyRequests, retryAfter: null, CancellationToken.None));
+        Assert.Equal(PolitenessViolation.TooMany429Responses, ex.Violation);
+    }
+
+    [Fact]
+    public async Task ReportResponseAsync_429Backoff_DoesNotDelayOtherOrigins()
+    {
+        var time = new AutoAdvancingTimeProvider(T0);
+        var gate = CreateGate(timeProvider: time);
+
+        await gate.ReportResponseAsync(new Uri("https://limited.example.com/x"), HttpStatusCode.TooManyRequests,
+            TimeSpan.FromSeconds(45), CancellationToken.None);
+        await using (await gate.AcquireForRequestAsync(new Uri("https://other.example.com/x"), CancellationToken.None))
+        {
+        }
+
+        Assert.Empty(time.Waits);
     }
 
     [Fact]

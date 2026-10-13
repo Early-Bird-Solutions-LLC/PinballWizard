@@ -77,7 +77,9 @@ public sealed class FileDownloader : IFileDownloader
             // applies the per-origin delay + robots check before the request (throws
             // PolitenessException on a robots disallow), and disposing the lease stamps
             // "last request time" so the next download to this origin is paced.
-            // Mirrors PoliteScraperBase.SendPolitelyAsync.
+            // Unlike PoliteScraperBase.SendPolitelyAsync it never re-sends after a
+            // 429: its client keeps the host pipeline, and the gate's recorded
+            // backoff paces the next download to the origin instead.
             await using var lease = await _politeness.AcquireForRequestAsync(uri, cancellationToken).ConfigureAwait(false);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, fileUrl);
@@ -93,10 +95,11 @@ public sealed class FileDownloader : IFileDownloader
             using var response = await _httpClient.SendAsync(request,
                 HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-            // Feed the response status into the gate's 429-streak tracker (and honor
-            // any Retry-After) before we act on the status ourselves.
+            // Feed the response status into the gate's 429-streak tracker (which records
+            // any Retry-After as this origin's backoff) before we act on the status ourselves.
             await _politeness.ReportResponseAsync(
-                uri, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken).ConfigureAwait(false);
+                uri, response.StatusCode, RateLimitSignals.GetRetryAfter(response.Headers, DateTimeOffset.UtcNow),
+                cancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.NotModified)
             {

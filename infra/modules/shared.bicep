@@ -112,20 +112,23 @@ param playwrightServiceUrl string = ''
 // and every non-empty string is treated as a workspace URL, so there was no value an
 // operator could set to disable the workspace path while deployPhase2 stayed true.
 //
-// That matters more here than it would elsewhere because ADR-0056 deliberately has NO
-// local-Chromium fallback — a workspace outage fails the scrape loudly. Without this
-// flag the only escape from a misbehaving workspace would be deleting the resource or
-// shipping a code change; with it, the rollback is a parameter flip and a redeploy, and
-// it is non-destructive (the workspace resource stays put, so flipping back does not
+// That matters more here than it would elsewhere because ADR-0056 still has no
+// local-Chromium fallback for a workspace that was reached and then failed — that
+// outage fails the scrape loudly. (The #920 authentication failure is the exception:
+// it is logged and metered, then the factory launches local Chromium. A workspace
+// that authenticates and then misbehaves does not take that path.) Without this
+// flag the only escape from that outage would be deleting the resource or shipping
+// a code change; with it, the rollback is a parameter flip and a redeploy, and it
+// is non-destructive (the workspace resource stays put, so flipping back does not
 // re-provision anything).
 param useSternPlaywrightWorkspace bool = true
 
-@description('TEMPORARY diagnostic (#920): set true to enable verbose Azure SDK event-source tracing (PINWIZ_AZURE_SDK_DIAGNOSTICS) on the three Stern Playwright jobs. Default false. Turn back off once the workspace auth failure is resolved — it is high-volume and bills against the Log Analytics 1 GB cap.')
-// The Playwright SDK throws a bare `System.Exception: Could not authenticate with the
-// service.` with no inner exception and no status code — byte-identical whether the
-// caller has no RBAC, the wrong role, or is refused for a non-identity reason. Azure.Core's
-// event source carries the actual HTTP response, which is the missing fact. Scoped to the
-// three Stern jobs because they are the only consumers of the workspace path.
+@description('Opt-in verbose Azure SDK event-source tracing (PINWIZ_AZURE_SDK_DIAGNOSTICS) on the three Stern Playwright jobs. Default false. High-volume; bills against the Log Analytics 1 GB cap. Leave false except for a bounded diagnosis.')
+// #920 used this trace because the Playwright SDK threw a bare
+// `System.Exception: Could not authenticate with the service.` with no inner
+// exception and no status code. The cause was a missing Entra handshake (PR 979),
+// not a missing role, so the dev parameter is false again. Scoped to the three
+// Stern jobs because they are the only consumers of the workspace path.
 param enableAzureSdkDiagnostics bool = false
 
 @description('vCPU for the three Stern Playwright scraper jobs (stern-games, stern-bulletins, stern-refresh). Default 1.0, raised from the 0.5 every other job uses because a locally-launched Chromium OOMKilled stern-games against the 1 GiB that 0.5 vCPU implies (#855). Memory is DERIVED from this — see sternPlaywrightJobMemory below. Only these three jobs are raised; the other ~17 CLI jobs stay at the 0.5/1Gi default.')
@@ -445,8 +448,8 @@ resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01'
 // Cosmos data-plane (Built-in Data Contributor 00000000-...-002 — the only
 // built-in data role; reads suffice but this is the project-standard data role
 // used for runtime item access, see the developer assignment + ragIndexer above).
-// Gated on deployPhase2 ONLY — deliberately NOT `&& deployAiSearch`. The 20 scheduled
-// CLI jobs are gated on deployPhase2 and now carry AZURE_CLIENT_ID, which pins every
+// Gated on deployPhase2 ONLY — deliberately NOT `&& deployAiSearch`. The scheduled
+// CLI jobs and the manual maintenance jobs are gated on deployPhase2 and now carry AZURE_CLIENT_ID, which pins every
 // DefaultAzureCredential call in those hosts to this UAMI. Cosmos is a Phase 1 resource,
 // so under a `deployAiSearch = false` override (a documented option in
 // main-shared.dev.local.bicepparam) the jobs would still exist, still authenticate as the
@@ -2087,7 +2090,7 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
   tags: tags
   properties: {
     displayName: 'PinballWizard — ACA Job failed'
-    description: 'A scheduled pinwiz-job-* Container App Job completed with condition Failed. The alert dimension names the job. Investigate via az containerapp job execution list -n <job>.'
+    description: 'A pinwiz-job-* Container App Job (scheduled or manual) completed with condition Failed. The alert dimension names the job. Investigate via az containerapp job execution list -n <job>.'
     severity: 2
     enabled: true
     // Daily evaluation over a matching 1-day window, with autoMitigate OFF, gives
@@ -2630,6 +2633,128 @@ resource linkerJobStorageBlobContrib 'Microsoft.Authorization/roleAssignments@20
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
     principalId: linkerJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// On-demand maintenance jobs (ADR-0057)
+// -----------------------------------------------------------------------------
+// Manual trigger, not a cron. Operators start one execution with
+// `az containerapp job start`. Same CLI image, UAMI, and env shape as the
+// nightly linker. No output is added: shared.bicep is already at the Bicep
+// linter's 64-output ceiling (see the scraper job outputs below).
+
+module relinkAllJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'relink-all-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-relink-all-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    triggerType: 'Manual'
+    // A full --relink-all resets every Linked/NotInCatalog raw row and walks
+    // the corpus to a fixpoint (measured 3 passes on 2026-08-11). That is
+    // larger than the nightly incremental --download-and-link, whose timeout
+    // is 3600s, so this on-demand run gets two hours.
+    replicaTimeout: 7200
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--relink-all' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Storage__BlobEndpoint', value: storage.?properties.primaryEndpoints.blob ?? '' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+    ]
+  }
+}
+
+resource relinkAllJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'relink-all-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: relinkAllJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// Same blob role as the nightly linker. --relink-all reads page-1 bytes from
+// pinwiz-raw. AZURE_CLIENT_ID pins the call to acaIdentity, which already has
+// this role; the system-assigned grant matches the linker so either identity
+// can read.
+resource relinkAllJobStorageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: storage
+  name: guid(storage.id, relinkAllJob.?name ?? 'relink-all-job-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: relinkAllJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module gcRagIndexJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
+  name: 'gc-rag-index-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-gc-rag-index-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    triggerType: 'Manual'
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--gc-rag-index' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      {
+        name: 'AiSearch__Endpoint'
+        value: 'https://${searchService.?name ?? ''}.search.windows.net'
+      }
+      {
+        name: 'AiSearch__IndexName'
+        value: 'pinwiz-rag-v1'
+      }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+    ]
+  }
+}
+
+resource gcRagIndexJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'gc-rag-index-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: gcRagIndexJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// Deletes orphan chunks. Contributor, not Reader. Same role id as the Stern
+// refresh job. Gated with the job so a search-off deploy does not leave an
+// assignment pointing at a missing principal.
+resource gcRagIndexJobSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, 'gc-rag-index-job-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: gcRagIndexJob.?outputs.jobPrincipalId ?? ''
     principalType: 'ServicePrincipal'
   }
 }
