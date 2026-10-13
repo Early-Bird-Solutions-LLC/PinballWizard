@@ -48,11 +48,16 @@ the documented standalone-CLI scrape path and made the rollout itself unsafe):
   pre-#855-fix behavior.
 - **`PLAYWRIGHT_SERVICE_URL` set:** connects to a remote Chromium instance on
   **Azure Playwright Workspaces** (`Microsoft.LoadTestService/playwrightWorkspaces`)
-  via `PlaywrightServiceBrowserClient.GetConnectOptionsAsync()` +
-  `BrowserType.ConnectAsync`. Auth is Entra-only (`SharedAzureCredential.Instance`,
-  the project's single shared `TokenCredential`) — the workspace resource sets
+  via `PlaywrightServiceBrowserClient.InitializeAsync()` then
+  `GetConnectOptionsAsync()` + `BrowserType.ConnectAsync`. Auth is Entra-only
+  (`ServiceAuthType.EntraId`, `SharedAzureCredential.Instance`, the project's
+  single shared `TokenCredential`) — the workspace resource sets
   `localAuth: 'Disabled'`, matching the Cosmos/App Insights `DisableLocalAuth`
-  convention elsewhere in this project.
+  convention elsewhere in this project. SDK 1.0.0 does not fetch the Entra token
+  inside `GetConnectOptionsAsync`; that method reads
+  `PLAYWRIGHT_SERVICE_ACCESS_TOKEN`. `InitializeAsync` acquires the token for
+  scope `https://management.core.windows.net/.default` and stores it there.
+  See the 2026-09-26 resolution of #920.
 
 This applies uniformly to all three scrapers and all four jobs that reach
 `PlaywrightFactory` (`stern-games`, `stern-bulletins`, `stern-refresh`, and the
@@ -61,17 +66,69 @@ endpoint is supplied the container's Chromium footprint (the multi-hundred-MiB p
 removed entirely rather than managed; the ACA job process then holds only the .NET
 process and a thin CDP client connection.
 
-**The two failure modes are handled differently, deliberately.** "No workspace
-configured" (§ above) is not a failure — it's the default, and it behaves exactly as
-this project did before #855. "Workspace configured but the connection attempt
-fails" is a real failure, and there is no local-Chromium fallback for it: the exception
-propagates, composing with #857's existing "fail a run that collects nothing rather
-than exit 0" behavior. Falling back to `LaunchAsync` *after a configured attempt fails*
-would mask a real outage (Azure Playwright Workspaces down on a night it was
-supposed to be used) behind data that looks like a clean local run — exactly what
-invariant #17 forbids. Conflating these two states — as an earlier revision did, by
-gating on `SharedAzureCredential.IsDevelopment` instead of the URL itself — was the
-defect pre-push review caught: it turned "not configured yet" into a hard failure too.
+**Failure modes are handled differently, deliberately.** "No workspace configured"
+(§ above) is not a failure — it's the default, and it behaves exactly as this project
+did before #855. "Workspace configured, the service was reached, and the connection
+then failed" is a real outage: the exception propagates, composing with #857's
+existing "fail a run that collects nothing rather than exit 0" behavior. Falling back
+to `LaunchAsync` after a configured workspace was reached and then failed would mask
+that outage behind data that looks like a clean local run — exactly what invariant #17
+forbids. Conflating "not configured" with "configured and failed" — as an earlier
+revision did, by gating on `SharedAzureCredential.IsDevelopment` instead of the URL
+itself — was the defect pre-push review caught: it turned "not configured yet" into a
+hard failure too.
+
+**AMENDED 2026-09-24 — authentication failure falls back to local Chromium (#920). SUPERSEDED 2026-09-25.**
+PR #972 logged and metered `Could not authenticate with the service`, then launched
+local Chromium and let the job exit 0. That carve-out is withdrawn. The record of why
+it shipped is below; it is not the current decision.
+
+The Stern jobs had been failing every night since August:
+`PlaywrightServiceBrowserClient.GetConnectOptionsAsync` throws
+`System.Exception: Could not authenticate with the service`. Azure SDK traces on the
+failing executions show IMDS/Cosmos/monitor tokens only — no Playwright scope, no
+request to `*.api.playwright.microsoft.com` — so on those runs the workspace was never
+contacted. Propagating the exception collected zero Stern pages: the yield guard
+correctly failed the job, and the catalog stopped updating. #972 treated that as a
+reason to continue on local Chromium (2 GiB jobs, driver leak fixed, the same path an
+unconfigured environment already uses), with an Error log and
+`pinwiz.scraper.workspace_connect_total` tagged `outcome=failure` /
+`fallback=local_chromium`. The factory cannot tell "no RBAC", "wrong role",
+"non-identity refusal", and "garbage endpoint" apart — the SDK sentence is
+byte-identical for all of them, and all of them fail inside `GetConnectOptionsAsync`
+before a browser session exists.
+
+**REVERSED 2026-09-25 — the configured provider is the only provider, and its failure fails the job.**
+The browser is an explicit choice, made before any attempt. `PLAYWRIGHT_SERVICE_URL`
+set (the `useSternPlaywrightWorkspace` default) configures Azure Playwright
+Workspaces. The URL absent — the kill switch set false, or an environment that
+was never given the variable — configures local Chromium. That absence is the
+local choice. It is not a recovery from a workspace failure.
+
+If the job is configured for Azure and authentication fails
+(`Could not authenticate with the service`), `AcquireBrowserAsync` logs the
+exception at Error, meters `outcome=failure`, and the exception propagates.
+Local Chromium is not started. Every other workspace connect failure propagates
+the same way. If the job is configured for local Chromium and that launch fails,
+the exception propagates and Azure Playwright is not contacted. Switching
+providers is not a mode. Logging and metering do not make a switch honest: a job
+that exits 0 has hidden the broken setup behind a successful scrape (invariant
+#17, OBS-01). Cancellation and the defensive missing-URL throw are still not
+metered.
+
+**RESOLVED 2026-09-26 — #920 was a missing Entra handshake, not a missing role.**
+Live state on `pinwiz-pw-dev-buutj` (workspace id `ec28b0b8-1aaa-4e11-9fc3-fae42d13c40e`,
+East US, `localAuth: Disabled`) already matches this Bicep: the shared UAMI
+`pinwiz-aca-id-dev` holds Playwright Workspace Contributor at workspace scope,
+assigned 2026-08-18 when the resource was created. The 2026-09-26 games execution
+with `PINWIZ_AZURE_SDK_DIAGNOSTICS` on requested Cosmos and Monitor tokens for
+that identity and never requested `https://management.core.windows.net/.default`.
+The stack is `GetConnectOptionsAsync` with no `EntraLifecycle.FetchEntraIdAccessToken`
+frame, which is the SDK path that throws when `PLAYWRIGHT_SERVICE_ACCESS_TOKEN`
+is empty. `PlaywrightFactory.AcquireEntraConnectOptionsAsync` calls
+`InitializeAsync` before `GetConnectOptionsAsync`. No role change and no access
+token. A credential or test-run failure still propagates; local Chromium is
+still not started.
 
 ### Why not tune the recycle instead
 
@@ -114,7 +171,10 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   configured.
 - **A new external dependency exists once a workspace is configured.** From that point
   on, the scrape depends on Azure Playwright Workspaces being reachable; an outage
-  fails the scrape loudly rather than degrading it (see above).
+  (the service was reached, then the connect failed) fails the scrape loudly rather
+  than degrading it. The #920 authentication failure is not a carve-out: it is logged
+  and metered, then the run fails. The 2026-09-24 local-Chromium fallback (PR #972)
+  was reversed on 2026-09-25.
 - **CORRECTED 2026-08-18 — the original claim here ("not computable from the ARM
   resource or its provider's operations") was wrong, and shipped unverified.** It
   described the create-time schema (`localAuth`, `regionalAffinity` only, per
@@ -187,8 +247,11 @@ nightly cadence — comfortably inside the project's $300–400/mo cap.
   **This is the change that actually activates #855.** Everything before it was inert by
   construction: the code gates on the URL's *presence*, so an empty value left every
   scraper on local Chromium. Once this deploys, the three Stern jobs connect to the
-  remote workspace, and per the no-fallback decision above a workspace outage now fails
-  those runs loudly rather than silently reverting to the OOM-prone local path.
+  remote workspace, and per the decision above a workspace outage (reached, then
+  failed) fails those runs loudly rather than silently reverting to the OOM-prone
+  local path. Authentication failure is the same case: the 2026-09-24 fallback was
+  reversed on 2026-09-25, so a configured workspace that cannot authenticate fails
+  the run too.
 
   Deriving the value also silently **removed a rollback** that nobody had named as one:
   while the endpoint was manual, clearing `playwrightServiceUrl` was how an operator put

@@ -292,12 +292,14 @@ minute **after** the recycle, which is the opposite of the expected behaviour �
 | `pinwiz.scraper.managed_heap_bytes` | Histogram | `scraper`, `phase` | Managed heap (`GC.GetTotalMemory`, no forced collection). Rising in step with working set implicates retained managed state (`ScrapedItem` / `DocumentRecord` / catalog); flat while working set climbs implicates native or child-process memory. |
 | `pinwiz.scraper.gen2_collections` | Histogram | `scraper`, `phase` | Cumulative gen-2 GC count at each sample. Separates "GC ran and could not reclaim" (live references held) from "GC never had reason to run". |
 | `pinwiz.scraper.chromium_descendant_rss_bytes` | Histogram | `scraper`, `phase` | Combined resident-set memory of every live descendant process (the Playwright Node.js driver, Chromium, its renderer/GPU children), summed via `/proc` on Linux. Reads the "≈ Chromium" row above instead of only inferring it by subtracting `UsageBytes − process_working_set_bytes` — but as an **upper bound**, not an exact match: per-process VmRSS double-counts pages Chromium's own processes share with each other (IPC buffers, V8 snapshot, shared libraries), which the cgroup-backed `UsageBytes` does not. Linux-only — absent (not zero) on a non-Linux dev run. |
-| `pinwiz.scraper.workspace_connect_total` | Counter | `outcome` (`success`/`failure`) | Azure Playwright Workspaces connection attempts from `PlaywrightFactory.GetBrowserAsync`. Emitted **only** when `PLAYWRIGHT_SERVICE_URL` is configured and a connection is genuinely attempted — absent means either the job never ran or it's running local Chromium (Development, or the `useSternPlaywrightWorkspace` kill switch set `false` — since 2026-08-19 the deployed Stern jobs receive a `PLAYWRIGHT_SERVICE_URL` derived in `infra/modules/shared.bicep` from the workspace's own `dataplaneUri`, so "no workspace configured yet" is no longer the explanation there), same absent-series convention as `links_discovered_total` below, not a failure signal on its own. On a job execution window where the workspace IS expected, a `failure` tag — or `success` tags going silent where they were previously present — is the signal to check. No alert rule wired to this yet; see ADR-0056. |
+| `pinwiz.scraper.workspace_connect_total` | Counter | `outcome` (`success`/`failure`) | Azure Playwright Workspaces connection attempts from `PlaywrightFactory.AcquireBrowserAsync`. Emitted **only** when `PLAYWRIGHT_SERVICE_URL` is configured and a connection is genuinely attempted — absent means either the job never ran or it's running local Chromium because no workspace is configured (Development, or the `useSternPlaywrightWorkspace` kill switch set `false` — since 2026-08-19 the deployed Stern jobs receive a `PLAYWRIGHT_SERVICE_URL` derived in `infra/modules/shared.bicep` from the workspace's own `dataplaneUri`, so "no workspace configured yet" is no longer the explanation there), same absent-series convention as `links_discovered_total` below, not a failure signal on its own. An authentication failure (#920) is `outcome=failure`: the exception is logged at Error and then propagates, so the job fails. It does not continue on local Chromium. Any other connect failure is the same `outcome=failure`, and the exception fails the run. On a job execution window where the workspace IS expected, a `failure` tag — or `success` tags going silent where they were previously present — is the signal to check. No alert rule wired to this yet; see ADR-0056. |
 
 `phase` ∈ `page` (after each page navigation) · `pre_recycle` / `post_recycle` (bracketing a
-context recycle plus a browser recycle — the browser half is skipped when
-`PLAYWRIGHT_SERVICE_URL` is configured, since there is no local Chromium to reclaim there,
-so in workspace mode the pair brackets the context recycle only; see ADR-0056).
+context recycle plus a browser recycle — the browser half is skipped only while the
+current browser is a workspace connection, since there is no local Chromium to reclaim
+there, so in that mode the pair brackets the context recycle only. An authentication
+failure does not switch the job onto local Chromium (#920, reversed 2026-09-25): the
+exception fails the run, and there is no browser to recycle. See ADR-0056).
 `scraper` is `ISourceScraper.Name` (the concrete type name for subclasses
 that do not implement `ISourceScraper`), carried identically by all four probes so they join
 to one another. The two yield instruments below also carry `scraper` (there, always
@@ -316,10 +318,13 @@ two series cannot be joined on `scraper`. `workspace_connect_total` above carrie
 > by page 20 of cycle 1) — a curve no fixed recycle interval could stabilize. Chromium now
 > runs on Azure Playwright Workspaces instead of inside the ACA job container (2 GiB on
 > the three Stern jobs since 2026-08-19, 1 GiB before that)
-> whenever `PLAYWRIGHT_SERVICE_URL` is configured (Development, and any environment
-> without that variable set, is unaffected — still local Chromium; see ADR-0056 for why
-> this is gated on the URL rather than on being deployed). When a workspace is
-> configured, `chromium_descendant_rss_bytes` correctly reads much lower — but not
+> whenever `PLAYWRIGHT_SERVICE_URL` is configured and the connection succeeds
+> (Development, and any environment without that variable set, is unaffected — still
+> local Chromium; see ADR-0056 for why this is gated on the URL rather than on being
+> deployed. An authentication failure does not run local Chromium: it is metered
+> `outcome=failure` and the job fails — #920, reversal of the 2026-09-24 fallback). When the
+> workspace connection succeeds, `chromium_descendant_rss_bytes` correctly reads much
+> lower — but not
 > literally zero: the Node.js Playwright driver process still runs locally in both modes
 > (that's how every Playwright language binding talks to a browser, local or remote), so
 > its own RSS (tens of MiB) is still a real, measured value. What's actually gone from the

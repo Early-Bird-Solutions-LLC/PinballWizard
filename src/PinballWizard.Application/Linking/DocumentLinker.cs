@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
@@ -670,8 +671,10 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
         switch (outcome)
         {
             case ResolutionResult.Resolved r:
-                return new LinkingResult(
+                var resolved = new LinkingResult(
                     raw.DocumentId, LinkStatus.Linked, strategy, [r.MachineId], FailureReason: null);
+                return AdjustForEraCollision(
+                    raw, filename, slug, mfrHint, [r.MachineId], strategy + "_era", ambiguity, proposed: resolved);
 
             case ResolutionResult.ResolvedFamily f:
                 var family = f.MachineIds.Where(_machinesById.ContainsKey)
@@ -689,8 +692,10 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                     editionStrategy, groupStrategy);
 
             case ResolutionResult.Ambiguous a:
-                ambiguity.Last = a;   // converted to needs_review by the no-tier-matched path
-                return null;
+                return AdjustForEraCollision(
+                    raw, filename, slug, mfrHint,
+                    a.Candidates.Select(c => c.MachineId).ToList(),
+                    strategy + "_era", ambiguity, proposed: null, ambiguous: a);
 
             case ResolutionResult.NoMatch:
                 return null;
@@ -700,6 +705,107 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                 throw new InvalidOperationException(
                     $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in Tier 1.");
         }
+    }
+
+    // Issue #596. A provenance slug or filename that is only the shared franchise
+    // ("iron-maiden") matches both eras. An edition token the other era does not
+    // carry selects the right machine. A slug that still sits on the shorter
+    // title does not — following it would cite that document for the wrong
+    // machine. No unique signal: leave the document unattached (needs_review),
+    // which is the same outcome the resolver's Ambiguous arm already produced.
+    private LinkingResult? AdjustForEraCollision(
+        RawDocumentRecord raw,
+        string filename,
+        string slug,
+        string? manufacturerKey,
+        IReadOnlyList<string> proposedIds,
+        string eraStrategy,
+        AmbiguityCapture ambiguity,
+        LinkingResult? proposed,
+        ResolutionResult.Ambiguous? ambiguous = null)
+    {
+        var candidates = MachinesForEra(proposedIds);
+        var groupLevel = EditionResolver.IsGroupLevelDoc(filename, raw.Source.LinkText);
+        var editionToken = groupLevel
+            ? null
+            : EditionResolver.ExtractDocumentEditionToken(filename, raw.Source.LinkText);
+        var choice = TitleSupersetEra.ForDocument(
+            candidates, editionToken, slug, manufacturerKey, groupLevel);
+
+        if (choice.Kind == TitleSupersetEra.ChoiceKind.NotApplicable)
+        {
+            if (proposed is not null) return proposed;
+            if (ambiguous is not null) ambiguity.Last = ambiguous;
+            return null;
+        }
+
+        if (choice.Kind == TitleSupersetEra.ChoiceKind.Reject)
+        {
+            _logger.LogInformation(
+                "DocumentLinker: {DocumentId} title-superset collision has no unique edition/year signal; not citing it for a different machine.",
+                raw.DocumentId);
+            ambiguity.Last = ambiguous ?? SynthesizeEraAmbiguity(candidates, slug);
+            return null;
+        }
+
+        var ids = choice.Machines.Select(m => m.Id).ToList();
+        if (proposed is not null && ids.Count == proposed.LinkedMachineIds.Count
+            && ids.All(id => proposed.LinkedMachineIds.Contains(id, StringComparer.Ordinal)))
+        {
+            return proposed;
+        }
+
+        _logger.LogInformation(
+            "DocumentLinker: {DocumentId} title-superset collision resolved to {MachineIds} via {Signal}.",
+            raw.DocumentId, string.Join(",", ids), choice.Signal);
+
+        var scope = ids.Count > 1 ? EditionScope.FranchiseWide : EditionScope.SingleEdition;
+        return new LinkingResult(raw.DocumentId, LinkStatus.Linked, eraStrategy, ids, FailureReason: null)
+        {
+            EditionScope = scope,
+        };
+    }
+
+    private List<Machine> MachinesForEra(IReadOnlyList<string> seedIds)
+    {
+        var map = new Dictionary<string, Machine>(StringComparer.Ordinal);
+        foreach (var seed in seedIds
+            .Where(id => _machinesById.ContainsKey(id))
+            .Select(id => _machinesById[id]))
+        {
+            map[seed.Id] = seed;
+            foreach (var other in _machinesById.Values.Where(other =>
+                string.Equals(other.PartitionKey, seed.PartitionKey, StringComparison.OrdinalIgnoreCase)
+                && (TitleSupersetEra.IsCrossGroupSuperset(seed, other)
+                    || TitleSupersetEra.IsCrossGroupSuperset(other, seed))))
+            {
+                map[other.Id] = other;
+            }
+        }
+
+        return map.Values.ToList();
+    }
+
+    private static string ProvenanceSlug(RawDocumentRecord raw)
+    {
+        if (raw.Game?.Slug is { Length: > 0 } gameSlug) return gameSlug;
+        foreach (var xref in raw.CrossReferences)
+        {
+            var slug = LinkingUtilities.ExtractGameSlugFromUrl(xref.AlsoFoundAt);
+            if (!string.IsNullOrEmpty(slug)) return slug;
+        }
+
+        return string.Empty;
+    }
+
+    private static ResolutionResult.Ambiguous SynthesizeEraAmbiguity(IReadOnlyList<Machine> machines, string slug)
+    {
+        var evidence = new ResolutionEvidence(
+            EvidenceKind.ProvenanceSlug, VariantKind.FranchiseTitle, slug, ResolutionStage.Exact);
+        var candidates = machines
+            .Select(m => new ResolutionCandidate(m.Id, m.Title, VariantKind.FranchiseTitle, m.Title))
+            .ToList();
+        return new ResolutionResult.Ambiguous(candidates, evidence);
     }
 
     // Shared edition-family dispatch used by Tier 1 (xref_slug) and Tier 2 (filename):
@@ -753,6 +859,7 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
     private LinkingResult? TryTier2ViaResolver(RawDocumentRecord raw, string filename, AmbiguityCapture ambiguity)
     {
         var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
+        var provenanceSlug = ProvenanceSlug(raw);
         var outcome = Resolver.Resolve(new ResolutionQuery(filename, EvidenceKind.Filename, mfrKey));
 
         switch (outcome)
@@ -768,11 +875,18 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                 if (_machinesById.TryGetValue(r.MachineId, out var resolvedMachine)
                     && IsEditionFamily([resolvedMachine]))
                 {
-                    return ResolveEditionFamily(raw, [resolvedMachine], filename, page1Text: null,
+                    var familyResult = ResolveEditionFamily(raw, [resolvedMachine], filename, page1Text: null,
                         "filename_resolver_edition", "filename_resolver_edition_group");
+                    if (familyResult is null) return null;
+                    return AdjustForEraCollision(
+                        raw, filename, provenanceSlug, mfrKey, familyResult.LinkedMachineIds,
+                        "filename_resolver_era", ambiguity, proposed: familyResult);
                 }
-                return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_resolver",
-                    [r.MachineId], FailureReason: null);
+                return AdjustForEraCollision(
+                    raw, filename, provenanceSlug, mfrKey, [r.MachineId],
+                    "filename_resolver_era", ambiguity,
+                    proposed: new LinkingResult(
+                        raw.DocumentId, LinkStatus.Linked, "filename_resolver", [r.MachineId], FailureReason: null));
 
             case ResolutionResult.ResolvedFamily f:
                 // Edition disambiguation still belongs to EditionResolver — the resolver
@@ -794,8 +908,10 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                     "filename_resolver_edition", "filename_resolver_edition_group");
 
             case ResolutionResult.Ambiguous a:
-                ambiguity.Last = a;   // converted to needs_review by the no-tier-matched path
-                return null;
+                return AdjustForEraCollision(
+                    raw, filename, provenanceSlug, mfrKey,
+                    a.Candidates.Select(c => c.MachineId).ToList(),
+                    "filename_resolver_era", ambiguity, proposed: null, ambiguous: a);
 
             case ResolutionResult.NoMatch:
                 return null;
@@ -914,10 +1030,16 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                     strategyName, raw.DocumentId, r.MachineId, r.Evidence.MatchedVariant);
                 // FranchiseWide mirrors the pre-migration page tier: single matches are
                 // never edition-resolved at the page tiers (only families are), so the
-                // scope default is preserved.
-                return new LinkingResult(raw.DocumentId, LinkStatus.Linked,
-                    $"{strategyName}_resolver", [r.MachineId], FailureReason: null)
-                    { EditionScope = EditionScope.FranchiseWide };
+                // scope default is preserved. The era guard still runs: a page that
+                // only says the shared franchise must not cite the other era when the
+                // filename names an edition that franchise doesn't carry (#596).
+                var pageFilename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
+                return AdjustForEraCollision(
+                    raw, pageFilename, ProvenanceSlug(raw), mfrKeyForQuery, [r.MachineId],
+                    $"{strategyName}_era", ambiguity,
+                    proposed: new LinkingResult(raw.DocumentId, LinkStatus.Linked,
+                        $"{strategyName}_resolver", [r.MachineId], FailureReason: null)
+                        { EditionScope = EditionScope.FranchiseWide });
 
             case ResolutionResult.ResolvedFamily f:
                 var family = f.MachineIds.Where(_machinesById.ContainsKey)
@@ -952,8 +1074,11 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
                     { EditionScope = EditionScope.FranchiseWide };
 
             case ResolutionResult.Ambiguous a:
-                ambiguity.Last = a;   // converted to needs_review by the no-tier-matched path
-                return null;
+                var pageName = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
+                return AdjustForEraCollision(
+                    raw, pageName, ProvenanceSlug(raw), mfrKeyForQuery,
+                    a.Candidates.Select(c => c.MachineId).ToList(),
+                    $"{strategyName}_era", ambiguity, proposed: null, ambiguous: a);
 
             case ResolutionResult.NoMatch:
                 return null;

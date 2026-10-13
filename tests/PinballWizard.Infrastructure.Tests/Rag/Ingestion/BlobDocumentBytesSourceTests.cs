@@ -1,10 +1,15 @@
+using System.Net;
+using System.Net.Http;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using PinballWizard.Core.Configuration;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Infrastructure.Rag.Ingestion;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
@@ -133,6 +138,65 @@ public sealed class BlobDocumentBytesSourceTests
         Assert.Equal(url, _fallback.LastUrl);
         // Blob store must NOT be probed — we don't have the sourceType to form a valid blob key.
         await _store.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OpenAsync_UrlInput_AcquiresPolitenessGate_AndSurfaces403()
+    {
+        // The change-feed path passes a manufacturer URL when no blob name is
+        // stored. That used to be a bare HttpClient.GetAsync. The decorator must
+        // still delegate, the gate must acquire before the send, and a 403 must
+        // propagate instead of coming back as document bytes.
+        var url = "https://spookypinball.com/wp-content/uploads/Halloween-and-Ultraman-Manual.pdf";
+        var gate = new FakePolitenessGate();
+        var acquiredBeforeSend = false;
+        var handler = new ForbiddenAfterAcquireHandler(() => acquiredBeforeSend = gate.Acquired.Count == 1);
+        var http = new HttpDocumentBytesSource(
+            new HttpClient(handler),
+            gate,
+            Options.Create(new PolitenessOptions()),
+            NullLogger<HttpDocumentBytesSource>.Instance);
+        var sut = new BlobDocumentBytesSource(
+            _store,
+            () => http,
+            NullLogger<BlobDocumentBytesSource>.Instance);
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            sut.OpenAsync(url, CancellationToken.None));
+
+        Assert.True(acquiredBeforeSend);
+        Assert.Equal(HttpStatusCode.Forbidden, ex.StatusCode);
+        Assert.Equal(new Uri(url), Assert.Single(gate.Acquired));
+        Assert.Equal(HttpStatusCode.Forbidden, Assert.Single(gate.Reported).Status);
+        Assert.Equal(1, handler.SendCount);
+        await _store.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    private sealed class ForbiddenAfterAcquireHandler : HttpMessageHandler
+    {
+        private readonly Action _onSend;
+
+        public int SendCount { get; private set; }
+
+        public ForbiddenAfterAcquireHandler(Action onSend) => _onSend = onSend;
+
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            SendCount++;
+            _onSend();
+            // Returned to HttpClient, which disposes it. Do not dispose here —
+            // a using would release the message before the caller reads the 403.
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new ByteArrayContent("blocked-by-waf"u8.ToArray()),
+                RequestMessage = request,
+            });
+        }
     }
 
     private sealed class RecordingFallback : IDocumentBytesSource

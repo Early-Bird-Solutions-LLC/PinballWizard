@@ -79,7 +79,8 @@ PowerShell users are unaffected. CI runs on Linux and is unaffected.
   - Valid types: `feat`, `fix`, `chore`.
   - Scope is a module name (e.g., `scraper`, `downloading`), never a ticket ID.
 - Include a body paragraph that explains *why*, not *what*.
-- No co-author lines.
+- Claude-authored commits end with a `Co-Authored-By: Claude <Model>
+  <noreply@anthropic.com>` trailer; the author stays the personal noreply.
 - Never push directly to `main`. Branch protection is enforced; the local
   hook will block it; CI will refuse to run; reviewers will refuse to merge.
 

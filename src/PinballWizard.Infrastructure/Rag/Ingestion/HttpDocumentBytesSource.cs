@@ -1,5 +1,8 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Rag.Ingestion;
 
@@ -15,20 +18,16 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // brings substantially larger PDFs into scope the fetch should be
 // migrated to a temp-file-backed stream.
 //
-// DELIBERATE EXCEPTION TO POLITE-BY-CONSTRUCTION: this client does
-// NOT route through `IPolitenessGate`. The polite-by-construction
-// invariant (CLAUDE.md § Locked invariants) targets the discovery /
-// crawl path — recurring traffic to source sites' link inventories.
-// Document re-downloads here are naturally rare: the pipeline's
-// `Skipped_HashUnchanged` short-circuit means a given URL only gets
-// re-fetched when the source body actually changes (typically once
-// at first ingest, never again until the manufacturer republishes).
-// At Phase 4 curated-subset scale (~7 machines × ~5 docs each) total
-// outbound is ~35 GETs over the worker's lifetime. The exception is
-// architectural, not an oversight; if Phase 4.5 corpus expansion
-// brings re-fetch frequency up, wrap the registered HttpClient in
-// the politeness gate at the `AddHttpClient<IDocumentBytesSource,
-// HttpDocumentBytesSource>` registration site.
+// POLITE-BY-CONSTRUCTION: this type extends `PoliteScraperBase` and
+// sends through `SendPolitelyAsync` (robots.txt, per-origin throttle,
+// 429 reporting). It is not an `ISourceScraper`; the base is the
+// shared choke point for any outbound manufacturer HTTP call,
+// including the ingestion fallback that used to call
+// `HttpClient.GetAsync` directly (#760). `ResponseHeadersRead` keeps
+// a large PDF from being buffered by HttpClient before we copy it.
+// A non-success status — including 403 from a manufacturer that
+// refuses Azure egress — throws. Callers dead-letter that exception.
+// This method never substitutes an empty or placeholder stream.
 //
 // SSRF hardening: documentUrl flows in from the Cosmos
 // `scraped_documents` change feed, which only the scraper's MI can
@@ -42,20 +41,21 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // `http://` URLs are silently upgraded to `https://` before this
 // check to accommodate legacy Cosmos records captured before the
 // scraper enforced https; the guard therefore rejects all non-http
-// and non-https schemes (ftp://, file://, etc.).
-public sealed class HttpDocumentBytesSource : IDocumentBytesSource
+// and non-https schemes (ftp://, file://, etc.). Rejected URLs
+// never reach the gate or the wire.
+public sealed class HttpDocumentBytesSource : PoliteScraperBase, IDocumentBytesSource
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogger<HttpDocumentBytesSource> _logger;
 
     public HttpDocumentBytesSource(
         HttpClient httpClient,
+        IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
         ILogger<HttpDocumentBytesSource> logger)
+        : base(politeness, politenessOptions.Value, logger)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
-        ArgumentNullException.ThrowIfNull(logger);
         _httpClient = httpClient;
-        _logger = logger;
     }
 
     public async Task<Stream> OpenAsync(
@@ -70,7 +70,7 @@ public sealed class HttpDocumentBytesSource : IDocumentBytesSource
         // gopher://, etc.), so the security invariant is preserved.
         if (documentUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("RAG document fetch: upgrading http:// to https:// for '{Url}' — legacy Cosmos record.", documentUrl);
+            Logger.LogWarning("RAG document fetch: upgrading http:// to https:// for '{Url}' — legacy Cosmos record.", documentUrl);
             documentUrl = string.Concat("https://", documentUrl.AsSpan(7));
         }
 
@@ -84,11 +84,20 @@ public sealed class HttpDocumentBytesSource : IDocumentBytesSource
                 nameof(documentUrl));
         }
 
-        _logger.LogDebug("RAG document fetch: GET {Url}", documentUrl);
+        Logger.LogDebug("RAG document fetch: GET {Url}", parsed);
 
-        using var response = await _httpClient
-            .GetAsync(documentUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, parsed);
+        using var response = await SendPolitelyAsync(
+            _httpClient,
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+
+        // 403 Forbidden (Azure-egress blocks), other 4xx, and 5xx are failures.
+        // EnsureSuccessStatusCode throws HttpRequestException with the status code
+        // so the change-feed dead-letter records the real error. Do not map a
+        // failure onto an empty stream. SendPolitelyAsync has already reported
+        // the status to the gate, including a 429-streak abort.
         response.EnsureSuccessStatusCode();
 
         var buffer = new MemoryStream();

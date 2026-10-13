@@ -79,7 +79,7 @@ The full set of community destinations the Wizard knows about. Add destinations 
 | --- | --- | --- |
 | Stern Pinball | `sternpinball.com` | Game pages at `/game/{slug}/`. Service bulletins at `/support/service-bulletins/`. Manuals at `/manuals/`. |
 | Jersey Jack Pinball | `jerseyjackpinball.com` | Game pages under `/collections/`. WP-REST + JSON-LD. |
-| American Pinball | `american-pinball.com` | DOM-heuristic site. |
+| American Pinball | `american-pinball.com` | WordPress site (Yoast sitemap index + WP-REST). Game pages at root permalinks `/{slug}/`. DOM-heuristic extraction. |
 | Spooky Pinball | `spookypinball.com` | DOM-heuristic site. |
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter. |
 | Barrels of Fun | `barrelsoffun.com` (storefront `shop.kollectfun.com`) | Distinguish storefront vs. brand site when linking — for "where to buy," storefront; for "about the company," brand site. |

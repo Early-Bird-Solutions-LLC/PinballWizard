@@ -273,3 +273,60 @@ run.
 - Neutral: existing single-edition machines are unaffected (no group →
   no fold; the negative-fixture test "Indiana Jones (The Pinball
   Adventure)" guards against spurious folding).
+
+---
+
+## Amendment 2 — Title-superset era choice (2026-09-26)
+
+**Status:** Accepted
+**Driver:** issue #596. Stern's `/game/iron-maiden/` page is the 2018
+*Iron Maiden: Legacy of the Beast* game, but the page title is the bare
+franchise "Iron Maiden". Pass 2's exact franchise match is unique against
+the 1981 machine (the 2018 title is a subtitle-superset, so it does not
+compare equal), and the slug `iron-maiden` was stamped on `G4yZN`. The
+linker then cited the 2018 LE manual for the 1981 machine. Both machines
+are Stern, so the manufacturer filter cannot separate them.
+
+### Decision
+
+When the scraped title is both an exact catalog title and a subtitle-prefix
+of a different OPDB group in the same manufacturer partition
+(`Title : subtitle` or `Title - subtitle`):
+
+1. If the page carries `ReleaseYear` and/or edition names, and those signals
+   agree on exactly one group, reconcile onto that group. A slug already
+   sitting on the other era (a cross-group subtitle sibling) is removed in
+   the same run. A slug shared by a same-group edition family is not
+   removed — the slug fast path returns one holder, and the siblings keep
+   the slug.
+2. If the signals contradict each other or match no group, the game is
+   `AmbiguousTitle`. The shorter title is not stamped. An existing slug is
+   left in place — this path refuses to guess, and it does not wipe a slug
+   it could not replace.
+3. If the page carries neither signal, the pre-amendment slug and title
+   paths are unchanged. A correct short-title slug (Star Trek beside
+   Star Trek: The Next Generation) keeps matching, and the reconciler parity
+   fixture — which has no `ReleaseYear` — does not move.
+
+The linker applies the same collision to a document, using the document's
+own edition token (filename, then link text). A token only one era carries
+selects that era, including when the slug still sits on the other era. With
+no edition token, a slug owned by the *longer* title is trusted (the
+reconciler has moved it); a slug owned only by the shorter title is not
+followed. No unique signal leaves the document `NeedsReview` rather than
+citing it for the other machine.
+
+Provenance fields (`Source`, `DiscoveryUrl`, `DiscoveryContext`, `Game.Slug`)
+are not rewritten by either step.
+
+### Consequences
+
+- Positive: the 2018 Iron Maiden manual stops being cited for the 1981
+  machine, and the manufacturer slug follows the game the page actually is.
+- Negative: live data already linked under the 1981 id is unchanged until
+  an operator re-runs Stern game-page reconciliation, `--relink-all`, and
+  `--gc-rag-index`. This amendment does not migrate Cosmos or the index.
+- Neutral: same-group edition families and cross-manufacturer title
+  collisions are unchanged. Backfill, which has no year or edition signal,
+  refuses to stamp a shorter title that has a subtitle-superset sibling;
+  it still does not move a slug that is already present.
