@@ -60,7 +60,7 @@ name: Renovate lockfiles
 # kind survives into later steps — GITHUB_TOKEN included. Deleting the push's
 # explicit auth therefore fails for lack of any credential at all, not because
 # GITHUB_TOKEN was read-only. The App token is also the only write credential
-# reaching GIT; it is additionally exposed as an env var to the probe step.
+# reaching git, and it reaches only the push step, via env.
 #
 # WHY A GITHUB APP RATHER THAN A PERSONAL ACCESS TOKEN
 #
@@ -271,47 +271,41 @@ jobs:
         # job needs means a later widening of the App cannot silently widen a token
         # held by a job that runs branch-controlled MSBuild logic. It also fails
         # earlier and more precisely: an App left at Contents:Read fails at MINT
-        # with a 422 naming the permission, rather than at the probe below.
+        # with a 422 naming the permission.
+        #
+        # That mint-time failure is deliberately the only check on the credential's
+        # CAPABILITY — presence is still checked by the step above. An earlier version also probed `GET /repos/{owner}/{repo}` for
+        # `.permissions.push`, which review flagged as rejecting a correctly installed
+        # App. The reviewer's mechanism: that endpoint wants `metadata: read`, which
+        # they held a contents-only token does not carry — so the job would die after
+        # a successful mint, never reach the push, and blame a missing install.
+        #
+        # That mechanism is UNVERIFIED, and is attributed rather than restated as
+        # fact. GitHub's permission table does place GET /repos under Metadata:read,
+        # but whether a token minted with `permissions: {contents: write}` still
+        # carries metadata implicitly is undocumented, and two independent reviews
+        # failed to settle it.
+        #
+        # The probe is removed regardless, because the decision does not depend on
+        # resolving that. Pinning the permission makes mint FAIL earlier for both
+        # cases the probe covered (App not installed here, Contents not write), and
+        # fast rather than burning retries (the action only retries >=500 / network
+        # errors), so a misconfigured App is rejected in seconds.
+        #
+        # Be careful what that buys, because it is less than it first looks. The 422's
+        # message is `The permissions requested are not granted to this installation.`
+        # — it does NOT name which permission; what names it is Actions echoing this
+        # step's `with:` inputs beside the failure. And the not-installed case reports
+        # a bare `Not Found` (the action has no error handling on the repository path,
+        # unlike the enterprise one), which is LESS legible than the probe's hand-written
+        # message was. So this is not a pure win: the Summary step names that cause in
+        # prose to compensate. Net: the probe was redundant if the finding was wrong,
+        # and harmful if it was right.
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.LOCKFILE_APP_CLIENT_ID }}
           private-key: ${{ secrets.LOCKFILE_APP_KEY }}
           permission-contents: write
-
-      - name: Verify the minted token can actually write
-        # Minting succeeding is not the same as the App being installed here with
-        # the access this job needs. Probe it now so a misconfiguration is named in
-        # seconds rather than arriving minutes later as a bare 403 from git.
-        #
-        # UNVERIFIED premise, stated rather than assumed away: this reads
-        # `.permissions.push` from GET /repos/{owner}/{repo}, and whether that field
-        # is populated for an INSTALLATION token could not be checked without
-        # minting one. If it comes back null this step fails on a correctly
-        # configured App — i.e. it would name the wrong cause, which is exactly what
-        # it exists to avoid. Confirm on the first real run and correct this comment.
-        # What it cannot see either way: branch protection or rulesets on
-        # renovate/**, and the workflows:write case described in the header.
-        shell: bash
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          # Through env, not interpolated into the script body — the discipline
-          # every other value in this file follows.
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        run: |
-          set -euo pipefail
-          if ! PERMS=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.permissions.push' 2>&1); then
-            echo "::error::The App token could not read repos/${GITHUB_REPOSITORY}."
-            echo "::error::Most likely the App is not installed on this repository, or is"
-            echo "::error::installed without access to it. gh reported: ${PERMS}"
-            exit 1
-          fi
-          if [ "${PERMS}" != "true" ]; then
-            echo "::error::The App token has no push access to ${GITHUB_REPOSITORY}."
-            echo "::error::Grant the App Repository -> Contents: Read and write; it is almost"
-            echo "::error::certainly still set to Read."
-            exit 1
-          fi
-          echo "App token has push access (app: ${APP_SLUG})."
 
       - name: Checkout the Renovate branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -485,14 +479,19 @@ jobs:
             echo "::error::commit has a different author, so it triggers a fresh run of this"
             echo "::error::workflow which regenerates against the new versions."
             echo "::error::"
-            echo "::error::If this repeats on a branch nobody is touching, suspect"
-            echo "::error::the App instead - uninstalled from this repo, or Contents downgraded"
-            echo "::error::to read-only."
+            echo "::error::If this repeats on a branch nobody is touching, suspect a"
+            echo "::error::branch protection rule or ruleset on renovate/** - a required"
+            echo "::error::review, a signed-commits requirement, or this App missing from"
+            echo "::error::a bypass list. Nothing before the push can detect those."
+            echo "::error::"
+            echo "::error::Do NOT start by checking whether the App is uninstalled or"
+            echo "::error::Contents is read-only: minting succeeded earlier in this run,"
+            echo "::error::so neither is possible here."
             echo "::error::"
             echo "::error::If it fails ONLY on branches where Renovate edited"
             echo "::error::.github/workflows/** (action-pin bumps), that is the workflows"
-            echo "::error::case, NOT a Contents problem - the probe above will have reported"
-            echo "::error::push access as fine and it was telling the truth. Grant the App"
+            echo "::error::case, NOT a Contents problem - minting succeeded, so Contents is"
+            echo "::error::already write. Grant the App"
             echo "::error::Workflows: Read and write AND add permission-workflows: write to"
             echo "::error::the mint step; see OPERATOR SETUP in this file's header."
             exit 1
@@ -516,7 +515,9 @@ jobs:
               echo "### Lock-file regeneration FAILED (${OUTCOME})"
               echo ""
               echo "Likely causes, in the order they occur:"
-              echo "- App credentials missing, or the App lacks Contents: write"
+              echo "- App credentials missing, the App not installed on this"
+              echo "  repository, or the App lacks Contents: write. Mint fails for all"
+              echo "  three; the not-installed case shows only a bare Not Found."
               echo "- the lock-file pathspec no longer matches this repo"
               echo "- \`dotnet restore\` failed for this branch's package versions"
               echo "- the push was rejected because Renovate force-pushed concurrently"
