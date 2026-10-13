@@ -27,20 +27,6 @@ public static class ApGamePageExtractor
 
     private static readonly string[] DownloadableExtensions = [".pdf", ".zip", ".spk"];
 
-    // Both registrable domains. After the www redirect the game page is
-    // americanpinball.com; flyers still live on american-pinball.com and
-    // bulletins on its s4 CDN subdomain. A suffix match without the leading
-    // dot would also accept not-american-pinball.com, so the dot is required.
-    private static readonly string[] ApDocumentDomains =
-    [
-        "americanpinball.com",
-        "american-pinball.com",
-    ];
-
-    // Hot Wheels and Barry O's release notes are served from this HubSpot
-    // custom domain (/hubfs/...), not from hubspotusercontent.
-    private const string OrbitGamesHubSpotHost = "my.orbitgames.fun";
-
     /// <summary>
     /// Extracts a <see cref="GameRecord"/> from a game page. Returns
     /// null if the page doesn't appear to be a real game page (no
@@ -102,7 +88,7 @@ public static class ApGamePageExtractor
 
             if (!HasDownloadableExtension(absolute.AbsolutePath)) continue;
 
-            if (!IsAllowedDownloadHost(absolute.Host))
+            if (!ApHosts.IsAllowedDocumentHost(absolute.Host))
             {
                 rejectedDownloadHosts?.Add(absolute.Host);
                 continue;
@@ -209,45 +195,6 @@ public static class ApGamePageExtractor
         {
             if (path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) return true;
         }
-        return false;
-    }
-
-    private static bool IsAllowedDownloadHost(string host)
-    {
-        foreach (var domain in ApDocumentDomains)
-        {
-            if (host.Equals(domain, StringComparison.OrdinalIgnoreCase)
-                || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        if (host.Equals(OrbitGamesHubSpotHost, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return IsHubSpotFileCdnHost(host);
-    }
-
-    // HubSpot's file CDN zone observed on the live manuals
-    // ({portal}.fs1.hubspotusercontent-na1.net). Same equals-or-subdomain
-    // rule as the AP domains, so files.hubspotusercontent-evil.net and
-    // hubspotusercontent-na1.net.evil.example do not match.
-    private static readonly string[] HubSpotFileCdnZones = ["hubspotusercontent-na1.net"];
-
-    private static bool IsHubSpotFileCdnHost(string host)
-    {
-        foreach (var zone in HubSpotFileCdnZones)
-        {
-            if (host.Equals(zone, StringComparison.OrdinalIgnoreCase)
-                || host.EndsWith("." + zone, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
         return false;
     }
 }

@@ -84,6 +84,35 @@ public sealed class ApSitemapClient : PoliteScraperBase
     }
 
     /// <summary>
+    /// Returns the slugs of the posts in the WordPress game-page
+    /// category — AP's catalog of games. A missing category or an
+    /// empty one is an error, not an empty catalog.
+    /// </summary>
+    public async Task<IReadOnlySet<string>> DiscoverGamePageSlugsAsync(CancellationToken cancellationToken)
+    {
+        var posts = await ReadGamePagePostsAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"AP WordPress category '{_options.GamePageCategorySlug}' was not found; the game catalog is unknown.");
+
+        var slugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var post in posts)
+        {
+            slugs.Add(post.Slug);
+        }
+
+        if (slugs.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"AP WordPress category '{_options.GamePageCategorySlug}' contains 0 game-page posts.");
+        }
+
+        Logger.LogInformation(
+            "AP: WordPress category {Slug} lists {Count} game(s)",
+            _options.GamePageCategorySlug, slugs.Count);
+        return slugs;
+    }
+
+    /// <summary>
     /// Parses an AP sitemap XML body and returns the URLs whose
     /// absolute path begins with <paramref name="gamePathPrefix"/>
     /// AND has exactly one slug segment after the prefix (rejects
@@ -435,30 +464,7 @@ public sealed class ApSitemapClient : PoliteScraperBase
         return new Uri($"{endpoint}?categories={categoryId}&per_page={pageSize}&page={page}&_fields=slug,link");
     }
 
-    private bool IsAllowedSitemapUrl(Uri uri)
-    {
-        if (!uri.IsAbsoluteUri) return false;
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
-
-        var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri))
-        {
-            hosts.Add(baseUri.Host);
-        }
-
-        if (_options.SitemapHosts is not null)
-        {
-            foreach (var host in _options.SitemapHosts)
-            {
-                if (!string.IsNullOrWhiteSpace(host))
-                {
-                    hosts.Add(host.Trim());
-                }
-            }
-        }
-
-        return hosts.Contains(uri.Host);
-    }
+    private bool IsAllowedSitemapUrl(Uri uri) => ApHosts.IsAllowedPageUrl(uri, _options);
 
     private static List<Uri> ParseAllLocs(string sitemapXml)
     {
