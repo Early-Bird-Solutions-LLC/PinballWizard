@@ -1,0 +1,179 @@
+name: Renovate lockfiles
+
+# Regenerates the committed packages.lock.json graph on Renovate branches.
+#
+# WHY THIS EXISTS
+#
+# Renovate edits central package versions in Directory.Packages.props but its own
+# artifact step cannot regenerate this repo's 14 packages.lock.json files — every
+# affected PR arrives with `renovate/artifacts: Artifact file update failure` and a
+# lock file still describing the OLD versions. Because ci.yml restores with
+# `--locked-mode`, CI then fails every project with NU1004 ("the packages lock file
+# is inconsistent with the project dependencies"). Observed on #936 and #956;
+# #957's Terraform lock updated fine, so it is the .NET half specifically.
+#
+# Renovate runs lock-file maintenance by shelling out to `dotnet` inside its own
+# container ("delegated to the underlying package manager, which Renovate runs as
+# an external command" — Renovate NuGet manager docs). We cannot see or fix that
+# container, so this workflow does the regeneration where the SDK is known-good:
+# our own runner, using the same pinned action and global.json as ci.yml.
+#
+# WHY IT PUSHES WITH A PAT AND NOT GITHUB_TOKEN
+#
+# This is the whole design constraint, and getting it wrong is worse than the bug.
+# GitHub documents that "if a workflow run pushes code using the repository's
+# GITHUB_TOKEN, a new workflow will not run even when the repository contains a
+# workflow configured to run when push events occur" (only workflow_dispatch and
+# repository_dispatch are exempt). A GITHUB_TOKEN push would therefore produce a
+# new head SHA carrying ZERO check runs. Branch protection evaluates its eight
+# required contexts against the PR head, so the PR would sit in "Expected"
+# forever — unmergeable, and with no red check to explain why. Pushing as a real
+# identity re-triggers ci.yml/codeql.yml normally, which is the entire point.
+#
+# OPERATOR SETUP (required once — without it this workflow FAILS, by design)
+#   Create a fine-grained PAT scoped to this repository with
+#   Contents: Read and write, and store it as the repository secret
+#   RENOVATE_LOCKFILE_TOKEN. A GitHub App installation token
+#   (actions/create-github-app-token) is the better long-term option — shorter
+#   lived, not tied to one human — and can be swapped in by changing only the
+#   `token:` expressions below.
+#
+# It fails loudly rather than skipping when the secret is absent. A silent skip
+# would leave every Renovate PR red with NU1004 and nothing saying why the
+# regeneration never ran — `.claude/rules/no-masking-skips.md`: a job that cannot
+# do its work must fail, never report green having done nothing.
+
+on:
+  push:
+    branches:
+      - 'renovate/**'
+
+# No paths filter, deliberately. Two of this repo's deploy defects (#859, #875)
+# came from a path allowlist drifting out of step with what actually mattered,
+# and ci.yml/ci-docs-noop.yml already carry a "keep the two lists in lockstep"
+# warning for the same reason. A Renovate branch that changes no package versions
+# simply produces no lock file diff and the job ends without committing, so the
+# cost of running always is one restore, and the cost of a stale filter is a
+# silently unregenerated lock file — the exact bug this fixes.
+permissions:
+  contents: read # the PAT performs the write; GITHUB_TOKEN deliberately stays read-only
+
+concurrency:
+  group: renovate-lockfiles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    name: Regenerate packages.lock.json
+    # ubuntu-latest, matching ci.yml. Worth knowing why it matters: measured on a
+    # Windows dev box, `dotnet restore --force-evaluate` rewrites all 13 lock files
+    # with CRLF, so `git status` reports every one as modified while the content is
+    # byte-identical. On Linux it does not, and `.gitattributes` (`* text=auto
+    # eol=lf`, `*.json text eol=lf`) normalises on commit regardless — so the diff
+    # check below sees only real version changes. Do not "fix" a noisy diff by
+    # loosening that check; the churn would be the runner, not the graph.
+    runs-on: ubuntu-latest
+    # Loop guard. Our own push re-triggers this workflow (that is the point of
+    # using a PAT), so the marker below stops the second run before it does any
+    # work. Relying only on "no diff the second time" would be a fixpoint
+    # argument that holds just as long as restore is deterministic; this holds
+    # regardless.
+    if: ${{ !contains(github.event.head_commit.message, '[lockfile-regen]') }}
+
+    steps:
+      - name: Verify RENOVATE_LOCKFILE_TOKEN is configured
+        env:
+          TOKEN: ${{ secrets.RENOVATE_LOCKFILE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RENOVATE_LOCKFILE_TOKEN is not set. Refusing to continue."
+            echo "::error::"
+            echo "::error::Without it the lock files cannot be pushed back to the Renovate"
+            echo "::error::branch, so every Renovate PR touching Directory.Packages.props"
+            echo "::error::stays red with NU1004."
+            echo "::error::"
+            echo "::error::Do NOT 'fix' this by switching to GITHUB_TOKEN: a GITHUB_TOKEN"
+            echo "::error::push creates no workflow runs, so the new head SHA would carry"
+            echo "::error::none of the eight required checks and the PR would be stuck in"
+            echo "::error::'Expected' with nothing explaining why."
+            echo "::error::"
+            echo "::error::Create a fine-grained PAT (Contents: Read and write, this repo)"
+            echo "::error::and add it as the repository secret RENOVATE_LOCKFILE_TOKEN."
+            exit 1
+          fi
+          echo "RENOVATE_LOCKFILE_TOKEN present."
+
+      - name: Checkout the Renovate branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref_name }}
+          # Checked out with the PAT so the later push is authenticated as that
+          # identity and therefore re-triggers ci.yml on the new commit.
+          token: ${{ secrets.RENOVATE_LOCKFILE_TOKEN }}
+
+      - name: Set up .NET
+        # global-json-file, not a literal version: Renovate's dotnet-monorepo group
+        # also bumps global.json (it moved the pin 10.0.200 -> 10.0.401 on #936), so
+        # the SDK this step installs MUST come from the branch's own global.json or
+        # the restore fails with "A compatible .NET SDK was not found" (exit 155).
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+
+      - name: Regenerate lock files
+        # --force-evaluate re-resolves and rewrites packages.lock.json.
+        # RestorePackagesWithLockFile=true in Directory.Build.props is what makes
+        # restore write them at all; locked mode is NOT a global property here, it
+        # is the `--locked-mode` flag ci.yml passes, so this restore is free to
+        # update them.
+        run: dotnet restore --force-evaluate PinballWizard.slnx
+
+      - name: Verify the regenerated graph restores in locked mode
+        # BEFORE the push, deliberately. This is the check that makes the workflow
+        # trustworthy rather than hopeful: it proves the graph we are about to
+        # commit satisfies the same `dotnet restore --locked-mode` that ci.yml
+        # runs. Verifying after pushing would mean a bad graph is already on the
+        # branch by the time we find out, and the only signal would be ci.yml
+        # failing again on the new SHA — i.e. exactly the state this workflow
+        # exists to prevent, now with an extra commit on top.
+        run: dotnet restore --locked-mode PinballWizard.slnx
+
+      - name: Commit and push if the graph changed
+        id: commit
+        run: |
+          set -euo pipefail
+          # Scope the commit to lock files only. A restore can touch other
+          # generated files, and this workflow has no mandate over them —
+          # committing them under a Renovate branch would smuggle unrelated
+          # changes into a dependency PR.
+          if git diff --quiet -- '**/packages.lock.json'; then
+            echo "No lock file changes — nothing to commit."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -- '**/packages.lock.json'
+          # The marker is load-bearing: the `if:` on this job reads it to stop the
+          # run our own push triggers.
+          git commit -m "chore(deps) regenerate packages.lock.json [lockfile-regen]"
+
+          # --force-with-lease, never bare --force: Renovate rebases its own
+          # branches, and a blind force could discard a newer Renovate commit
+          # pushed between our checkout and this push. The lease makes that
+          # collision fail loudly instead.
+          git push --force-with-lease origin "HEAD:${GITHUB_REF_NAME}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.commit.outputs.changed }}" = "true" ]; then
+            echo "### Lock files regenerated" >> "$GITHUB_STEP_SUMMARY"
+            echo "Pushed to \`${GITHUB_REF_NAME}\`; locked-mode restore verified." >> "$GITHUB_STEP_SUMMARY"
+            echo "ci.yml re-runs on the new commit." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### No lock file changes" >> "$GITHUB_STEP_SUMMARY"
+            echo "The committed graph already matched this branch's package versions." >> "$GITHUB_STEP_SUMMARY"
+          fi
