@@ -58,6 +58,13 @@
     -->
     <PackageReference Include="Microsoft.Identity.Web" />
     <PackageReference Include="Microsoft.Identity.Web.UI" />
+    <!--
+      Override the vulnerable System.Security.Cryptography.Pkcs that
+      Microsoft.Identity.Web pulls transitively, which would otherwise fail
+      restore with NU1903. The version and its advisories live in
+      Directory.Packages.props.
+    -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
 
     <!--
       Data Protection key-ring persistence for multi-replica ACA hosting
