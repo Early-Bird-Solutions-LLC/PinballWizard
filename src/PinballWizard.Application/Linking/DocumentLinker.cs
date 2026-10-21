@@ -248,8 +248,10 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
         var ambiguity = new AmbiguityCapture();
 
         // Idempotency: skip documents that are already in a terminal state.
-        // NeedsReview is terminal-until-human-action: a document awaiting review
-        // must not be re-linked (and its candidate list overwritten) on the next run.
+        // NeedsReview stays terminal on a plain --link-documents pass so a nightly
+        // run does not overwrite a review record. --relink-all resets those rows
+        // to Pending first (ResetForRelinkAsync), which is how a linker-rule
+        // change re-evaluates documents parked as ambiguous.
         if (raw.LinkStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.PlatformGeneric
             or LinkStatus.NeedsReview)
         {
@@ -532,13 +534,19 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
     public async Task<int> ResetForRelinkAsync(CancellationToken cancellationToken)
     {
         // Reset algorithm-derived terminal states to Pending so RunBatchAsync
-        // re-runs the (now-fixed) tiers against them. Excludes ManuallyLinked
-        // (admin overrides) and PlatformGeneric (deliberate non-machine docs).
+        // re-runs the (now-fixed) tiers against them. NeedsReview is included:
+        // a document parked as ambiguous (issue #596 — four 2018 Iron Maiden
+        // manuals) never sees a later edition/era rule unless relink re-evaluates
+        // it. A still-ambiguous row is written back to NeedsReview with no
+        // fan-out. Excludes ManuallyLinked (admin overrides) and PlatformGeneric
+        // (deliberate non-machine docs).
         // Materialize first — UpdateLinkStatusAsync writes back to the same
         // container mid-stream (same iterator-stability reason as RunBatchAsync).
         var toReset = new List<RawDocumentRecord>();
         await foreach (var doc in _rawRepo
-            .StreamByStatusAsync([LinkStatus.Linked, LinkStatus.NotInCatalog], cancellationToken)
+            .StreamByStatusAsync(
+                [LinkStatus.Linked, LinkStatus.NotInCatalog, LinkStatus.NeedsReview],
+                cancellationToken)
             .ConfigureAwait(false))
         {
             toReset.Add(doc);
@@ -563,7 +571,7 @@ public sealed class DocumentLinker : IDocumentLinker, IDisposable
         sw.Stop();
 
         _logger.LogInformation(
-            "DocumentLinker: reset {Count} Linked/NotInCatalog documents to Pending for re-link in {Ms}ms.",
+            "DocumentLinker: reset {Count} Linked/NotInCatalog/NeedsReview documents to Pending for re-link in {Ms}ms.",
             toReset.Count, sw.Elapsed.TotalMilliseconds);
 
         return toReset.Count;

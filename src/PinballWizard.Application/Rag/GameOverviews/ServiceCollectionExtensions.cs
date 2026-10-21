@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddSingleton<IGameOverviewSynthesizer, GameOverviewSynthesizer>();
+        services.TryAddSingleton<GameOverviewIndexSync>();
         return services;
     }
 }
