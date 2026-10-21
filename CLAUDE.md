@@ -73,7 +73,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 | Jersey Jack (JJP) | `jerseyjackpinball.com/products/...` | Shopify sitemap + JSON-LD | `JjpProductScraper` |
 | Jersey Jack (JJP, support) | `jerseyjackpinball.com/support/` + `/pages/support/{edition}` | Static Shopify page | `JjpSupportDocScraper`; per-edition Game Manual + Rules Flowchart PDFs |
 | American Pinball (AP) | `american-pinball.com` | Yoast sitemap index + WP-REST `game-page` category; DOM heuristic | `ApGamePageScraper`; game pages are root permalinks `/{slug}/` (legacy `/games/{slug}` still accepted) |
-| American Pinball (AP, bulletins) | `american-pinball.com/support/` | Static HTML (AngleSharp) | `ApBulletinScraper`; service-bulletin PDFs |
+| American Pinball (AP, bulletins) | `americanpinball.com/support/{game-slug}/` | WP-REST child pages of `support` ∩ `game-page` slugs; post cards by category | `ApBulletinScraper`; `service-bulletin` + `electrical` PDFs per game (HubSpot CDN) |
 | Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
 | Spooky Pinball (support) | `spookypinball.com` game-support pages | WordPress REST (child pages) | `SpookySupportPageScraper`; per-game rule sheets / manuals / charts (PDF) |
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter | `PbGamePageScraper` |

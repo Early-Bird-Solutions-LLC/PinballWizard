@@ -47,6 +47,13 @@ public sealed class PinballWizardTelemetryTests
     }
 
     [Fact]
+    public void ScraperPageExtractionFailures_HasExpectedNameAndUnit()
+    {
+        Assert.Equal("pinwiz.scraper.page_extraction_failed_total", PinballWizardTelemetry.ScraperPageExtractionFailures.Name);
+        Assert.Equal("{page}", PinballWizardTelemetry.ScraperPageExtractionFailures.Unit);
+    }
+
+    [Fact]
     public void OpdbSyncDurationHistogram_HasExpectedNameAndUnit()
     {
         Assert.Equal("pinwiz.opdb.sync.duration_ms", PinballWizardTelemetry.OpdbSyncDurationMs.Name);
