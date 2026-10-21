@@ -33,7 +33,7 @@
       The first patched 10.0.300-band release is 10.0.303; 10.0.401 is the
       current stable on the 10.0 train.
     -->
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.402" />
   </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
@@ -112,7 +112,7 @@
       Microsoft.ML.Tokenizers ships a release that depends on Bcl.Memory
       >= 10.x.
     -->
-    <PackageVersion Include="Microsoft.Bcl.Memory" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Bcl.Memory" Version="10.0.13" />
     <!--
       PdfPig (namespace UglyToad.PdfPig) is the pure-managed PDF reader
       used by Phase 4 W1-5's PdfPigDocumentTextExtractor. Reads text +
@@ -142,7 +142,7 @@
          docs/superpowers/specs/2026-08-17-stern-playwright-workspaces-migration-design.md. -->
     <PackageVersion Include="Azure.Developer.Playwright" Version="1.0.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.10" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.13" />
   </ItemGroup>
   <ItemGroup Label="Accessibility testing — axe-core via Playwright (Wave 3 PR-Q1b)">
     <!--
