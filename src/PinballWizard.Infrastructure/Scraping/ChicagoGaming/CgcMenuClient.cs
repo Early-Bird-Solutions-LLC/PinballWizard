@@ -7,16 +7,18 @@ using PinballWizard.Infrastructure.Scraping.Polite;
 namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 
 /// <summary>
-/// Reads CGC's <c>/coinop/</c> index page and returns the set of
-/// canonical machine URLs. The site's sitemap is incomplete in
-/// practice (omits some shipped machines); the index page is the
-/// canonical source — same defence-in-depth pattern as
-/// <c>BofCategoryClient</c>.
+/// Reads the configured CGC index page (see
+/// <c>ChicagoGamingOptions.MachinesIndexPath</c> — the site root since CGC
+/// retired <c>/coinop/</c>, #967) and returns the set of canonical machine
+/// URLs. The site's sitemap exists but is incomplete (omits two of the five
+/// shipped machines), so that page is the canonical source — the same role the
+/// WooCommerce category query plays for Barrels of Fun in
+/// <c>BofProductScraper</c> / <c>WooCommerceStoreApiClient</c>.
 /// </summary>
 /// <remarks>
 /// CGC pages also expose <c>/coinop/{slug}/update</c> (firmware /
-/// release notes) and <c>/coinop/{slug}/update/mac</c> (Mac-specific
-/// updates). Those are sub-pages of a machine, not separate
+/// release notes), <c>/coinop/{slug}/update/mac</c> (Mac-specific
+/// updates) and <c>/coinop/{slug}/upgrade</c>. Those are sub-pages, not separate
 /// machines, so the parser requires exactly one slug segment after
 /// the configured prefix.
 /// </remarks>

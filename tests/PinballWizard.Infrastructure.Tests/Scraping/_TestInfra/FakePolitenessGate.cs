@@ -36,6 +36,13 @@ public sealed class FakePolitenessGate : IPolitenessGate
     /// <summary>If non-null, <see cref="ReportResponseAsync"/> throws this exception.</summary>
     public Exception? ThrowOnReport { get; set; }
 
+    /// <summary>
+    /// If non-null, <see cref="ReportResponseAsync"/> throws a
+    /// <see cref="PolitenessViolation.TooMany429Responses"/> exception once this
+    /// many 429s have been reported — a stand-in for the real gate's streak budget.
+    /// </summary>
+    public int? ThrowOnReportAfter429s { get; set; }
+
     /// <inheritdoc />
     public Task<IAsyncDisposable> AcquireForRequestAsync(Uri url, CancellationToken cancellationToken)
     {
@@ -53,6 +60,11 @@ public sealed class FakePolitenessGate : IPolitenessGate
         cancellationToken.ThrowIfCancellationRequested();
         if (ThrowOnReport is { } ex) throw ex;
         Reported.Add((url, statusCode, retryAfter));
+        if (ThrowOnReportAfter429s is { } budget
+            && Reported.Count(r => r.Status == HttpStatusCode.TooManyRequests) >= budget)
+        {
+            throw new PolitenessException(PolitenessViolation.TooMany429Responses, $"fake 429 budget of {budget} spent", url);
+        }
         return Task.CompletedTask;
     }
 

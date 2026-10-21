@@ -73,6 +73,32 @@ public sealed class IngestionSourcePolitenessResolverTests
     }
 
     [Fact]
+    public void ApplyOverrides_RateLimitOverrides_AppliesOnly()
+    {
+        var overrides = new PolitenessOverrides { RateLimitBackoffMs = 60_000, MaxRetryAfterSeconds = 900 };
+        var result = IngestionSourcePolitenessResolver.ApplyOverrides(Defaults, overrides);
+
+        Assert.Equal(60_000, result.RateLimitBackoffMs);
+        Assert.Equal(900, result.MaxRetryAfterSeconds);
+        Assert.Equal(Defaults.RequestDelayMs, result.RequestDelayMs);
+        Assert.Equal(Defaults.Max429Streak, result.Max429Streak);
+    }
+
+    [Theory]
+    [InlineData(0, 0, PolitenessOptions.RateLimitBackoffMsMin, PolitenessOptions.MaxRetryAfterSecondsMin)]
+    [InlineData(-5, -5, PolitenessOptions.RateLimitBackoffMsMin, PolitenessOptions.MaxRetryAfterSecondsMin)]
+    [InlineData(int.MaxValue, int.MaxValue, PolitenessOptions.RateLimitBackoffMsMax, PolitenessOptions.MaxRetryAfterSecondsMax)]
+    public void ApplyOverrides_RateLimitOverridesOutOfRange_AreClampedSoBackoffCannotBeDisabled(
+        int backoffMs, int maxRetryAfterSeconds, int expectedBackoffMs, int expectedMaxRetryAfterSeconds)
+    {
+        var overrides = new PolitenessOverrides { RateLimitBackoffMs = backoffMs, MaxRetryAfterSeconds = maxRetryAfterSeconds };
+        var result = IngestionSourcePolitenessResolver.ApplyOverrides(Defaults, overrides);
+
+        Assert.Equal(expectedBackoffMs, result.RateLimitBackoffMs);
+        Assert.Equal(expectedMaxRetryAfterSeconds, result.MaxRetryAfterSeconds);
+    }
+
+    [Fact]
     public void ApplyOverrides_UserAgentSuffix_IsAppended()
     {
         var overrides = new PolitenessOverrides { UserAgentSuffix = "(spooky-pinball)" };
