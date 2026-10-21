@@ -52,6 +52,12 @@
     <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.5.3 -->
     <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" />
     <PackageReference Include="Aspire.Hosting.Azure.Storage" />
+    <!--
+      Override the vulnerable MessagePack that Aspire.Hosting pulls
+      transitively via StreamJsonRpc, which would otherwise fail restore with
+      NU1902. The version and its advisory live in Directory.Packages.props.
+    -->
+    <PackageReference Include="MessagePack" />
   </ItemGroup>
 
 </Project>
