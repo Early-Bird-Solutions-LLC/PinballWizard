@@ -68,6 +68,7 @@ negative) it carries.
 | [0055](0055-azure-monitor-exporter-explicit-connection-string.md) | Azure Monitor OTel exporters wired explicitly in ServiceDefaults, connection string passed in code (not autodiscovered) | Accepted |
 | [0056](0056-stern-playwright-scrapers-on-azure-workspaces.md) | Stern Playwright scrapers connect to Azure Playwright Workspaces when deployed (fixes #855 OOM) | Accepted |
 | [0057](0057-on-demand-maintenance-jobs.md) | On-demand ACA jobs for `--relink-all` and `--gc-rag-index` | Accepted |
+| [0058](0058-politeness-gate-owns-429.md) | The politeness gate owns HTTP 429: per-origin `Retry-After` backoff, bounded budget, no retry below the gate or on bot challenges | Accepted |
 
 ## Conventions
 

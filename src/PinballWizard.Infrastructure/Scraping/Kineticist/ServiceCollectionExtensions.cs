@@ -16,7 +16,7 @@ public static class ServiceCollectionExtensions
     /// Registers the Kineticist tutorials client and synthesizer:
     /// <list type="bullet">
     ///   <item>Binds <see cref="KineticistOptions"/> from configuration section <c>Kineticist</c> with validation.</item>
-    ///   <item>Registers a typed <see cref="System.Net.Http.HttpClient"/> for <see cref="KineticistTutorialsClient"/>.</item>
+    ///   <item>Registers a typed <see cref="System.Net.Http.HttpClient"/> for <see cref="KineticistTutorialsClient"/> whose resilience pipeline leaves HTTP 429 to the politeness gate.</item>
     ///   <item>Registers <see cref="KineticistTutorialsClient"/> and <see cref="KineticistTutorialsSynthesizer"/> as singletons.</item>
     /// </list>
     /// </summary>
@@ -37,9 +37,10 @@ public static class ServiceCollectionExtensions
             var opts = sp.GetRequiredService<IOptions<KineticistOptions>>().Value;
             client.BaseAddress = new Uri(opts.BaseUrl);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
-            client.DefaultRequestHeaders.Accept.ParseAdd("text/plain, text/markdown, text/html");
+            client.DefaultRequestHeaders.Accept.ParseAdd("text/plain, text/markdown, application/xml, text/html");
             client.Timeout = TimeSpan.FromSeconds(60);
-        });
+        })
+        .AddPoliteResilienceHandler(attemptTimeout: TimeSpan.FromSeconds(25), totalTimeout: TimeSpan.FromSeconds(55));
 
         services.AddTransient<KineticistTutorialsSynthesizer>();
 

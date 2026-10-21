@@ -39,6 +39,31 @@
 
   dependencyDashboard: true,
 
+  // BLOCKING companion to .github/workflows/renovate-lockfiles.yml — do not remove
+  // one without the other.
+  //
+  // That workflow commits regenerated packages.lock.json files onto renovate/**
+  // branches, because Renovate's own artifact step cannot regenerate them (it
+  // shells out to `dotnet` in an environment we cannot fix, and the .NET half
+  // fails while the Terraform half succeeds).
+  //
+  // Renovate's default is to treat a branch as user-modified the moment a
+  // different git author commits to it: "If you push a new commit to a Renovate
+  // branch ... then Renovate stops all updates of that branch"
+  // (docs.renovatebot.com/updating-rebasing/). Without this entry the workflow
+  // would FIX the NU1004 restore failure and then STRAND the PR — main is
+  // protected with strict=true, so the PR goes out of date, Renovate refuses to
+  // rebase it, and the `automerge: true` rules below silently stop working. A
+  // stuck-but-green PR is harder to notice than the red one we started with,
+  // which is why this is not optional.
+  //
+  // The address MUST match `git config user.email` in that workflow byte for
+  // byte. It is deliberately the bot identity rather than the maintainer's own
+  // address: ignoring the maintainer here would also make Renovate clobber
+  // hand-fixes to a Renovate branch, which is the behaviour the default exists
+  // to protect.
+  gitIgnoredAuthors: ["41898282+github-actions[bot]@users.noreply.github.com"],
+
   // Major bumps are breaking-change-bearing in a showcase app. Hold every one
   // behind an explicit checkbox on the Dependency Dashboard rather than
   // auto-raising the PR — this encodes the standing "majors land as dedicated,

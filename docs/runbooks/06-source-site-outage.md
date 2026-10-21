@@ -99,6 +99,10 @@ traces
 
 Expected: log entries showing the gate is delaying requests (e.g., "Acquiring politeness token for stern", "Rate limit enforced — waiting Xms"). This means the gate is working as designed.
 
+Since [ADR-0058](../adr/0058-politeness-gate-owns-429.md), look for `Backing off {origin} for {wait} per Retry-After|policy` and `Honoring rate-limit backoff`. A run that spends the source's `Max429Streak` budget ends with `TooMany429Responses`. A `Retry-After` beyond `MaxRetryAfterSeconds` ends with `RetryAfterExceedsBudget`. Both fail the job; neither is transient noise to ignore.
+
+A `BotChallenge` failure (response header `x-vercel-mitigated: challenge` or `cf-mitigated: challenge`) is not a rate limit, and waiting will not clear it. Go to Step 5 (outreach) instead of tuning delays. The Kineticist `www` host has been in this state since 2026-08-23 (issue #968).
+
 **Do not lower the delay or increase concurrency** to compensate for a 429. The gate's back-off is the correct response.
 
 If the gate is NOT backing off (scraper is hammering the source despite errors), check `IPerSourcePolitenessResolver` — it should be reading `IngestionSource.PolitenessOverrides` from Cosmos. A Cosmos connectivity issue could cause it to fall back to `DefaultPerSourcePolitenessResolver` with permissive defaults. If Cosmos is unhealthy, fix that first (runbook `01-incident-response.md` → Step 3).
