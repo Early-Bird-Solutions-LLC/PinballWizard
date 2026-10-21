@@ -117,7 +117,7 @@ jobs:
           fi
 
       - name: Run docs agent
-        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1
+        uses: anthropics/claude-code-action@a5a423f75c251dcbff8a74e99f83b2cb03c72bfa # v1
         with:
           # #804 root cause (proved by the probe on run 31517799430): the action
           # sends anthropic_api_key as a static x-api-key header, but a WIF
