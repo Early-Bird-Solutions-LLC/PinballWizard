@@ -20,6 +20,13 @@ public sealed class KineticistOptions
     /// <summary>Configuration section name.</summary>
     public const string SectionName = "Kineticist";
 
+    /// <summary>
+    /// Full config key for the partner API key — used by DI-gating logic
+    /// (Api / Web / Cli) before registering Tier A/B API integration, matching
+    /// <c>SilverballLabsOptions.ApiKeyKey</c>.
+    /// </summary>
+    public const string ApiKeyKey = $"{SectionName}:ApiKey";
+
     /// <summary>Kineticist root URL.</summary>
     [Required]
     [Url]

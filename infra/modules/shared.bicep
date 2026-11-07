@@ -174,7 +174,7 @@ param opdbSyncCronExpression string = '0 3 * * 0'
 @description('Cron schedule expression (UTC) for the weekly Stern overview-refresh ACA Job. Default is 10 am Sunday (after OPDB sync). Runs --refresh-game-overviews which scrapes Stern game pages then syncs overviews to AI Search. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param sternRefreshCronExpression string = '0 10 * * 0'
 
-@description('Cron schedule expression (UTC) for the weekly Kineticist tutorials-sync ACA Job. Default is 11 am Sunday (after the Stern refresh at 10 am, so the OPDB-synced machine catalog used for title linking is current). Runs --sync-kineticist-tutorials which fetches published gameplay tutorials via the .md endpoint and indexes them as Rulesheet docs in AI Search (ADR-0043 Tier C2). Has no effect when deployPhase2=false or deployAiSearch=false.')
+@description('Cron schedule expression (UTC) for the Kineticist tutorials-sync ACA Job IF Schedule is re-enabled. As of 2026-11-07 the job is Manual-only (Tier B deep-links shipped; C2 .md path still Vercel-challenged) — this param is unused while triggerType is Manual. Default 11 am Sunday. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param kineticistSyncCronExpression string = '0 11 * * 0'
 
 @description('Cron schedule expression (UTC) for the weekly TWIP newsletter sync ACA Job. Default is 8 am Sunday (between OPDB sync at 3 am and Stern refresh at 10 am). TWIP is published Friday; Sunday gives a buffer for Beehiiv publishing lag. Has no effect when deployPhase2=false or deployAiSearch=false.')
@@ -2937,18 +2937,17 @@ resource sternRefreshJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022
 }
 
 // -----------------------------------------------------------------------------
-// Kineticist tutorials-sync ACA Job (weekly gameplay-tutorial ingest)
+// Kineticist tutorials-sync ACA Job (paused schedule — on-demand only)
 // -----------------------------------------------------------------------------
 // Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
-// Runs --sync-kineticist-tutorials which fetches Kineticist's published gameplay
-// tutorials via the .md endpoint and indexes them as Rulesheet documents in AI
-// Search (ADR-0043 Tier C2 — interim ingest under granted permission). Machine
-// linking uses the OPDB-keyed title lookup in Cosmos; unresolvable slugs are
-// skipped + logged (visible degradation). Needs AI Search + Foundry, so gated on
-// deployPhase2 && deployAiSearch (matches the sternRefreshJob gate above). Three
-// RBAC assignments mirror sternRefreshJob: Cosmos data contributor (title-lookup
-// reads), Search Index Data Contributor (Rulesheet chunk upserts), and Cognitive
-// Services OpenAI User (Foundry embedding inference).
+// Command --sync-kineticist-tutorials is retained (ADR-0043 Tier C2 / PR #988
+// fail-closed path) for manual operator runs after a Vercel allowlist or C1
+// content API lands. Weekly Schedule trigger is DISABLED (Manual) as of
+// 2026-11-07: keyed /api/v1 works for Tier B deep-links, but C2 .md fetches
+// still hit Vercel Security Checkpoint 429s and were firing Sev2 alerts.
+// Do NOT re-enable Schedule until Colin unblocks /news/*.md or C1 ships.
+// Needs AI Search + Foundry, so gated on deployPhase2 && deployAiSearch.
+// Three RBAC assignments mirror sternRefreshJob.
 
 module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
   name: 'kineticist-sync-job-${environment}'
@@ -2960,7 +2959,9 @@ module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
     containerAppsEnvironmentId: acaEnvironment.id
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
-    cronExpression: kineticistSyncCronExpression
+    // Pause weekly fire: Manual only. kineticistSyncCronExpression is retained
+    // as a param for a future re-enable but is intentionally unused while paused.
+    triggerType: 'Manual'
     // 1 hour — the tutorial catalogue is ~50 articles fetched through the
     // politeness gate (PoliteScraperBase — locked invariant) plus per-chunk
     // embedding inference. A full pass runs in minutes today; 3600 bounds a

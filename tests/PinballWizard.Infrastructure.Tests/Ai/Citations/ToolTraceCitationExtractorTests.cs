@@ -1380,6 +1380,78 @@ public sealed class ToolTraceCitationExtractorTests
             AttributionUrl: $"https://silverballlabs.com/market/{opdbId}",
             AttributionText: "Powered by Silverball Labs");
 
+    // ── getKineticistGuideLinks (ADR-0043 Tier B) — typed + JSON arms ─────
+
+    private static KineticistGuideLinksDto SampleKineticistGuideLinksDto() =>
+        new(
+            MachineTitle: "Godzilla",
+            OpdbId: "G33YF",
+            KineticistSlug: "godzilla-2021",
+            FullTutorialLink: "https://www.kineticist.com/news/godzilla-pinball-tutorial",
+            GameRulesLink: "https://pinballrulesheets.com/stern/stern-godzilla-rulesheet.html",
+            PinballPrimerUrl: null,
+            AttributionUrl: "https://www.kineticist.com/news/godzilla-pinball-tutorial",
+            AttributionText: "Gameplay guide on Kineticist — Godzilla");
+
+    [Fact]
+    public void Extract_KineticistGuideLinksDto_AsTyped_ProducesCuratedLinkCitations()
+    {
+        var dto = SampleKineticistGuideLinksDto();
+        var response = BuildAgentResponseWithToolResult("getKineticistGuideLinks", dto);
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Contains(citations, c =>
+            c.SourceUrl == "https://www.kineticist.com/news/godzilla-pinball-tutorial"
+            && c.SourceType == CitationSourceType.CuratedLink
+            && c.MachineId == "G33YF"
+            && c.Title.Contains("Kineticist", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(citations, c =>
+            c.SourceUrl == "https://pinballrulesheets.com/stern/stern-godzilla-rulesheet.html"
+            && c.SourceType == CitationSourceType.CuratedLink);
+    }
+
+    [Fact]
+    public void Extract_KineticistGuideLinksDto_AsCamelCaseJsonElement_ProducesCitations()
+    {
+        var dto = SampleKineticistGuideLinksDto();
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getKineticistGuideLinks", element);
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.All(citations, c => Assert.Equal(CitationSourceType.CuratedLink, c.SourceType));
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_KineticistGuideLinksDto_NotInSourceIndex()
+    {
+        var dto = SampleKineticistGuideLinksDto();
+        var response = BuildAgentResponseWithToolResult("getKineticistGuideLinks", dto);
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Empty(sourceIndex);
+    }
+
+    [Fact]
+    public void Extract_KineticistGuideLinksDto_EmptyLinks_NoCitation()
+    {
+        var dto = SampleKineticistGuideLinksDto() with
+        {
+            FullTutorialLink = null,
+            GameRulesLink = null,
+            PinballPrimerUrl = null,
+            AttributionUrl = null,
+        };
+        var response = BuildAgentResponseWithToolResult("getKineticistGuideLinks", dto);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
     // ── ADR-0052: citation link target follows source knowledge-shape ────────
     //
     // Machine-derived structured-record projections (MetadataCard / GameOverview)

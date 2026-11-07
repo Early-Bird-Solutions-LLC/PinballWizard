@@ -41,6 +41,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
     private readonly MachineGroundingTool _machineGroundingTool;
     private readonly SearchCorpusTool _searchCorpusTool;
     private readonly MarketValueTool _marketValueTool;
+    private readonly KineticistGuideLinkTool _kineticistGuideLinkTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
@@ -61,6 +62,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         MachineGroundingTool machineGroundingTool,
         SearchCorpusTool searchCorpusTool,
         MarketValueTool marketValueTool,
+        KineticistGuideLinkTool kineticistGuideLinkTool,
         ILogger<FoundryAgentFactory> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -68,6 +70,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         ArgumentNullException.ThrowIfNull(machineGroundingTool);
         ArgumentNullException.ThrowIfNull(searchCorpusTool);
         ArgumentNullException.ThrowIfNull(marketValueTool);
+        ArgumentNullException.ThrowIfNull(kineticistGuideLinkTool);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options.Value;
@@ -75,6 +78,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         _machineGroundingTool = machineGroundingTool;
         _searchCorpusTool = searchCorpusTool;
         _marketValueTool = marketValueTool;
+        _kineticistGuideLinkTool = kineticistGuideLinkTool;
         _logger = logger;
         _initLock = new Lock();
     }
@@ -185,6 +189,11 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         // returns null when Silverball Labs is not configured; the Wizard prompt
         // handles the null result with an honest "unavailable" answer.
         var getMarketValue = AIFunctionFactory.Create(_marketValueTool.GetMarketValueAsync);
+        // getKineticistGuideLinks: Wizard-only Tier B deep-links (ADR-0043).
+        // Gracefully returns null when Kineticist:ApiKey is absent; fail closed
+        // with no scrape fallback when the keyed API misses.
+        var getKineticistGuideLinks = AIFunctionFactory.Create(
+            _kineticistGuideLinkTool.GetKineticistGuideLinksAsync);
 
         // Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
@@ -196,11 +205,12 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         // Connected sub-agents are the ones the Wizard dispatches to.
         string[] connectedSubAgentNames = [AgentName.Valuation, AgentName.Rules, AgentName.Repair];
         
-        var wizardTools = new List<AITool>(connectedSubAgentNames.Length + 3)
+        var wizardTools = new List<AITool>(connectedSubAgentNames.Length + 4)
         {
             getMachineByTitle,
             searchCorpus,
             getMarketValue,
+            getKineticistGuideLinks,
         };
 
         foreach (var name in connectedSubAgentNames)

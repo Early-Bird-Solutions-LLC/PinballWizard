@@ -27,6 +27,7 @@ using PinballWizard.Infrastructure.Credentials;
 using PinballWizard.Infrastructure.Findability;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
+using PinballWizard.Infrastructure.Integrations.Kineticist;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Landing;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -96,6 +97,14 @@ if (foundryWired)
 if (!string.IsNullOrWhiteSpace(builder.Configuration[SilverballLabsOptions.ApiKeyKey]))
 {
     builder.Services.AddSilverballLabsIntegration(builder.Configuration);
+}
+
+// Kineticist Tier B guide deep-links — gated on API key presence (ADR-0043).
+// Absent key = IKineticistGuideLinkProvider not registered; KineticistGuideLinkTool
+// returns null (fail closed — no silent scrape fallback to /news/*.md).
+if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey]))
+{
+    builder.Services.AddKineticistIntegration(builder.Configuration);
 }
 
 // ── Cosmos persistence ─────────────────────────────────────────────────────

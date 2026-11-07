@@ -257,10 +257,20 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        // getKineticistGuideLinks typed arm (ADR-0043 Tier B). Curated deep-links
+        // — Citations only, not sourceIndex.
+        if (result is KineticistGuideLinksDto kinDto)
+        {
+            AddCitationsFromKineticistGuideLinksDto(kinDto, byUrl, citations);
+            return;
+        }
+
         // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
         // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
         // array; MachineGroundingDto has a top-level "OpdbId" string;
-        // MarketValueDto has a top-level "AttributionUrl" string.
+        // MarketValueDto has a top-level "AttributionUrl" string;
+        // KineticistGuideLinksDto has FullTutorialLink / GameRulesLink /
+        // PinballPrimerUrl.
         if (result is JsonElement element)
         {
             ExtractFromJsonElement(element, functionCallId, byUrl, citations, sourceIndex);
@@ -300,6 +310,19 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 // through to the URL regex below rather than dropping the
                 // result silently (this extractor runs outside the
                 // router's try/catch, so throwing would abort the answer).
+            }
+            else if (TryGetPropertyIgnoreCase(element, "FullTutorialLink", out _)
+                || TryGetPropertyIgnoreCase(element, "GameRulesLink", out _)
+                || TryGetPropertyIgnoreCase(element, "PinballPrimerUrl", out _))
+            {
+                // KineticistGuideLinksDto (ADR-0043 Tier B) — probe BEFORE OpdbId.
+                // The Tier B DTO also carries OpdbId, which would otherwise
+                // mis-route into the MachineGroundingDto arm.
+                if (TryDeserialize<KineticistGuideLinksDto>(element, functionCallId, _logger) is { } kinDto)
+                {
+                    AddCitationsFromKineticistGuideLinksDto(kinDto, byUrl, citations);
+                    return;
+                }
             }
             else if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
             {
@@ -389,6 +412,49 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             MachineId: null,
             DocumentChunkId: null,
             SourceType: CitationSourceType.MarketValue));
+    }
+
+    // ADR-0043 Tier B: getKineticistGuideLinks → one CuratedLink citation per
+    // non-empty deep-link URL. Attribution rides every Kineticist-sourced
+    // answer. Citations only — not sourceIndex (route-outward links, not
+    // [[cite:k]] corpus hits).
+    private static void AddCitationsFromKineticistGuideLinksDto(
+        KineticistGuideLinksDto dto,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations)
+    {
+        var machine = string.IsNullOrWhiteSpace(dto.MachineTitle) ? "pinball machine" : dto.MachineTitle;
+        var machineId = string.IsNullOrWhiteSpace(dto.OpdbId) ? null : dto.OpdbId;
+
+        TryAddGuideLink(
+            byUrl, citations, dto.FullTutorialLink, machineId,
+            $"Kineticist tutorial · {machine}");
+        TryAddGuideLink(
+            byUrl, citations, dto.GameRulesLink, machineId,
+            $"Game rules · {machine}");
+        TryAddGuideLink(
+            byUrl, citations, dto.PinballPrimerUrl, machineId,
+            $"Pinball primer · {machine}");
+    }
+
+    private static void TryAddGuideLink(
+        Dictionary<string, int> byUrl,
+        List<Citation> citations,
+        string? url,
+        string? machineId,
+        string title)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        AddOrUpgrade(byUrl, citations, new Citation(
+            Title: title,
+            SourceUrl: url.Trim(),
+            MachineId: machineId,
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.CuratedLink));
     }
 
     private static void AddCitationFromGroundingDto(

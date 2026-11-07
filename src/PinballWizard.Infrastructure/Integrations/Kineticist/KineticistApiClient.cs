@@ -17,6 +17,14 @@ public interface IKineticistApiClient
     /// <summary>Fetch a game by Kineticist slug; null when unknown or edition-less.</summary>
     Task<KineticistGameMatch?> GetGameBySlugAsync(string slug, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// ADR-0043 Tier B: fetch guide deep-link fields for a game identified by
+    /// Kineticist slug <b>or</b> OPDB id (group or machine). The live API's
+    /// <c>/games/{idOrSlug}</c> accepts all three. Returns <see langword="null"/>
+    /// when unknown or when no deep-link fields are present — never scrapes.
+    /// </summary>
+    Task<KineticistGuideLinks?> GetGuideLinksAsync(string idOrSlug, CancellationToken cancellationToken);
+
     /// <summary>Title search (<c>?q=</c>); up to <paramref name="limit"/> name+slug refs.</summary>
     Task<IReadOnlyList<KineticistGameRef>> SearchGamesAsync(string query, int limit, CancellationToken cancellationToken);
 }
@@ -83,22 +91,7 @@ public sealed class KineticistApiClient : IKineticistApiClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(slug);
 
-        var url = new Uri(_apiBase, $"games/{Uri.EscapeDataString(slug)}");
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        ApplyAuth(request);
-
-        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-        response.EnsureSuccessStatusCode();
-
-        var body = await response.Content
-            .ReadFromJsonAsync<KineticistGameDetailResponse>(JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
-
-        var data = body?.Data;
+        var data = await FetchGameDataAsync(slug, cancellationToken).ConfigureAwait(false);
         if (data is null || string.IsNullOrWhiteSpace(data.Slug))
         {
             return null;
@@ -120,6 +113,58 @@ public sealed class KineticistApiClient : IKineticistApiClient
 
         return new KineticistGameMatch(data.Slug, data.Name ?? data.Slug, editionOpdbIds);
     }
+
+    /// <inheritdoc />
+    public async Task<KineticistGuideLinks?> GetGuideLinksAsync(string idOrSlug, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(idOrSlug);
+
+        var data = await FetchGameDataAsync(idOrSlug, cancellationToken).ConfigureAwait(false);
+        if (data is null || string.IsNullOrWhiteSpace(data.Slug))
+        {
+            return null;
+        }
+
+        var links = new KineticistGuideLinks(
+            Slug: data.Slug,
+            Name: data.Name ?? data.Slug,
+            OpdbId: string.IsNullOrWhiteSpace(data.OpdbId) ? null : data.OpdbId.Trim(),
+            FullTutorialLink: NormalizeUrl(data.FullTutorialLink),
+            GameRulesLink: NormalizeUrl(data.GameRulesLink),
+            PinballPrimerUrl: NormalizeUrl(data.PinballPrimerUrl));
+
+        if (!links.HasAnyLink)
+        {
+            _logger.LogDebug(
+                "Kineticist API: game '{Slug}' resolved but carries no guide deep-link fields.", data.Slug);
+            return null;
+        }
+
+        return links;
+    }
+
+    private async Task<KineticistGameData?> FetchGameDataAsync(string idOrSlug, CancellationToken cancellationToken)
+    {
+        var url = new Uri(_apiBase, $"games/{Uri.EscapeDataString(idOrSlug)}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyAuth(request);
+
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content
+            .ReadFromJsonAsync<KineticistGameDetailResponse>(JsonOptions, cancellationToken)
+            .ConfigureAwait(false);
+
+        return body?.Data;
+    }
+
+    private static string? NormalizeUrl(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
     /// Title search (<c>GET /games?q=</c>). Returns up to <paramref name="limit"/>
