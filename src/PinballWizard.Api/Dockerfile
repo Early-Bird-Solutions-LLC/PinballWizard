@@ -13,7 +13,7 @@
 # :latest is pushed as a convenience alias but is NEVER referenced in ACA
 # container configuration (locked invariant #16 / CLAUDE.md).
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e AS build
 WORKDIR /src
 
 COPY Directory.Build.props Directory.Packages.props NuGet.Config ./
@@ -31,7 +31,7 @@ RUN dotnet publish src/PinballWizard.Api/PinballWizard.Api.csproj \
     -o /app/publish \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:222759b391a1aaf241166672c8f99b2d4ada452e7b5319f3c6e8f265a37b5ad4 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1a48394b6f29d3a32c79d9edecd4abda0ecbe8776d567dbfc4590ed6979c740c AS runtime
 WORKDIR /app
 
 RUN groupadd --system pinwiz \
