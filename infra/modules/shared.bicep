@@ -1682,15 +1682,21 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
           identity: acaIdentity.?id ?? ''
         }
       ]
-      // Silverball Labs API key: Key Vault secret resolved at run time by
-      // the UAMI (Key Vault Secrets User, acaIdentityKvSecretsUser).
-      // The key value never appears in Bicep, params, or source — set
-      // out of band: az keyvault secret set --name silverball-api-key
-      // --value sbl_live_… (see PR operator steps for this stream).
+      // Partner API keys: Key Vault secrets resolved at run time by the UAMI
+      // (Key Vault Secrets User, acaIdentityKvSecretsUser). Values never appear
+      // in Bicep, params, or source — set out of band:
+      //   az keyvault secret set --name silverball-api-key --value sbl_live_…
+      //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
+      // Kineticist key name matches the C2 CLI job secret (Kineticist-ApiKey).
       secrets: [
         {
           name: 'silverball-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          name: 'kineticist-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
       ]
@@ -1776,6 +1782,13 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
               // params, or source — resolved at run time by the UAMI.
               name: 'SilverballLabs__ApiKey'
               secretRef: 'silverball-api-key'
+            }
+            {
+              // Kineticist Tier B guide deep-links (ADR-0043). Same Key Vault
+              // secret as the CLI kineticist-sync job. Gates AddKineticistIntegration
+              // in Api Program.cs — absent → getKineticistGuideLinks returns null.
+              name: 'Kineticist__ApiKey'
+              secretRef: 'kineticist-api-key'
             }
           ]
         }
@@ -2289,12 +2302,11 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
           identity: acaIdentity.?id ?? ''
         }
       ]
-      // The OIDC client secret never appears in Bicep or params — the ACA
-      // secret resolves it from Key Vault at runtime via the UAMI (which
-      // carries Key Vault Secrets User, see acaIdentityKvSecretsUser).
-      // The Silverball Labs API key is always present (non-conditional) so
-      // the concat base includes it unconditionally; the AzureAd block is
-      // appended only when azureAdClientId is set (same gate as before).
+      // Partner API keys + optional OIDC client secret. Key Vault secrets
+      // resolve at runtime via the UAMI (Key Vault Secrets User). Silverball
+      // + Kineticist keys are always present (non-conditional); the AzureAd
+      // block is appended only when azureAdClientId is set.
+      // Kineticist KV secret name matches the CLI job: Kineticist-ApiKey.
       secrets: concat([
         {
           // Silverball Labs live pricing API key (Stream C). Never appears
@@ -2302,6 +2314,14 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
           //   az keyvault secret set --name silverball-api-key --value sbl_live_…
           name: 'silverball-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          // Kineticist Tier B guide deep-links (ADR-0043). Same Key Vault
+          // secret as the CLI kineticist-sync job / Api app.
+          //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
+          name: 'kineticist-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
       ], empty(azureAdClientId) ? [] : [
@@ -2393,6 +2413,12 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               // params, or source — resolved at run time by the UAMI.
               name: 'SilverballLabs__ApiKey'
               secretRef: 'silverball-api-key'
+            }
+            {
+              // Kineticist Tier B guide deep-links (ADR-0043). Gates
+              // AddKineticistIntegration in Web Program.cs — same secret as Api.
+              name: 'Kineticist__ApiKey'
+              secretRef: 'kineticist-api-key'
             }
           ], deployAiSearch ? [
             {

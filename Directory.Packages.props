@@ -230,14 +230,15 @@
       referenced by the Server (PinballWizard.Web) so Kestrel serves
       the WASM bootstrap and static framework files.
 
-      10.0.13 — GHSA-g27p-qf6j-c96c (CVE-2026-102870) and GHSA-qjpx-jqm5-h2c4
-      (CVE-2026-96230), both high, mark the Server package vulnerable for
-      >= 10.0.0, <= 10.0.12 and name 10.0.13 as the first patched version.
-      The client package moves with it so the WASM payload and the server
-      that delivers it stay on one patch.
+      10.0.13 cleared GHSA-qjpx-jqm5-h2c4 (CVE-2026-96230) for <= 10.0.12.
+      10.0.14 — GHSA-g27p-qf6j-c96c (CVE-2026-102870) re-marks the Server
+      package vulnerable for >= 10.0.0, <= 10.0.13 and names 10.0.14 as the
+      first patched version (blocks restore under TreatWarningsAsErrors /
+      NU1903). Client package moves with it so the WASM payload and the
+      server that delivers it stay on one patch.
     -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.14" />
     <!--
       System.Security.Cryptography.Pkcs arrives transitively through
       Microsoft.Identity.Web 4.14.2 (via Identity.Web.TokenCache) at 10.0.10.
