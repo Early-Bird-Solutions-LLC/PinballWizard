@@ -35,7 +35,7 @@ and the [documentation home](README.md).
 - **Foundry** — Microsoft Foundry, the locked AI orchestration platform ([ADR-0014](adr/0014-microsoft-foundry-orchestration.md)); models served through it are pluggable.
 - **Microsoft Agent Framework** — the agent SDK (Responses Agent pattern) the Wizard is built on.
 - **Sub-agents** — the four agents: Wizard (orchestrator), Valuation, Rules, Repair.
-- **Function tools** — `getMachineByTitle`, `searchCorpus`, `getMarketValue` — the tools agents call.
+- **Function tools** — `getMachineByTitle`, `searchCorpus`, `getMarketValue`, `getKineticistGuideLinks` — the tools agents call.
 - **`IAiRouter`** — routes a question through the agents; owns per-agent cost routing and the semantic cache ([ADR-0015](adr/0015-cost-routing-and-semantic-cache.md)).
 - **Confidence-threshold refusal** — answers scoring below the composite threshold (0.65) refuse rather than fabricate ([ADR-0017](adr/0017-confidence-threshold-refusal.md)).
 - **Refusal categories** — `InsufficientGrounding`, `OutOfScope`, `LowModelConfidence`, `CostCeilingHit`, `HarmfulContent`.

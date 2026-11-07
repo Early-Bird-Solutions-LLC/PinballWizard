@@ -32,6 +32,7 @@ by `keyVaultUrl`; the values are set out of band, once.
 | `AzureAd-ClientSecret` | Entra app reg "PinballWizard Web" → Certificates & secrets | `az keyvault secret set --vault-name <kv> --name AzureAd-ClientSecret --value <secret>` | wizard + api ACA (OIDC sign-in) |
 | `Opdb-ApiToken` | <https://opdb.org/profile> → API Keys (machine env `OPDB_API_TOKEN`) | `az keyvault secret set --vault-name <kv> --name Opdb-ApiToken --value $env:OPDB_API_TOKEN` | api/web ACA + CLI (OPDB sync) |
 | `silverball-api-key` | Silverball Labs (Will Oetting); machine env `SILVERBALL_API_KEY` | `az keyvault secret set --vault-name <kv> --name silverball-api-key --value $env:SILVERBALL_API_KEY` | api + wizard ACA (`SilverballLabs__ApiKey`, getMarketValue pricing) |
+| `Kineticist-ApiKey` | Kineticist partner API key (`ki_live_…`) | `az keyvault secret set --vault-name <kv> --name Kineticist-ApiKey --value <ki_live_…>` | api + wizard ACA (`Kineticist__ApiKey`, getKineticistGuideLinks deep-links) + kineticist-sync CLI job |
 | `cloudflare-origin-pinwiz` (KV **certificate**, not a plain secret) | Cloudflare Origin CA cert | `infra/scripts/Import-OriginCaCertToKeyVault.ps1` — NOT a plain `secret set` | wizard ACA custom-domain SNI binding (ADR-0038) |
 
 > **Cohere Rerank needs NO secret** (ADR-0024, amended) — it is an Azure-native
