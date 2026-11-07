@@ -30,6 +30,7 @@ using PinballWizard.Infrastructure.Documents;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
+using PinballWizard.Infrastructure.Integrations.Kineticist;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
@@ -2076,6 +2077,15 @@ static IHost CreateHost(string[] args)
     if (silverballWired)
     {
         builder.Services.AddSilverballLabsIntegration(builder.Configuration);
+    }
+
+    // Kineticist Tier B guide deep-links — gated on API key presence (ADR-0043).
+    // Registers the keyed API client + IKineticistGuideLinkProvider for Wizard-path
+    // hosts that share this composition. Fail closed when absent — no scrape fallback.
+    // Compatible with AddKineticistScraping below (TryAdd on the API interface).
+    if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey]))
+    {
+        builder.Services.AddKineticistIntegration(builder.Configuration);
     }
 
     // Azure AI Foundry integration — gated on AiFoundry:ProjectEndpoint

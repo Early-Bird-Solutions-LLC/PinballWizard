@@ -73,6 +73,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<MachineGroundingTool>();
         services.TryAddSingleton<SearchCorpusTool>();
         services.TryAddSingleton<MarketValueTool>();
+        services.TryAddSingleton<KineticistGuideLinkTool>();
         services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.TryAddSingleton<ITokenUsageReader, NullTokenUsageReader>();
         services.TryAddSingleton<IAiCostCalculator, AiCostCalculator>();

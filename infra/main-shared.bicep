@@ -116,7 +116,7 @@ param opdbSyncCronExpression string = '0 3 * * 0'
 @description('Cron schedule expression (UTC) for the weekly Stern overview-refresh ACA Job. Default is 10 am Sunday (after OPDB sync). Has no effect when deployPhase2=false or deployAiSearch=false.')
 param sternRefreshCronExpression string = '0 10 * * 0'
 
-@description('Cron schedule expression (UTC) for the weekly Kineticist tutorials-sync ACA Job. Default is 11 am Sunday (after the Stern refresh, so the OPDB-synced machine catalog used for title linking is current). Has no effect when deployPhase2=false or deployAiSearch=false.')
+@description('Cron schedule expression (UTC) for the Kineticist tutorials-sync ACA Job IF Schedule is re-enabled. As of 2026-11-07 the job is Manual-only (C2 weekly pause) — unused while triggerType is Manual. Default 11 am Sunday. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param kineticistSyncCronExpression string = '0 11 * * 0'
 
 // -----------------------------------------------------------------------------

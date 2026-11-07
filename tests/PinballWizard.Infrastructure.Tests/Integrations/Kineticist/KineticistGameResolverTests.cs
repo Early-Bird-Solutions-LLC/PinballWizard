@@ -97,6 +97,9 @@ public sealed class KineticistGameResolverTests
         public Task<KineticistGameMatch?> GetGameBySlugAsync(string slug, CancellationToken cancellationToken)
             => Task.FromResult(Games.TryGetValue(slug, out var m) ? m : null);
 
+        public Task<KineticistGuideLinks?> GetGuideLinksAsync(string idOrSlug, CancellationToken cancellationToken)
+            => Task.FromResult<KineticistGuideLinks?>(null);
+
         public Task<IReadOnlyList<KineticistGameRef>> SearchGamesAsync(string query, int limit, CancellationToken cancellationToken)
         {
             SearchCalls++;

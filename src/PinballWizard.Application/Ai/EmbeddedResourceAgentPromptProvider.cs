@@ -51,9 +51,17 @@ namespace PinballWizard.Application.Ai;
 // retry dropped the machineId and returned unrelated machines' records. Cache
 // key in AiRouter is (normalized, promptVersion) — bumping evicts stale answers
 // generated under the old unscoped-retry behavior.
+// Bumped to "v10.2026.11" (ADR-0043 Tier B): Wizard.md Step 3.8 + tools list
+// wire getKineticistGuideLinks for Rules routing — attributed deep-links from
+// the keyed Kineticist API; route outward when corpus is thin; fail closed
+// (no scrape fallback). Cache key bump evicts pre-Tier-B Rules answers.
+// Bumped to "v10.2026.11.1" (Tier B follow-up): Rules.md Step 2.5 consumes
+// the Wizard-injected <kineticist_guides> block (mirror Valuation.md's
+// <market_value> pattern) so thin-corpus Rules answers deep-link instead of
+// OPDB-only refusing.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v9.2026.07";
+    public const string CurrentPromptVersion = "v10.2026.11.1";
 
     private readonly Dictionary<string, string> _prompts;
 

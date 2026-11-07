@@ -174,7 +174,7 @@ param opdbSyncCronExpression string = '0 3 * * 0'
 @description('Cron schedule expression (UTC) for the weekly Stern overview-refresh ACA Job. Default is 10 am Sunday (after OPDB sync). Runs --refresh-game-overviews which scrapes Stern game pages then syncs overviews to AI Search. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param sternRefreshCronExpression string = '0 10 * * 0'
 
-@description('Cron schedule expression (UTC) for the weekly Kineticist tutorials-sync ACA Job. Default is 11 am Sunday (after the Stern refresh at 10 am, so the OPDB-synced machine catalog used for title linking is current). Runs --sync-kineticist-tutorials which fetches published gameplay tutorials via the .md endpoint and indexes them as Rulesheet docs in AI Search (ADR-0043 Tier C2). Has no effect when deployPhase2=false or deployAiSearch=false.')
+@description('Cron schedule expression (UTC) for the Kineticist tutorials-sync ACA Job IF Schedule is re-enabled. As of 2026-11-07 the job is Manual-only (Tier B deep-links shipped; C2 .md path still Vercel-challenged) — this param is unused while triggerType is Manual. Default 11 am Sunday. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param kineticistSyncCronExpression string = '0 11 * * 0'
 
 @description('Cron schedule expression (UTC) for the weekly TWIP newsletter sync ACA Job. Default is 8 am Sunday (between OPDB sync at 3 am and Stern refresh at 10 am). TWIP is published Friday; Sunday gives a buffer for Beehiiv publishing lag. Has no effect when deployPhase2=false or deployAiSearch=false.')
@@ -1682,15 +1682,21 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
           identity: acaIdentity.?id ?? ''
         }
       ]
-      // Silverball Labs API key: Key Vault secret resolved at run time by
-      // the UAMI (Key Vault Secrets User, acaIdentityKvSecretsUser).
-      // The key value never appears in Bicep, params, or source — set
-      // out of band: az keyvault secret set --name silverball-api-key
-      // --value sbl_live_… (see PR operator steps for this stream).
+      // Partner API keys: Key Vault secrets resolved at run time by the UAMI
+      // (Key Vault Secrets User, acaIdentityKvSecretsUser). Values never appear
+      // in Bicep, params, or source — set out of band:
+      //   az keyvault secret set --name silverball-api-key --value sbl_live_…
+      //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
+      // Kineticist key name matches the C2 CLI job secret (Kineticist-ApiKey).
       secrets: [
         {
           name: 'silverball-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          name: 'kineticist-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
       ]
@@ -1776,6 +1782,13 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
               // params, or source — resolved at run time by the UAMI.
               name: 'SilverballLabs__ApiKey'
               secretRef: 'silverball-api-key'
+            }
+            {
+              // Kineticist Tier B guide deep-links (ADR-0043). Same Key Vault
+              // secret as the CLI kineticist-sync job. Gates AddKineticistIntegration
+              // in Api Program.cs — absent → getKineticistGuideLinks returns null.
+              name: 'Kineticist__ApiKey'
+              secretRef: 'kineticist-api-key'
             }
           ]
         }
@@ -2289,12 +2302,11 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
           identity: acaIdentity.?id ?? ''
         }
       ]
-      // The OIDC client secret never appears in Bicep or params — the ACA
-      // secret resolves it from Key Vault at runtime via the UAMI (which
-      // carries Key Vault Secrets User, see acaIdentityKvSecretsUser).
-      // The Silverball Labs API key is always present (non-conditional) so
-      // the concat base includes it unconditionally; the AzureAd block is
-      // appended only when azureAdClientId is set (same gate as before).
+      // Partner API keys + optional OIDC client secret. Key Vault secrets
+      // resolve at runtime via the UAMI (Key Vault Secrets User). Silverball
+      // + Kineticist keys are always present (non-conditional); the AzureAd
+      // block is appended only when azureAdClientId is set.
+      // Kineticist KV secret name matches the CLI job: Kineticist-ApiKey.
       secrets: concat([
         {
           // Silverball Labs live pricing API key (Stream C). Never appears
@@ -2302,6 +2314,14 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
           //   az keyvault secret set --name silverball-api-key --value sbl_live_…
           name: 'silverball-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          // Kineticist Tier B guide deep-links (ADR-0043). Same Key Vault
+          // secret as the CLI kineticist-sync job / Api app.
+          //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
+          name: 'kineticist-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
       ], empty(azureAdClientId) ? [] : [
@@ -2393,6 +2413,12 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               // params, or source — resolved at run time by the UAMI.
               name: 'SilverballLabs__ApiKey'
               secretRef: 'silverball-api-key'
+            }
+            {
+              // Kineticist Tier B guide deep-links (ADR-0043). Gates
+              // AddKineticistIntegration in Web Program.cs — same secret as Api.
+              name: 'Kineticist__ApiKey'
+              secretRef: 'kineticist-api-key'
             }
           ], deployAiSearch ? [
             {
@@ -2937,18 +2963,17 @@ resource sternRefreshJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022
 }
 
 // -----------------------------------------------------------------------------
-// Kineticist tutorials-sync ACA Job (weekly gameplay-tutorial ingest)
+// Kineticist tutorials-sync ACA Job (paused schedule — on-demand only)
 // -----------------------------------------------------------------------------
 // Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
-// Runs --sync-kineticist-tutorials which fetches Kineticist's published gameplay
-// tutorials via the .md endpoint and indexes them as Rulesheet documents in AI
-// Search (ADR-0043 Tier C2 — interim ingest under granted permission). Machine
-// linking uses the OPDB-keyed title lookup in Cosmos; unresolvable slugs are
-// skipped + logged (visible degradation). Needs AI Search + Foundry, so gated on
-// deployPhase2 && deployAiSearch (matches the sternRefreshJob gate above). Three
-// RBAC assignments mirror sternRefreshJob: Cosmos data contributor (title-lookup
-// reads), Search Index Data Contributor (Rulesheet chunk upserts), and Cognitive
-// Services OpenAI User (Foundry embedding inference).
+// Command --sync-kineticist-tutorials is retained (ADR-0043 Tier C2 / PR #988
+// fail-closed path) for manual operator runs after a Vercel allowlist or C1
+// content API lands. Weekly Schedule trigger is DISABLED (Manual) as of
+// 2026-11-07: keyed /api/v1 works for Tier B deep-links, but C2 .md fetches
+// still hit Vercel Security Checkpoint 429s and were firing Sev2 alerts.
+// Do NOT re-enable Schedule until Colin unblocks /news/*.md or C1 ships.
+// Needs AI Search + Foundry, so gated on deployPhase2 && deployAiSearch.
+// Three RBAC assignments mirror sternRefreshJob.
 
 module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
   name: 'kineticist-sync-job-${environment}'
@@ -2960,7 +2985,9 @@ module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
     containerAppsEnvironmentId: acaEnvironment.id
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
-    cronExpression: kineticistSyncCronExpression
+    // Pause weekly fire: Manual only. kineticistSyncCronExpression is retained
+    // as a param for a future re-enable but is intentionally unused while paused.
+    triggerType: 'Manual'
     // 1 hour — the tutorial catalogue is ~50 articles fetched through the
     // politeness gate (PoliteScraperBase — locked invariant) plus per-chunk
     // embedding inference. A full pass runs in minutes today; 3600 bounds a
