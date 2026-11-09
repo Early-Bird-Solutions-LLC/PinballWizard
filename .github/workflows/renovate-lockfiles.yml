@@ -333,7 +333,7 @@ jobs:
         # restore fails with "A compatible .NET SDK was not found" (exit 155,
         # reproduced locally). Identical action, SHA and input as ci.yml, so the SDK
         # that writes the lock files is the one that later verifies them.
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
           global-json-file: global.json
 
