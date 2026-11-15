@@ -543,10 +543,12 @@ public sealed class AiRouterStreamingTests
 
         var thrown = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            await foreach (var _ in router.AnswerStreamingAsync("Who made it?", CancellationToken.None))
+            await foreach (var chunk in router.AnswerStreamingAsync("Who made it?", CancellationToken.None))
             {
-                // Drain until the channel faults — body intentionally unused.
-                _ = _;
+                // Drain until the channel faults — body intentionally unused
+                // (keeps the empty-block linter happy without assigning to the
+                // foreach iteration variable — CS1656).
+                _ = chunk;
             }
         });
 
