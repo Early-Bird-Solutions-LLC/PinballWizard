@@ -1622,12 +1622,14 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         documentId, title, exportUrl, pinTipsSource.DiscoveryContext,
                         pinTipsSource.DocumentType, pinTipsSource.FileFormat, target.Manufacturer,
                         target.MachineTitle, null, DateTimeOffset.UtcNow);
+                    // Stamp the skip hash only after the citation row is stored.
+                    // A failed raw-doc write must be retried next run; stamping
+                    // first would make IsUnchanged skip the tip forever.
                     if (!await SynthesizedRawDocWriter.TryPersistAsync(pinTipsRawDocs, synDoc, cancellationToken))
                     {
                         pinTipsRawFailed++;
                     }
-
-                    if (pinTipsIndexState is not null)
+                    else if (pinTipsIndexState is not null)
                     {
                         try
                         {
