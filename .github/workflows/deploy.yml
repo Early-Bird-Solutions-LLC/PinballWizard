@@ -96,9 +96,14 @@ permissions:
                     # successfully-deployed SHA rather than github.event.before (#910)
 
 concurrency:
-  # One deploy at a time on main; a new push cancels an in-progress one.
+  # One deploy at a time on main. Queue — do not cancel. Cancelling mid-flight
+  # was aborting deploy-jobs after the ACA image push but before (or during)
+  # the workload stack apply on busy merge days, leaving E2E/smoke red-by-
+  # cancel and forcing the next push to re-run the stack (#910 lookback).
+  # Queueing lets an in-flight stack finish; later pushes still skip the stack
+  # when detect-changes finds no CLI/infra delta since that baseline.
   group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
