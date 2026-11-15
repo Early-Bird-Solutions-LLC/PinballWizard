@@ -444,15 +444,27 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # ── Preserve currently-deployed app images ──────────────────────────────
+      # ── Select stack path early (needed before app-image discovery) ─────────
+      - name: Select deployment stack path (ADR-0060)
+        id: stackpath
+        run: |
+          if [ "${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}" = "true" ]; then
+            echo "mode=workload" >> "$GITHUB_OUTPUT"
+            echo "Using WORKLOAD stack pinwiz-jobs-dev (no CognitiveServices preflight)."
+          else
+            echo "mode=platform" >> "$GITHUB_OUTPUT"
+            echo "Using PLATFORM stack pinwiz-shared-dev (interim — still Foundry-preflights)."
+            echo "After migrate-aca-jobs-to-workload-stack.md, set WORKLOAD_JOBS_STACK_ENABLED=true."
+          fi
+
+      # ── Preserve currently-deployed app images (platform path only) ─────────
       # Auto-discover the running wizard / api / ragindexer image tags so a
-      # CLI-only stack run does not revert those apps to the quickstart
-      # placeholder. Mirrors Deploy-SharedResources.ps1 lines 325-353. At this
-      # point build-deploy has already completed, so the apps are on the new SHA
-      # (or the previous SHA if those legs failed — either way, we preserve what
-      # is actually running rather than blindly assuming the new SHA).
+      # CLI-only platform stack run does not revert those apps to the quickstart
+      # placeholder. Skipped on the workload path — main-jobs.bicep does not
+      # manage Container Apps.
       - name: Discover current app image tags
         id: imgs
+        if: ${{ steps.stackpath.outputs.mode == 'platform' }}
         run: |
           RG="${{ vars.ACA_RESOURCE_GROUP }}"
 
@@ -519,18 +531,6 @@ jobs:
       # ── Deployment Stack update (ADR-0060) ──────────────────────────────────
       # WORKLOAD_JOBS_STACK_ENABLED=true → pinwiz-jobs-dev (group scope, jobs only).
       # Otherwise → pinwiz-shared-dev (subscription scope; interim until migration).
-      - name: Select deployment stack path (ADR-0060)
-        id: stackpath
-        run: |
-          if [ "${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}" = "true" ]; then
-            echo "mode=workload" >> "$GITHUB_OUTPUT"
-            echo "Using WORKLOAD stack pinwiz-jobs-dev (no CognitiveServices preflight)."
-          else
-            echo "mode=platform" >> "$GITHUB_OUTPUT"
-            echo "Using PLATFORM stack pinwiz-shared-dev (interim — still Foundry-preflights)."
-            echo "After migrate-aca-jobs-to-workload-stack.md, set WORKLOAD_JOBS_STACK_ENABLED=true."
-          fi
-
       # Platform path only: empty developerObjectId + deleteResources strips RBAC (#744).
       # Workload path does not manage developer role assignments — skip this guard there.
       - name: Verify DEVELOPER_OBJECT_ID is configured
