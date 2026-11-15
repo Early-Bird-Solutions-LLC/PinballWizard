@@ -37,14 +37,16 @@ public static class OpdbMachineMapper
         if (dto.Manufacturer is null) return null;
 
         // Match Play V1 exposes short `name` ("Stern") plus `fullName`
-        // ("Stern Pinball, Inc."). Prefer the long form for display; key
-        // normalization accepts either (Contains("stern") → "stern").
+        // ("Stern Pinball, Inc."). Prefer the long form for display.
+        // Partition keys must stay compatible with pre-V1 Cosmos docs
+        // (keyed from legacy OPDB `name`, which matches V1 `fullName`) —
+        // see ResolveManufacturerKeySource.
         var manufacturerName = FirstNonBlank(
             dto.Manufacturer.FullName, dto.Manufacturer.Name, dto.Manufacturer.ShortName);
         if (string.IsNullOrWhiteSpace(manufacturerName)) return null;
 
-        var manufacturerKey = NormalizeManufacturerKey(FirstNonBlank(
-            dto.Manufacturer.ShortName, dto.Manufacturer.Name, dto.Manufacturer.FullName)!);
+        var manufacturerKey = NormalizeManufacturerKey(
+            ResolveManufacturerKeySource(dto.Manufacturer)!);
         var editionLabel = ExtractEditionLabel(dto.Name, dto.Features);
 
         return new Machine
@@ -317,6 +319,23 @@ public static class OpdbMachineMapper
     // Data was moved there so MachineIdentityVariants can use it without Infrastructure coupling.
     public static IReadOnlyList<string> GetMatchTokens(string key) =>
         Application.Resolution.ManufacturerMatchTokens.GetMatchTokens(key);
+
+    /// <summary>
+    /// Raw manufacturer string used to compute the Cosmos partition key.
+    /// Prefer <see cref="OpdbManufacturerDto.ShortName"/> when set (prior
+    /// behavior), then <see cref="OpdbManufacturerDto.FullName"/> before
+    /// Match Play V1's short brand <see cref="OpdbManufacturerDto.Name"/>.
+    /// Existing machines were keyed from legacy OPDB <c>name</c>, which
+    /// aligns with V1 <c>fullName</c>; preferring V1 short <c>name</c>
+    /// would re-hash non-special-cased makers onto a new partition
+    /// (insert instead of merge, reset <c>FirstSeenAt</c>, clear
+    /// project-owned fields, then phase (g) delete of the old copy).
+    /// </summary>
+    internal static string? ResolveManufacturerKeySource(OpdbManufacturerDto manufacturer)
+    {
+        ArgumentNullException.ThrowIfNull(manufacturer);
+        return FirstNonBlank(manufacturer.ShortName, manufacturer.FullName, manufacturer.Name);
+    }
 
     // Returns the first argument that is non-null AND non-whitespace,
     // or null if every candidate is null/empty/whitespace. C#'s null-

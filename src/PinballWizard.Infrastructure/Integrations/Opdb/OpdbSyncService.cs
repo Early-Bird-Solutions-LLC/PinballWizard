@@ -272,24 +272,21 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     if (string.IsNullOrWhiteSpace(aliasDto.OpdbId)) { skipped++; continue; }
 
                     var baseId = OpdbMachineMapper.GetBaseMachineOpdbId(aliasDto.OpdbId);
+                    // Same ShortName → FullName → Name order as Map (stable
+                    // partition keys vs pre-V1 Cosmos docs). Do not prefer
+                    // V1 short `name` over `fullName`.
                     var manufacturerKeySource = aliasDto.Manufacturer is null
                         ? null
-                        : OpdbMachineMapper.FirstNonBlank(
-                            aliasDto.Manufacturer.ShortName,
-                            aliasDto.Manufacturer.Name,
-                            aliasDto.Manufacturer.FullName);
+                        : OpdbMachineMapper.ResolveManufacturerKeySource(aliasDto.Manufacturer);
                     if (string.IsNullOrWhiteSpace(baseId) || string.IsNullOrWhiteSpace(manufacturerKeySource))
                     {
                         skipped++;
                         continue;
                     }
 
-                    // Same blank-string fallback shape the OpdbMachineMapper handles
-                    // for base machines — see OpdbMachineMapper.FirstNonBlank. Match
-                    // Play V1 may emit ShortName="" (empty string), which previously
-                    // fell through `??` as a literal "" and tripped
-                    // NormalizeManufacturerKey's blank-input guard, dropping the
-                    // alias as a logged sync skip.
+                    // Match Play V1 may emit ShortName="" (empty string);
+                    // ResolveManufacturerKeySource / FirstNonBlank skip blanks
+                    // so NormalizeManufacturerKey is never fed "".
                     var partitionKey = OpdbMachineMapper.NormalizeManufacturerKey(manufacturerKeySource);
                     var baseMachine = await _machines.GetByOpdbIdAsync(baseId, partitionKey, cancellationToken).ConfigureAwait(false);
                     if (baseMachine is null)
