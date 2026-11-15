@@ -42,4 +42,13 @@ public interface IRefusalRecoveryService
         string normalizedQuestion,
         RefusalCategory category,
         CancellationToken ct);
+
+    // ADR-0053 machine-scope gate (#784): same community recovery as
+    // NoCitation, but MissingWhat distinguishes "machine known, no indexed
+    // docs" from a generic ungrounded answer, and the subject machine is
+    // never listed under RelatedMachines.
+    Task<RefusalDetail?> BuildMachineKnownNoDocsRecoveryAsync(
+        string normalizedQuestion,
+        string machineId,
+        CancellationToken ct);
 }

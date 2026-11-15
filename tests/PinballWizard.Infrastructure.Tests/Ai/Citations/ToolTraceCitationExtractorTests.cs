@@ -378,6 +378,23 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void Extract_SearchCorpusResult_SectionOnly_TitlePrefixedSectionStamp()
+    {
+        // No MachineTitle → stamp "Section · …" so AnswerCitedSubjectFilter
+        // fail-opens instead of treating the heading as a machine subject (#783).
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      machineTitle: "", section: "Multiball rules",
+                      pageStart: 12, pageEnd: 14),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.StartsWith("Section · Multiball rules", citation.Title);
+        Assert.Contains("p. 12–14", citation.Title);
+    }
+
+    [Fact]
     public void Extract_SearchCorpusResult_PopulatesDocumentChunkIdAndMachineId()
     {
         var corpus = new SearchCorpusResult([
@@ -1430,6 +1447,39 @@ public sealed class ToolTraceCitationExtractorTests
             [
                 new MatchPlayStandingRowDto(1, "Ada", 10, "12.00", 5, 123),
             ]);
+
+    [Fact]
+    public void Extract_MatchPlayArenasDto_AsTyped_ProducesCitation()
+    {
+        var dto = new MatchPlayTournamentArenasDto(
+            TournamentId: 99,
+            Name: "INDISC 2026",
+            PublicUrl: "https://app.matchplay.events/tournaments/99",
+            Attribution: "Match Play Events — https://app.matchplay.events/tournaments/99",
+            Arenas: [new MatchPlayArenaDto(1, "Godzilla", "active", "G33YF")]);
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentArenas", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal(CitationSourceType.MatchPlayTournament, citation.SourceType);
+        Assert.Contains("arenas", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Extract_MatchPlayFloorDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        var dto = new MatchPlayTournamentFloorDto(
+            TournamentId: 99,
+            Name: "INDISC 2026",
+            PublicUrl: "https://app.matchplay.events/tournaments/99",
+            Attribution: "Match Play Events — https://app.matchplay.events/tournaments/99",
+            Rounds: [new MatchPlayRoundDto(1, 0, "Round 1", "started", null)],
+            Games: []);
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentFloor", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Contains("floor", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static MarketValueDto SampleMarketValueDto(string opdbId) =>
         new(MachineTitle: "Medieval Madness",

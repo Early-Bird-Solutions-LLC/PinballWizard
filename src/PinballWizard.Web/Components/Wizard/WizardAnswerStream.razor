@@ -38,12 +38,12 @@
 
 <div class="wizard-answer-stream" data-testid="wizard-answer-stream">
 
-    @* Document outline (#789): Idle → one visually-hidden <h1>; after submit
-       the live question is the visible <h1>. Prior thread turns use <h2> so
-       the page never has two <h1>s and screen readers get a real outline. *@
+    @* Document outline (#789): exactly one page <h1>. Prior turns use <p>
+       (same visual class) so chronological DOM = reading/focus order —
+       no flex reorder (#1031 Bugbot). Idle uses a visually-hidden title. *@
     @if (_state == AnswerState.Idle)
     {
-        <h1 class="pw-visually-hidden">Ask the Wizard</h1>
+        <h1 class="pw-visually-hidden wizard-answer-stream__doc-title">Ask the Wizard</h1>
     }
 
     @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
@@ -57,10 +57,10 @@
             @foreach (var turn in _thread)
             {
                 <div class="wizard-thread__turn" data-testid="conversation-turn">
-                    <MudText Typo="Typo.h2" Class="wizard-answer-stream__question"
-                             data-testid="turn-question">
+                    <p class="wizard-answer-stream__question"
+                       data-testid="turn-question">
                         @turn.Question
-                    </MudText>
+                    </p>
                     <TokenRenderer SpanTexts="@turn.TextSpans" IsStreaming="false" />
                     @if (turn.Citations.Count > 0)
                     {
@@ -71,86 +71,42 @@
         </MudStack>
     }
 
-    @* ── Question input (always visible in Idle; hidden after submit) ──── *@
+    @* ── Question input (Idle only — first ask, or after PrepareFollowUp) ─ *@
     @if (_state == AnswerState.Idle)
     {
-        <MudStack Spacing="3">
-            <MudTextField @bind-Value="_question"
-                          Placeholder="@(_thread.Count > 0 ? "Ask a follow-up…" : "Ask anything about pinball machines…")"
-                          Variant="Variant.Outlined"
-                          FullWidth="true"
-                          AutoFocus="true"
-                          aria-label="Question"
-                          data-testid="question-input"
-                          OnKeyDown="OnKeyDownAsync"
-                          Disabled="_state != AnswerState.Idle" />
-            <MudStack Row="true" Spacing="2">
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           OnClick="SubmitAsync"
-                           Disabled="string.IsNullOrWhiteSpace(_question)"
-                           data-testid="ask-button">
-                    @(_thread.Count > 0 ? "Ask the follow-up" : "Ask the Wizard")
-                </MudButton>
-                @if (_thread.Count > 0)
-                {
-                    <MudButton Variant="Variant.Text"
-                               Color="Color.Secondary"
-                               OnClick="StartNewConversation"
-                               data-testid="new-conversation-button">
-                        New conversation
-                    </MudButton>
-                }
-            </MudStack>
-        </MudStack>
+        <WizardAskComposer @bind-Value="_question"
+                           IsFollowUpContext="_thread.Count > 0"
+                           ShowNewConversation="_thread.Count > 0"
+                           Submitted="SubmitFromComposerAsync"
+                           NewConversation="StartNewConversation" />
     }
-    else
+    else if (_state is not AnswerState.Complete and not AnswerState.Refusal and not AnswerState.Error)
     {
-        @* Show the submitted question as the page <h1> while the answer streams *@
-        <MudStack Spacing="1" Class="mb-3">
+        @* Submitted question is the page <h1> (#789) + Cancel while streaming.
+           Terminal-state follow-up controls render BELOW the answer (#787) —
+           never between the question and the body. *@
+        <MudStack Spacing="1" Class="mb-3 wizard-answer-stream__doc-title">
             <MudText Typo="Typo.h1" Class="wizard-answer-stream__question"
                      data-testid="submitted-question">
                 @_submittedQuestion
             </MudText>
-            @if (_state is not AnswerState.Complete and not AnswerState.Refusal and not AnswerState.Error)
-            {
-                <MudButton Variant="Variant.Text"
-                           Size="Size.Small"
-                           Color="Color.Secondary"
-                           OnClick="CancelCurrentTurn"
-                           data-testid="cancel-button">
-                    Cancel
-                </MudButton>
-            }
-            else
-            {
-                <MudStack Row="true" Spacing="2">
-                    @if (_thread.Count < MaxClientTurns)
-                    {
-                        <MudButton Variant="Variant.Text"
-                                   Size="Size.Small"
-                                   Color="Color.Primary"
-                                   OnClick="PrepareFollowUp"
-                                   data-testid="new-question-button">
-                            @(_state == AnswerState.Complete ? "Ask a follow-up" : "Ask another question")
-                        </MudButton>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary"
-                                 data-testid="turn-cap-hint">
-                            This conversation has reached its limit — start a new one to keep going.
-                        </MudText>
-                    }
-                    <MudButton Variant="Variant.Text"
-                               Size="Size.Small"
-                               Color="Color.Secondary"
-                               OnClick="StartNewConversation"
-                               data-testid="new-conversation-button">
-                        New conversation
-                    </MudButton>
-                </MudStack>
-            }
+            <MudButton Variant="Variant.Text"
+                       Size="Size.Small"
+                       Color="Color.Secondary"
+                       OnClick="CancelCurrentTurn"
+                       data-testid="cancel-button">
+                Cancel
+            </MudButton>
+        </MudStack>
+    }
+    else
+    {
+        @* Terminal states: live question remains the visible <h1> above the answer. *@
+        <MudStack Spacing="1" Class="mb-3 wizard-answer-stream__doc-title">
+            <MudText Typo="Typo.h1" Class="wizard-answer-stream__question"
+                     data-testid="submitted-question">
+                @_submittedQuestion
+            </MudText>
         </MudStack>
     }
 
@@ -208,6 +164,47 @@
                   Class="mt-2">
             The Wizard hit a snag. Retrying with a full response…
         </MudAlert>
+    }
+
+    @* ── Follow-up composer AFTER the answer (#787) ────────────────────────
+       Always in the DOM on terminal states — no "Ask a follow-up" reveal click.
+       Document order: question → answer → composer (never controls between).
+
+       Error while `_errorRecoveryInFlight`: the stream failed and
+       FallbackToWholeResponseAsync is still running. Mounting the autofocus
+       composer here would let Enter → PrepareFollowUp cancel that CTS and
+       drop the recovery answer (#787 Bugbot Medium). Show the composer on
+       Error only after recovery finishes (success transitions away; hard
+       failure leaves Error with the composer for a fresh ask). *@
+    @if (_state is AnswerState.Complete or AnswerState.Refusal
+         || (_state == AnswerState.Error && !_errorRecoveryInFlight))
+    {
+        <MudStack Spacing="3" Class="mt-4" data-testid="follow-up-composer">
+            @if (_thread.Count >= MaxClientTurns && _pendingTurn is not null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary"
+                         data-testid="turn-cap-hint">
+                    This conversation has reached its limit — start a new one to keep going.
+                </MudText>
+            }
+            else
+            {
+                <WizardAskComposer @bind-Value="_question"
+                                   IsFollowUpContext="true"
+                                   ShowNewConversation="true"
+                                   Submitted="SubmitFromComposerAsync"
+                                   NewConversation="StartNewConversation" />
+            }
+            @if (_thread.Count >= MaxClientTurns && _pendingTurn is not null)
+            {
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Secondary"
+                           OnClick="StartNewConversation"
+                           data-testid="new-conversation-button">
+                    New conversation
+                </MudButton>
+            }
+        </MudStack>
     }
 
 </div>
@@ -292,6 +289,11 @@
     // Cancelled in Dispose() to abort in-flight streams on navigation-away.
     private CancellationTokenSource _cts = new();
 
+    // True between Error transition and FallbackToWholeResponseAsync completion.
+    // Keeps the autofocus follow-up composer unmounted so a premature submit
+    // cannot cancel the recovery CTS (#787 Bugbot Medium).
+    private bool _errorRecoveryInFlight;
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     protected override async Task OnParametersSetAsync()
@@ -310,6 +312,9 @@
             return;
         }
 
+        // Deep-link / landing ?q= auto-submit. Only while Idle — terminal-state
+        // follow-ups go through the always-visible composer (#787), not by
+        // re-firing this parameter (which would loop on the same Question).
         if (!string.IsNullOrWhiteSpace(Question) &&
             _state == AnswerState.Idle &&
             string.IsNullOrWhiteSpace(_question))
@@ -321,12 +326,26 @@
 
     // ── Input handling ────────────────────────────────────────────────────
 
-    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    // Single entry point for Ask button + Enter from either Idle or terminal
+    // composers (#787). Terminal states commit the pending turn into the thread first.
+    private async Task SubmitFromComposerAsync()
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_question))
+        if (string.IsNullOrWhiteSpace(_question))
+            return;
+
+        // Defense in depth: composer is hidden while recovery runs, but do not
+        // cancel the fallback CTS if a stray submit still arrives (#787 Bugbot).
+        if (_state == AnswerState.Error && _errorRecoveryInFlight)
+            return;
+
+        if (_state is AnswerState.Complete or AnswerState.Refusal or AnswerState.Error)
         {
-            await SubmitAsync().ConfigureAwait(false);
+            var q = _question;
+            PrepareFollowUp();
+            _question = q;
         }
+
+        await SubmitAsync().ConfigureAwait(false);
     }
 
     private async Task SubmitAsync()
@@ -335,6 +354,11 @@
             return;
 
         _submittedQuestion = _question.Trim();
+        // Clear the composer immediately so the always-visible follow-up
+        // field (#787) is empty when Complete/Refusal/Error renders —
+        // otherwise AutoFocus lands at the end of the prior question and
+        // Ask stays enabled (Bugbot).
+        _question = string.Empty;
         _textDeltas.Clear();
         _citations.Clear();
         _currentToolCallName = null;
@@ -472,6 +496,7 @@
             // marshal the Error transition + render onto the Dispatcher.
             await InvokeAsync(() =>
             {
+                _errorRecoveryInFlight = true;
                 TransitionTo(AnswerState.Error);
                 StateHasChanged();
             }).ConfigureAwait(false);
@@ -560,6 +585,16 @@
             // Leave in Error state — user sees the alert. Off-Dispatcher: marshal render.
             await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
+        finally
+        {
+            // Recovery finished (Complete/Streaming/Refusal, or hard Error). Safe
+            // to mount the follow-up composer without cancelling an in-flight CTS.
+            await InvokeAsync(() =>
+            {
+                _errorRecoveryInFlight = false;
+                StateHasChanged();
+            }).ConfigureAwait(false);
+        }
     }
 
     // ── Final chunk application (canonical truth) ─────────────────────────
@@ -630,6 +665,7 @@
         _refusalDetail = null;
         _retryAfterSeconds = null;
         _pendingTurn = null;
+        _errorRecoveryInFlight = false;
     }
 
     // "Ask a follow-up" after a terminal state: the completed turn (if the

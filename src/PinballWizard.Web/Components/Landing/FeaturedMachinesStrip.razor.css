@@ -3,9 +3,12 @@
  */
 
 .featured-strip {
+    /* #788 c): 900px reading-measure capped the strip while the landing
+       section had ~1232px free — cards scrolled with a half-empty viewport. */
     width: 100%;
-    max-width: 900px;
+    max-width: 100%;
     margin: 0 auto;
+    min-width: 0;
 }
 
 .featured-strip__heading {

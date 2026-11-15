@@ -1,0 +1,84 @@
+@*
+    Shared ask box for WizardAnswerStream — Idle first-ask and the always-visible
+    terminal-state follow-up composer (#787).
+
+    Enter / NumpadEnter submits (Immediate=true so Value is current on keydown).
+    Labels unify on "Ask a follow-up" when IsFollowUpContext; otherwise "Ask the Wizard".
+*@
+
+<MudStack Spacing="3">
+    <MudTextField @bind-Value="_value"
+                  @bind-Value:after="OnValueAfter"
+                  Placeholder="@(IsFollowUpContext ? "Ask a follow-up…" : "Ask anything about pinball machines…")"
+                  Variant="Variant.Outlined"
+                  FullWidth="true"
+                  AutoFocus="true"
+                  Immediate="true"
+                  aria-label="Question"
+                  data-testid="question-input"
+                  OnKeyDown="OnKeyDownAsync" />
+    <MudStack Row="true" Spacing="2" Class="wizard-ask-composer__actions">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="OnAskClickedAsync"
+                   Disabled="string.IsNullOrWhiteSpace(_value)"
+                   data-testid="ask-button">
+            @(IsFollowUpContext ? "Ask a follow-up" : "Ask the Wizard")
+        </MudButton>
+        @if (IsFollowUpContext || ShowNewConversation)
+        {
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Secondary"
+                       Class="wizard-ask-composer__new-conversation"
+                       OnClick="NewConversation"
+                       data-testid="new-conversation-button">
+                New conversation
+            </MudButton>
+        }
+    </MudStack>
+</MudStack>
+
+@code {
+    [Parameter]
+    public string Value { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter]
+    public bool IsFollowUpContext { get; set; }
+
+    [Parameter]
+    public bool ShowNewConversation { get; set; }
+
+    [Parameter]
+    public EventCallback Submitted { get; set; }
+
+    [Parameter]
+    public EventCallback NewConversation { get; set; }
+
+    private string _value = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        _value = Value ?? string.Empty;
+    }
+
+    private async Task OnValueAfter()
+    {
+        await ValueChanged.InvokeAsync(_value).ConfigureAwait(false);
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if ((e.Key is "Enter" or "NumpadEnter") &&
+            !e.ShiftKey &&
+            !string.IsNullOrWhiteSpace(_value))
+        {
+            await Submitted.InvokeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task OnAskClickedAsync()
+        => await Submitted.InvokeAsync().ConfigureAwait(false);
+}

@@ -96,9 +96,14 @@ permissions:
                     # successfully-deployed SHA rather than github.event.before (#910)
 
 concurrency:
-  # One deploy at a time on main; a new push cancels an in-progress one.
+  # One deploy at a time on main. Queue — do not cancel. Cancelling mid-flight
+  # was aborting deploy-jobs after the ACA image push but before (or during)
+  # the workload stack apply on busy merge days, leaving E2E/smoke red-by-
+  # cancel and forcing the next push to re-run the stack (#910 lookback).
+  # Queueing lets an in-flight stack finish; later pushes still skip the stack
+  # when detect-changes finds no CLI/infra delta since that baseline.
   group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
@@ -315,10 +320,10 @@ jobs:
           - image: pinwiz-rag-indexer
             dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
             app_name_var: RAGINDEXER_APP_NAME
-          # CLI image — feeds all 22 ACA *Jobs* (scraper / linker / OPDB sync
+          # CLI image — feeds all 23 ACA *Jobs* (scraper / linker / OPDB sync
           # cron jobs), NOT an ACA *App*. This leg is build + push only; the
           # `deploy-jobs` job below then triggers an `az stack sub create` with
-          # the new :{sha} CLI tag, which repoints all 22 jobs atomically via
+          # the new :{sha} CLI tag, which repoints all 23 jobs atomically via
           # Bicep (every job uses the `cliImageTag` parameter). Using the stack
           # is the only path that satisfies the Deployment Stacks LOCKED
           # INVARIANT (CLAUDE.md #16, DLV-02) — `az containerapp job update` is
@@ -391,7 +396,7 @@ jobs:
             --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Run a Deployment Stack update with the freshly built CLI SHA so all 22 ACA
+  # Run a Deployment Stack update with the freshly built CLI SHA so all 23 ACA
   # Jobs are repointed in one IaC-governed, idempotent operation. This closes
   # the gap where `pinwiz-cli` images merged to main but jobs ran a 26-day-old
   # build until an operator manually re-ran Deploy-SharedResources.ps1 (#859).
@@ -400,10 +405,14 @@ jobs:
   # `az containerapp job update --image` is banned.
   #
   # ADR-0060 / #966 — two paths, gated by repo variable WORKLOAD_JOBS_STACK_ENABLED:
-  #   true  → az stack group create pinwiz-jobs-dev (infra/main-jobs.bicep).
-  #           ACA jobs only; NO Microsoft.CognitiveServices preflight.
-  #           Enable ONLY after docs/runbooks/migrate-aca-jobs-to-workload-stack.md.
-  #   false → az stack sub create pinwiz-shared-dev (interim; still Foundry-preflights).
+  #   true OR unset → az stack group create pinwiz-jobs-dev (infra/main-jobs.bicep).
+  #                   ACA jobs only; NO Microsoft.CognitiveServices preflight.
+  #                   Post-cutover default (migrate-aca-jobs-to-workload-stack.md done
+  #                   2026-11-15; manageAcaJobs=false committed). Unset → workload so
+  #                   image merges never Foundry-preflight even when the Actions var
+  #                   was never written (#993 / agent 403 on variables).
+  #   false         → az stack sub create pinwiz-shared-dev (emergency platform path;
+  #                   still Foundry-preflights — opt-in only).
   #
   # Only runs when CLI or infra files changed (gated by detect-changes). Skips
   # if the build-deploy matrix failed — never push a non-existent image tag.
@@ -448,13 +457,21 @@ jobs:
       - name: Select deployment stack path (ADR-0060)
         id: stackpath
         run: |
-          if [ "${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}" = "true" ]; then
-            echo "mode=workload" >> "$GITHUB_OUTPUT"
-            echo "Using WORKLOAD stack pinwiz-jobs-dev (no CognitiveServices preflight)."
-          else
+          # Post-cutover default is workload. Explicit false keeps an emergency
+          # platform-stack escape hatch; anything else (true, empty, garbage)
+          # stays on the jobs-only path so image merges cannot RequestConflict
+          # on CognitiveServices (#966 / #993).
+          MODE_VAR="${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}"
+          if [ "$MODE_VAR" = "false" ]; then
             echo "mode=platform" >> "$GITHUB_OUTPUT"
-            echo "Using PLATFORM stack pinwiz-shared-dev (interim — still Foundry-preflights)."
-            echo "After migrate-aca-jobs-to-workload-stack.md, set WORKLOAD_JOBS_STACK_ENABLED=true."
+            echo "Using PLATFORM stack pinwiz-shared-dev (WORKLOAD_JOBS_STACK_ENABLED=false — Foundry-preflights)."
+          else
+            echo "mode=workload" >> "$GITHUB_OUTPUT"
+            if [ "$MODE_VAR" = "true" ]; then
+              echo "Using WORKLOAD stack pinwiz-jobs-dev (WORKLOAD_JOBS_STACK_ENABLED=true)."
+            else
+              echo "Using WORKLOAD stack pinwiz-jobs-dev (default — var unset/empty; no CognitiveServices preflight)."
+            fi
           fi
 
       # ── Preserve currently-deployed app images (platform path only) ─────────
@@ -529,8 +546,8 @@ jobs:
           echo "  cliImageTag:        ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
 
       # ── Deployment Stack update (ADR-0060) ──────────────────────────────────
-      # WORKLOAD_JOBS_STACK_ENABLED=true → pinwiz-jobs-dev (group scope, jobs only).
-      # Otherwise → pinwiz-shared-dev (subscription scope; interim until migration).
+      # Default / true → pinwiz-jobs-dev (group scope, jobs only).
+      # Explicit false → pinwiz-shared-dev (subscription scope; emergency only).
       # Platform path only: empty developerObjectId + deleteResources strips RBAC (#744).
       # Workload path does not manage developer role assignments — skip this guard there.
       - name: Verify DEVELOPER_OBJECT_ID is configured
@@ -604,12 +621,13 @@ jobs:
             if grep -q "715-123420" "$VALIDATE_OUT"; then
               echo "::error::THROTTLE, NOT A FAILURE: Azure returned 715-123420"
               echo "::error::(CognitiveServices RTFP). The platform stack still includes Foundry."
-              echo "::error::Complete ADR-0060 migration + set WORKLOAD_JOBS_STACK_ENABLED=true"
-              echo "::error::so image repoints stop preflighting CognitiveServices (#966)."
+              echo "::error::Unset WORKLOAD_JOBS_STACK_ENABLED (or set true) to use the"
+              echo "::error::workload jobs stack — image repoints must not Foundry-preflight (#966)."
+              echo "::error::WORKLOAD=false is Foundry/shared emergency only; it does not repoint jobs."
               echo "::error::"
               echo "::error::WAIT — do NOT retry. Retrying extends the block."
-              echo "::error::The container images ARE built and pushed to ACR; only the ACA job"
-              echo "::error::repoint is deferred."
+              echo "::error::The container images ARE built and pushed to ACR; only the platform"
+              echo "::error::stack apply is deferred."
               exit 1
             fi
 
@@ -622,9 +640,14 @@ jobs:
           fi
           echo "Platform stack validation passed — proceeding to the live run."
 
-      - name: Run platform stack (interim — repoints jobs via pinwiz-shared-dev)
+      # Platform path is an emergency Foundry/shared-stack hatch only.
+      # Post-cutover, manageAcaJobs=false — this run does NOT repoint ACA jobs
+      # (#1018 Bugbot). Job image updates require the workload path (default).
+      - name: Run platform stack (emergency — Foundry/shared only; no job repoint)
         if: ${{ steps.stackpath.outputs.mode == 'platform' }}
         run: |
+          echo "Platform mode: updating pinwiz-shared-dev only."
+          echo "ACA jobs stay on pinwiz-jobs-dev (manageAcaJobs=false) — unset WORKLOAD_JOBS_STACK_ENABLED or set true to repoint images."
           az stack sub create \
             --name "pinwiz-shared-dev" \
             --location eastus2 \
@@ -639,13 +662,15 @@ jobs:
             --deny-settings-mode none \
             --yes
 
-      # A green stack run is not evidence the 22 jobs actually moved. #859 exists
+      # A green stack run is not evidence the 23 jobs actually moved. #859 exists
       # precisely because images stayed stale while everything reported success, so
       # this asserts the acceptance criterion rather than assuming it: every
       # pinwiz-job-* container must now reference the SHA just built. Without it,
       # deploy-jobs proves only that the ARM call returned 200 — the same
       # green-but-unverified shape the issue is about.
+      # Workload path only — platform mode cannot move jobs after manageAcaJobs=false.
       - name: Verify all ACA jobs now run the built image
+        if: ${{ steps.stackpath.outputs.mode == 'workload' }}
         run: |
           EXPECTED="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
           RG="${{ vars.ACA_RESOURCE_GROUP }}"

@@ -105,6 +105,20 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
     internal const string SuggestedRephrase_NoCitation =
         "Try asking about a topic that appears in manufacturer documentation — rules, repair procedures, or machine specifications are most reliably sourced.";
 
+    // ADR-0053 / #784 — machine pinned via machineId, zero indexed chunks.
+    // Distinct from MissingWhat_NoCitation so the UI does not imply the
+    // catalog machine is unknown / unsourced as a catalog entry.
+    internal const string MissingWhat_MachineKnownNoDocsGeneric =
+        "I know this machine in the catalog, but have no rules or service documentation indexed for it yet. " +
+        "The community links below will have more.";
+
+    internal const string SuggestedRephrase_MachineKnownNoDocs =
+        "For machines without manufacturer docs in the index, forums and reference sites below are the best next stop — or ask about a machine with rulesheets / manuals indexed.";
+
+    internal static string MissingWhatMachineKnownNoDocs(string title) =>
+        $"I know {title}, but have no rules or service documentation indexed for it yet. " +
+        "The community links below will have more.";
+
     internal const string MissingWhat_UpstreamThrottled =
         "The AI service is temporarily rate-limited. This is a transient condition — no content is missing from the corpus.";
 
@@ -266,6 +280,59 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
             SuggestedRephrase: suggestedRephrase);
     }
 
+    public async Task<RefusalDetail?> BuildMachineKnownNoDocsRecoveryAsync(
+        string normalizedQuestion,
+        string machineId,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+
+        var baseRecovery = await BuildRecoveryAsync(
+                normalizedQuestion, RefusalCategory.NoCitation, ct)
+            .ConfigureAwait(false);
+
+        RelatedMachine? known = null;
+        IReadOnlyList<RelatedMachine>? related = baseRecovery?.RelatedMachines;
+
+        if (related is { Count: > 0 })
+        {
+            known = related.FirstOrDefault(m =>
+                string.Equals(m.MachineId, machineId, StringComparison.OrdinalIgnoreCase));
+
+            var others = related
+                .Where(m => !string.Equals(m.MachineId, machineId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            related = others.Count > 0 ? others : null;
+        }
+        else
+        {
+            // FindRelatedMachinesAsync returns [] on miss — normalize to null
+            // so the panel does not render an empty "related" section.
+            related = null;
+        }
+
+        // #784 Bugbot Medium: token-overlap QueryByTitleAsync exact-matches
+        // each question token to the full title, so multi-word CTAs never
+        // place the pinned machineId in RelatedMachines. Resolve by OPDB
+        // group siblings when overlap missed — we already know the id.
+        if (known is null)
+        {
+            known = await TryResolveKnownMachineByIdAsync(machineId, ct).ConfigureAwait(false);
+        }
+
+        var missingWhat = known is not null
+            ? MissingWhatMachineKnownNoDocs(known.Title)
+            : MissingWhat_MachineKnownNoDocsGeneric;
+
+        return new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: related,
+            CommunityResources: baseRecovery?.CommunityResources,
+            MissingWhat: missingWhat,
+            SuggestedRephrase: SuggestedRephrase_MachineKnownNoDocs,
+            KnownMachineWithoutIndexedDocs: known);
+    }
+
     // Best-effort related-machines lookup. Degrades to null on failure
     // (logged at Error + metered) WITHOUT affecting community-resource routing —
     // the two enrichments are independent. OperationCanceledException propagates.
@@ -347,6 +414,46 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
         }
 
         return cards.Count > 0 ? cards.AsReadOnly() : null;
+    }
+
+    // Point-read substitute when we have machineId but not manufacturer:
+    // ADR-0029 group siblings share the leading OPDB segment; filter to id.
+    private async Task<RelatedMachine?> TryResolveKnownMachineByIdAsync(
+        string machineId,
+        CancellationToken ct)
+    {
+        var dash = machineId.IndexOf('-');
+        var groupId = dash > 0 ? machineId[..dash] : machineId;
+        if (string.IsNullOrWhiteSpace(groupId))
+        {
+            return null;
+        }
+
+        try
+        {
+            await foreach (var machine in _machines
+                .GetSiblingsByGroupIdAsync(groupId, ct)
+                .ConfigureAwait(false))
+            {
+                if (string.Equals(machine.Id, machineId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new RelatedMachine(
+                        MachineId: machine.Id,
+                        Title: machine.Title,
+                        OpdbUrl: machine.OpdbSourceUrl);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort — keep the generic MissingWhat rather than fail the gate.
+            _logger.LogWarning(
+                ex,
+                "RefusalRecoveryService: failed resolving known machine {MachineId} via group siblings.",
+                machineId);
+        }
+
+        return null;
     }
 
     private async Task<IReadOnlyList<RelatedMachine>> FindRelatedMachinesAsync(

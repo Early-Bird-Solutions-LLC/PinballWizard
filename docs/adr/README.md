@@ -72,6 +72,8 @@ negative) it carries.
 | [0059](0059-opdb-matchplay-cdn-export.md) | OPDB catalog via Match Play CDN V1 export after opdb.org `/api` shutdown | Accepted |
 | [0060](0060-split-platform-workload-deployment-stacks.md) | Split platform / workload deployment stacks for ACA job image repoint | Accepted |
 | [0061](0061-matchplay-live-tournament-tools.md) | Match Play Events live-tournament tools (search + standings; not RAG) | Accepted |
+| [0062](0062-matchplay-live-event-floor-tools.md) | Match Play live event-floor Wizard tools (detail / arenas / rounds+games / player lookup) | Accepted |
+| [0063](0063-answer-subject-citation-filter.md) | Drop citations whose machine subject is absent from the answer | Accepted |
 
 ## Conventions
 

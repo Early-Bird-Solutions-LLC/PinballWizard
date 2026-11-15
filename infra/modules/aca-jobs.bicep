@@ -25,7 +25,7 @@ param tags object
 @description('CLI image (ACR login server + pinwiz-cli:<sha>).')
 param cliImageTag string
 
-@description('When false, skip jobs that require AI Search + Foundry (gc-rag-index, stern-refresh, kineticist, twip).')
+@description('When false, skip jobs that require AI Search + Foundry (gc-rag-index, stern-refresh, kineticist, twip, pintips).')
 param deployAiSearch bool = true
 
 @description('Cosmos account name (platform).')
@@ -77,6 +77,8 @@ param sternRefreshCronExpression string = '0 10 * * 0'
 // Retained for Schedule re-enable; Kineticist job is Manual (ADR-0043 pause).
 param kineticistSyncCronExpression string = '0 11 * * 0'
 param twipNewsletterCronExpression string = '0 8 * * 0'
+// After the Sunday OPDB sync (03:00). Free of the 10:00 Stern refresh embedding window.
+param pinTipsCronExpression string = '0 17 * * 0'
 param multimorphicCronExpression string = '0 4 * * 0'
 param cgcCronExpression string = '0 5 * * 0'
 param barrelsOfFunCronExpression string = '0 4 1 * *'
@@ -743,6 +745,88 @@ resource twipJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 }
 
 // -----------------------------------------------------------------------------
+// PinTips sync ACA Job (weekly Sunday 17:00 UTC)
+// -----------------------------------------------------------------------------
+// --sync-pintips reads the Match Play daily export and upserts one PlayTip
+// document per catalog machine the tip resolves to. The 2026-11-15 run indexed
+// 5542 documents from 3495 tips in about 71 minutes. Every run re-embeds; there
+// is no content-hash skip. Weekly keeps that Foundry pass inside the cost cap.
+// 7200s: the TWIP job's 3600s timeout killed the first attempt at tip 3207.
+// Sunday 17:00 is after OPDB (03:00) and clear of the Stern refresh window.
+
+module pinTipsJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployAiSearch) {
+  name: 'pintips-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-pintips-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: pinTipsCronExpression
+    replicaTimeout: 7200
+    cpu: '1.0'
+    memory: '2Gi'
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--sync-pintips' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        name: 'AiSearch__Endpoint'
+        value: 'https://${searchService.?name ?? ''}.search.windows.net'
+      }
+      {
+        name: 'AiSearch__IndexName'
+        value: 'pinwiz-rag-v1'
+      }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource pinTipsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'pintips-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: pinTipsJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+resource pinTipsJobSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, 'pintips-job-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: pinTipsJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource pinTipsJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, 'pintips-job-${environment}', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: pinTipsJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Multimorphic scraper ACA Job (weekly product catalog scrape)
 // -----------------------------------------------------------------------------
 module multimorphicScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = {
@@ -1350,6 +1434,8 @@ output kineticistSyncJobName string = kineticistSyncJob.?outputs.jobName ?? ''
 output kineticistSyncJobPrincipalId string = kineticistSyncJob.?outputs.jobPrincipalId ?? ''
 output twipNewsletterJobName string = twipNewsletterJob.?outputs.jobName ?? ''
 output twipNewsletterJobPrincipalId string = twipNewsletterJob.?outputs.jobPrincipalId ?? ''
+output pinTipsJobName string = pinTipsJob.?outputs.jobName ?? ''
+output pinTipsJobPrincipalId string = pinTipsJob.?outputs.jobPrincipalId ?? ''
 output multimorphicScrapeJobName string = multimorphicScrapeJob.outputs.jobName
 output cgcScrapeJobName string = cgcScrapeJob.outputs.jobName
 output barrelsOfFunScrapeJobName string = barrelsOfFunScrapeJob.outputs.jobName
