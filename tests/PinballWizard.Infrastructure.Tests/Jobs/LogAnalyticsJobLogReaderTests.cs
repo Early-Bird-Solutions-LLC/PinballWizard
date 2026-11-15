@@ -37,6 +37,23 @@ public sealed class LogAnalyticsJobLogReaderTests
                 null!));
 
     [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task EndReader_Unconfigured_ReturnsEmpty_WithoutWire(string workspaceId)
+    {
+        var reader = new LogAnalyticsJobExecutionEndReader(
+            Options.Create(new MonitoringOptions { LogAnalyticsWorkspaceId = workspaceId }),
+            NullLogger<LogAnalyticsJobExecutionEndReader>.Instance);
+        var failed = new JobExecution(
+            "pinwiz-job-twip-buutj-gzlzzia", "Failed", DateTimeOffset.UnixEpoch, null);
+
+        var ends = await reader.GetEndTimesAsync(
+            "pinwiz-job-twip-buutj", [failed], CancellationToken.None);
+
+        Assert.Empty(ends);
+    }
+
+    [Theory]
     [InlineData("info: PinballWizard.Cli.Linker[0]", "stdout", JobLogSeverity.Info)]
     [InlineData("warn: something degraded", "stdout", JobLogSeverity.Warning)]
     [InlineData("fail: linker blew up", "stdout", JobLogSeverity.Error)]
