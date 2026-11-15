@@ -267,29 +267,19 @@ public sealed class OpdbExportCacheTests : IDisposable
         }
 
         /// <summary>
-        /// Builds a response whose ownership transfers to the HttpClient caller.
-        /// Assign-then-return with dispose-on-failure so CodeQL/code-quality
-        /// see every local disposed or escaped via return.
+        /// Builds a response whose ownership transfers to the HttpClient
+        /// caller via return (no local try/finally dispose — the returned
+        /// instance must not be wrapped in <c>using</c>).
         /// </summary>
         private static HttpResponseMessage CreateResponse(HttpStatusCode status, string? body = null)
         {
-            HttpResponseMessage? response = null;
-            try
+            var response = new HttpResponseMessage(status);
+            if (body is not null)
             {
-                response = new HttpResponseMessage(status);
-                if (body is not null)
-                {
-                    response.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                }
+                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            }
 
-                var result = response;
-                response = null;
-                return result;
-            }
-            finally
-            {
-                response?.Dispose();
-            }
+            return response;
         }
     }
 }
