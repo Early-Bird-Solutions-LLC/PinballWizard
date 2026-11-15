@@ -1154,17 +1154,26 @@ public sealed class AiRouter : IAiRouter
         }
 
         // Multi-turn citation inheritance (2026-06-11 design). A grounded
-        // follow-up that the model answers from conversation context fires
-        // no retrieval tool, so the extractor sees zero citations — and
-        // without intervention the confidence gate (citation-coverage
-        // signal) or the NoCitation gate below would refuse a legitimate
-        // answer. The grounding for such an answer IS the prior turn's
-        // cited material, so we inherit the most recent cited turn's
-        // citations, flagged Inherited=true so the UI can label them.
+        // clarifying follow-up that the model answers from conversation
+        // context fires no retrieval tool, so the extractor sees zero
+        // citations — and without intervention the confidence gate
+        // (citation-coverage signal) or the NoCitation gate below would
+        // refuse a legitimate answer. The grounding for such an answer
+        // IS the prior turn's cited material, so we inherit the most
+        // recent cited turn's citations, flagged Inherited=true so the
+        // UI can label them.
+        //
+        // #780: new-intent follow-ups ("games similar to X") must NOT
+        // inherit — that path would pass confidence on borrowed manuals
+        // while the same question asked cold refuses. See
+        // FollowUpCitationInheritance.ShouldInherit.
+        //
         // Placement matters: this must run BEFORE Compute() so inherited
         // citations feed the citation-coverage signal, not just the binary
         // gate. Single-shot behavior is untouched (history is null).
-        if (citations.Count == 0 && history is { Count: > 0 })
+        if (citations.Count == 0
+            && history is { Count: > 0 }
+            && FollowUpCitationInheritance.ShouldInherit(normalized, history))
         {
             var donor = history.LastOrDefault(t => t.Citations is { Count: > 0 });
             if (donor is not null)
@@ -1175,6 +1184,22 @@ public sealed class AiRouter : IAiRouter
                     "AiRouter inherited {Count} citations from the prior conversation turn (no retrieval tool fired this turn).",
                     citations.Count);
             }
+        }
+
+        // Answer-subject filter (#783 / ADR-0063): drop tool-trace hits whose
+        // machine subject never appears in the answer. Runs AFTER inheritance
+        // (Inherited citations are exempt — clarifying follow-ups) and BEFORE
+        // reconcile / confidence / NoCitation so unused hits cannot inflate
+        // coverage or pass the binary gate.
+        var subjectFilter = AnswerCitedSubjectFilter.Filter(responseText, citations);
+        citations = subjectFilter.Kept;
+        if (subjectFilter.DroppedCount > 0)
+        {
+            PinballWizardTelemetry.AiCitationsDroppedUnusedSubject.Add(subjectFilter.DroppedCount);
+            _logger.LogDebug(
+                "AiRouter dropped {Dropped} citation(s) whose subject is absent from the answer (kept {Kept}).",
+                subjectFilter.DroppedCount,
+                citations.Count);
         }
 
         // Inline-citation reconciliation (inline-citation-markers feature).
@@ -1519,6 +1544,13 @@ public sealed class AiRouter : IAiRouter
     internal RefusalDetail BuildRefusalDetailForTest(RefusalCategory category, ConfidenceSignals? signals)
         => BuildRefusalDetail(category, signals, recovery: null);
 
+    // #784 Bugbot: recovery.KnownMachineWithoutIndexedDocs must survive merge.
+    internal RefusalDetail BuildRefusalDetailForTest(
+        RefusalCategory category,
+        ConfidenceSignals? signals,
+        RefusalDetail recovery)
+        => BuildRefusalDetail(category, signals, recovery);
+
     private RefusalDetail BuildRefusalDetail(
         RefusalCategory category,
         ConfidenceSignals? signals,
@@ -1548,7 +1580,10 @@ public sealed class AiRouter : IAiRouter
             RelatedMachines: recovery?.RelatedMachines,
             CommunityResources: recovery?.CommunityResources,
             MissingWhat: recovery?.MissingWhat,
-            SuggestedRephrase: recovery?.SuggestedRephrase);
+            SuggestedRephrase: recovery?.SuggestedRephrase,
+            // #784 Bugbot High: recovery fills KnownMachineWithoutIndexedDocs;
+            // dropping it here nulls the “This machine:” panel section.
+            KnownMachineWithoutIndexedDocs: recovery?.KnownMachineWithoutIndexedDocs);
     }
 
     private static string Normalize(string question)

@@ -776,7 +776,10 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         }
         if (section is not null)
         {
-            return $"{section} ({pageRange})";
+            // Prefix so AnswerCitedSubjectFilter fail-opens — a bare
+            // "{section} (p. …)" would be mistaken for a machine subject and
+            // dropped when the answer names the game, not the heading (#783).
+            return $"Section · {section} ({pageRange})";
         }
         return pageRange;
     }

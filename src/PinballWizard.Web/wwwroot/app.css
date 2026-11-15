@@ -544,12 +544,20 @@ html, body {
     margin: 0;
     padding: 0;
     font-family: var(--pw-font-body);
-    /* #790: page-level horizontal scroll is never intentional. Clip at the
-       document root so CSS transforms (TiltPage rotate) cannot expand
-       documentElement.scrollWidth past the viewport. Nested regions that
-       need sideways scroll (AppDataGrid, code blocks) use overflow-x:auto
-       on their own boxes. */
+}
+
+/* ── Landing page (Index.razor MudContainer Class="landing-page") ─────── */
+/* Global because Class rides MudContainer — scoped Index.razor.css cannot
+   attach [b-xxxx] to that child root. Do NOT set max-width here: MudContainer
+   MaxWidth.Large (~1280px) already caps the measure. */
+.landing-page {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    position: relative;
+    /* #788 b): contain stray child min-content so / never page-scrolls at 320. */
+    min-width: 0;
     overflow-x: clip;
+    box-sizing: border-box;
 }
 
 /* ── Admin dashboard summary cards (AppSummaryCard) ───────────────────── */
@@ -1063,12 +1071,14 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
 }
 
 .brand-footer__link,
-.brand-footer__meta-link,
-.brand-footer__coverage-link {
+.brand-footer__meta-link {
     min-block-size: 44px;
     display: inline-flex;
     align-items: center;
 }
+
+/* Coverage link stays inline-in-sentence (WCAG 2.5.8 exempt) — do not stretch
+   the footer paragraph to 44px (#789 Bugbot). Nearby stacked chrome keeps 44. */
 
 /* Stacked document links in the machine-detail grid (WCAG 2.2 SC 2.5.8, #790).
 

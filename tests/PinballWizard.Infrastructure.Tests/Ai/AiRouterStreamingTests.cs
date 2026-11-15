@@ -562,8 +562,9 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_001", corpus),
             }),
-            // Answer references k=1 (matched) and k=99 (unmatched — must be dropped).
-            MakeTextUpdate("Flippers persist [[cite:1]] and unknown [[cite:99]]."),
+            // Answer names Godzilla so ADR-0063 subject filter keeps the hit;
+            // references k=1 (matched) and k=99 (unmatched — must be dropped).
+            MakeTextUpdate("On Godzilla, flippers persist [[cite:1]] and unknown [[cite:99]]."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
         SetCacheMiss(cache);
@@ -581,7 +582,7 @@ public sealed class AiRouterStreamingTests
         // k=99 out-of-range → dropped (reconciler ran; raw pass-through would leave it).
         Assert.DoesNotContain("[[cite:99]]", final.Answer.Text, StringComparison.Ordinal);
         // Prose preserved.
-        Assert.Contains("Flippers persist", final.Answer.Text, StringComparison.Ordinal);
+        Assert.Contains("flippers persist", final.Answer.Text, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -629,10 +630,11 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_002", corpus),
             }),
-            // Answer references k1 and k99 (unmatched). After reconcile:
+            // Answer names Godzilla so ADR-0063 keeps both corpus hits.
+            // References k1 and k99 (unmatched). After reconcile:
             //   [[cite:1]] → [[cite:1]] (k1=urlB→N1)
             //   [[cite:99]] → "" (dropped — no k99 in sourceIndex)
-            MakeTextUpdate("Source A [[cite:1]] and unknown [[cite:99]]."),
+            MakeTextUpdate("On Godzilla, source A [[cite:1]] and unknown [[cite:99]]."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
         SetCacheMiss(cache);
@@ -684,8 +686,8 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_003", corpus),
             }),
-            // One update with a cite token embedded in prose.
-            MakeTextUpdate("Flippers persist [[cite:1]]. Read more."),
+            // Name Godzilla so ADR-0063 subject filter keeps the corpus hit.
+            MakeTextUpdate("On Godzilla, flippers persist [[cite:1]]. Read more."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
         SetCacheMiss(cache);
@@ -706,7 +708,7 @@ public sealed class AiRouterStreamingTests
         Assert.False(final.Answer.IsRefusal,
             $"Expected a successful answer but got a refusal: {final.Answer.Text}");
         Assert.Contains("[[cite:1]]", final.Answer.Text, StringComparison.Ordinal);
-        Assert.Contains("Flippers persist", final.Answer.Text, StringComparison.Ordinal);
+        Assert.Contains("flippers persist", final.Answer.Text, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────

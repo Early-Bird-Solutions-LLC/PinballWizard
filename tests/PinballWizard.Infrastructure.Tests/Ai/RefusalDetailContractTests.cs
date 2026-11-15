@@ -210,4 +210,32 @@ public sealed class RefusalDetailContractTests
             Assert.Null(detail.SuggestedRephrase);
         }
     }
+
+    [Fact]
+    public void BuildRefusalDetail_PreservesKnownMachineWithoutIndexedDocsFromRecovery()
+    {
+        // #784 Bugbot High: BuildRefusalDetail must forward
+        // KnownMachineWithoutIndexedDocs — dropping it nulls the
+        // "This machine:" panel section on the ADR-0053 gate path.
+        var router = CreateRouter();
+        var known = new RelatedMachine(
+            MachineId: "G50L9-MDxXD",
+            Title: "Attack from Mars",
+            OpdbUrl: "https://opdb.org/machines/G50L9-MDxXD");
+        var recovery = new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: null,
+            CommunityResources: null,
+            MissingWhat: "I know Attack from Mars, but have no documentation indexed.",
+            SuggestedRephrase: "Ask about a different machine.",
+            KnownMachineWithoutIndexedDocs: known);
+
+        var detail = router.BuildRefusalDetailForTest(
+            RefusalCategory.NoCitation, signals: null, recovery);
+
+        Assert.NotNull(detail.KnownMachineWithoutIndexedDocs);
+        Assert.Equal(known.MachineId, detail.KnownMachineWithoutIndexedDocs!.MachineId);
+        Assert.Equal(known.Title, detail.KnownMachineWithoutIndexedDocs.Title);
+        Assert.Equal(recovery.MissingWhat, detail.MissingWhat);
+    }
 }

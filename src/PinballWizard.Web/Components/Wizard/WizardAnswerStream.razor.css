@@ -1,8 +1,12 @@
-/* Question heading visual size. Element is <h1> (live ask) or <h2> (prior
-   thread turns) for document outline (#789); keep the compact display scale
-   that Typo.h6 previously provided so the answer surface does not jump. */
+/* Question label visual. Live ask is <h1>; prior turns are <p> with the same
+   class so chronology matches DOM/reading/focus order (#789 / #1031 — no
+   flex reorder). Size/weight match the old Typo.h6 scale; font-family must
+   be set here too so raw <p> prior turns get Barlow Condensed like MudText
+   Typo.h1 (theme alone does not style a plain paragraph). */
 .wizard-answer-stream__question {
+    font-family: var(--pw-font-display);
     font-size: 1.25rem;
     font-weight: 600;
     line-height: 1.4;
+    margin: 0;
 }

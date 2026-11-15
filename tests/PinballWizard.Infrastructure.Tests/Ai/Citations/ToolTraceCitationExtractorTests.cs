@@ -378,6 +378,23 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void Extract_SearchCorpusResult_SectionOnly_TitlePrefixedSectionStamp()
+    {
+        // No MachineTitle → stamp "Section · …" so AnswerCitedSubjectFilter
+        // fail-opens instead of treating the heading as a machine subject (#783).
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      machineTitle: "", section: "Multiball rules",
+                      pageStart: 12, pageEnd: 14),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.StartsWith("Section · Multiball rules", citation.Title);
+        Assert.Contains("p. 12–14", citation.Title);
+    }
+
+    [Fact]
     public void Extract_SearchCorpusResult_PopulatesDocumentChunkIdAndMachineId()
     {
         var corpus = new SearchCorpusResult([
