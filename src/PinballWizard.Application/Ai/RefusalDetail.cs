@@ -13,7 +13,11 @@ public sealed record RefusalDetail(
     IReadOnlyList<RelatedMachine>? RelatedMachines,
     IReadOnlyList<CommunityResource>? CommunityResources,
     string? MissingWhat,
-    string? SuggestedRephrase);
+    string? SuggestedRephrase,
+    // ADR-0053 zero-content gate (#784): the ask was pinned to a catalog
+    // machine that has zero indexed chunks. Surfaced separately from
+    // RelatedMachines so the UI does not label the subject as "related".
+    RelatedMachine? KnownMachineWithoutIndexedDocs = null);
 
 // Surfaced from ConfidenceSignals (already computed in AiRouter.cs ~line
 // 211 via IConfidenceCalculator.Compute). Composite is the geometric
