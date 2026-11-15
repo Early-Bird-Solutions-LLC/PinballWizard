@@ -594,8 +594,9 @@ html.pw-admin-nav--collapsed .pw-admin-layout {
    Nav labels use the visually-hidden clip (not display:none) so the <a> keeps
    its accessible name — same reason as the closed-mini public-rail rule below
    (#790 Bugbot Medium). Header/footer chrome text can stay display:none.
-   The collapse toggle is hidden: CSS forces icon-only width here, so the
-   button's aria-expanded would lie if left clickable (#790 Bugbot Low). */
+   Collapse-toggle hide lives in AppNavRail.razor.css (same sheet as its
+   display:flex) so cascade wins after bundled component CSS — see #1035
+   Bugbot Medium. */
 @media (max-width: 599.98px) {
     .pw-admin-layout {
         --mud-drawer-width-left: 64px;
@@ -615,10 +616,6 @@ html.pw-admin-nav--collapsed .pw-admin-layout {
 
     .pw-admin-layout .app-nav-rail--collapsible .pw-nav-header-text,
     .pw-admin-layout .app-nav-rail--collapsible .admin-status-footer__text {
-        display: none;
-    }
-
-    .pw-admin-layout .pw-admin-collapse-toggle {
         display: none;
     }
 
