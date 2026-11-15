@@ -77,6 +77,7 @@ negative) it carries.
 | [0064](0064-ops-triage-foundry-agent.md) | Ops Triage Foundry agent — alert enrichment + gated CI remediation (amends 0051) | Accepted |
 | 0065 | Match Play Ratings CDN tools — owned by #1046 (`0065-matchplay-ratings-cdn-tools.md`); reserved number, file lands with that PR | Reserved |
 | [0066](0066-agent-lifecycle-kit.md) | Agent Lifecycle Kit — closed loop for every Foundry / CI / hybrid agent (amends 0051, 0016) | Accepted |
+| [0067](0067-ifpa-wppr-tools.md) | IFPA WPPR live player tools (search + profile; not RAG) | Accepted |
 
 ## Conventions
 

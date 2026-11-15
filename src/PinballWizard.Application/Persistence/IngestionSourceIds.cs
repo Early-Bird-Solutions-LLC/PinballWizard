@@ -32,4 +32,5 @@ public static class IngestionSourceIds
     public const string PinballBrothersFreshdesk = "pb_freshdesk";
     public const string TiltForumsRulesheets = "tiltforums_rulesheets";
     public const string MatchPlay = "matchplay";
+    public const string Ifpa = "ifpa";
 }

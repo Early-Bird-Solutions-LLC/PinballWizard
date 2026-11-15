@@ -248,7 +248,7 @@
                 _loadFailed = true;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Cosmos / network faults must not crash the Interactive Server circuit.
             Logger.LogError(ex, "Failed to load ops triage runs.");
