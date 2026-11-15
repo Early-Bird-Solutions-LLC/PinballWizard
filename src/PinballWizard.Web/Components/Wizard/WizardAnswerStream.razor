@@ -63,86 +63,42 @@
         </MudStack>
     }
 
-    @* ── Question input (always visible in Idle; hidden after submit) ──── *@
+    @* ── Question input (Idle only — first ask, or after PrepareFollowUp) ─ *@
     @if (_state == AnswerState.Idle)
     {
-        <MudStack Spacing="3">
-            <MudTextField @bind-Value="_question"
-                          Placeholder="@(_thread.Count > 0 ? "Ask a follow-up…" : "Ask anything about pinball machines…")"
-                          Variant="Variant.Outlined"
-                          FullWidth="true"
-                          AutoFocus="true"
-                          aria-label="Question"
-                          data-testid="question-input"
-                          OnKeyDown="OnKeyDownAsync"
-                          Disabled="_state != AnswerState.Idle" />
-            <MudStack Row="true" Spacing="2">
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           OnClick="SubmitAsync"
-                           Disabled="string.IsNullOrWhiteSpace(_question)"
-                           data-testid="ask-button">
-                    @(_thread.Count > 0 ? "Ask the follow-up" : "Ask the Wizard")
-                </MudButton>
-                @if (_thread.Count > 0)
-                {
-                    <MudButton Variant="Variant.Text"
-                               Color="Color.Secondary"
-                               OnClick="StartNewConversation"
-                               data-testid="new-conversation-button">
-                        New conversation
-                    </MudButton>
-                }
-            </MudStack>
-        </MudStack>
+        <WizardAskComposer @bind-Value="_question"
+                           IsFollowUpContext="_thread.Count > 0"
+                           ShowNewConversation="_thread.Count > 0"
+                           Submitted="SubmitFromComposerAsync"
+                           NewConversation="StartNewConversation" />
     }
-    else
+    else if (_state is not AnswerState.Complete and not AnswerState.Refusal and not AnswerState.Error)
     {
-        @* Show the submitted question as a header while the answer streams *@
+        @* Submitted question header + Cancel while the answer streams.
+           Terminal-state follow-up controls render BELOW the answer (#787) —
+           never between the question and the body. *@
         <MudStack Spacing="1" Class="mb-3">
             <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
                      data-testid="submitted-question">
                 @_submittedQuestion
             </MudText>
-            @if (_state is not AnswerState.Complete and not AnswerState.Refusal and not AnswerState.Error)
-            {
-                <MudButton Variant="Variant.Text"
-                           Size="Size.Small"
-                           Color="Color.Secondary"
-                           OnClick="CancelCurrentTurn"
-                           data-testid="cancel-button">
-                    Cancel
-                </MudButton>
-            }
-            else
-            {
-                <MudStack Row="true" Spacing="2">
-                    @if (_thread.Count < MaxClientTurns)
-                    {
-                        <MudButton Variant="Variant.Text"
-                                   Size="Size.Small"
-                                   Color="Color.Primary"
-                                   OnClick="PrepareFollowUp"
-                                   data-testid="new-question-button">
-                            @(_state == AnswerState.Complete ? "Ask a follow-up" : "Ask another question")
-                        </MudButton>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary"
-                                 data-testid="turn-cap-hint">
-                            This conversation has reached its limit — start a new one to keep going.
-                        </MudText>
-                    }
-                    <MudButton Variant="Variant.Text"
-                               Size="Size.Small"
-                               Color="Color.Secondary"
-                               OnClick="StartNewConversation"
-                               data-testid="new-conversation-button">
-                        New conversation
-                    </MudButton>
-                </MudStack>
-            }
+            <MudButton Variant="Variant.Text"
+                       Size="Size.Small"
+                       Color="Color.Secondary"
+                       OnClick="CancelCurrentTurn"
+                       data-testid="cancel-button">
+                Cancel
+            </MudButton>
+        </MudStack>
+    }
+    else
+    {
+        @* Terminal states still show the question heading above the answer. *@
+        <MudStack Spacing="1" Class="mb-3">
+            <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
+                     data-testid="submitted-question">
+                @_submittedQuestion
+            </MudText>
         </MudStack>
     }
 
@@ -200,6 +156,39 @@
                   Class="mt-2">
             The Wizard hit a snag. Retrying with a full response…
         </MudAlert>
+    }
+
+    @* ── Follow-up composer AFTER the answer (#787) ────────────────────────
+       Always in the DOM on terminal states — no "Ask a follow-up" reveal click.
+       Document order: question → answer → composer (never controls between). *@
+    @if (_state is AnswerState.Complete or AnswerState.Refusal or AnswerState.Error)
+    {
+        <MudStack Spacing="3" Class="mt-4" data-testid="follow-up-composer">
+            @if (_thread.Count >= MaxClientTurns && _pendingTurn is not null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary"
+                         data-testid="turn-cap-hint">
+                    This conversation has reached its limit — start a new one to keep going.
+                </MudText>
+            }
+            else
+            {
+                <WizardAskComposer @bind-Value="_question"
+                                   IsFollowUpContext="true"
+                                   ShowNewConversation="true"
+                                   Submitted="SubmitFromComposerAsync"
+                                   NewConversation="StartNewConversation" />
+            }
+            @if (_thread.Count >= MaxClientTurns && _pendingTurn is not null)
+            {
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Secondary"
+                           OnClick="StartNewConversation"
+                           data-testid="new-conversation-button">
+                    New conversation
+                </MudButton>
+            }
+        </MudStack>
     }
 
 </div>
@@ -302,6 +291,9 @@
             return;
         }
 
+        // Deep-link / landing ?q= auto-submit. Only while Idle — terminal-state
+        // follow-ups go through the always-visible composer (#787), not by
+        // re-firing this parameter (which would loop on the same Question).
         if (!string.IsNullOrWhiteSpace(Question) &&
             _state == AnswerState.Idle &&
             string.IsNullOrWhiteSpace(_question))
@@ -313,12 +305,21 @@
 
     // ── Input handling ────────────────────────────────────────────────────
 
-    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    // Single entry point for Ask button + Enter from either Idle or terminal
+    // composers (#787). Terminal states commit the pending turn into the thread first.
+    private async Task SubmitFromComposerAsync()
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_question))
+        if (string.IsNullOrWhiteSpace(_question))
+            return;
+
+        if (_state is AnswerState.Complete or AnswerState.Refusal or AnswerState.Error)
         {
-            await SubmitAsync().ConfigureAwait(false);
+            var q = _question;
+            PrepareFollowUp();
+            _question = q;
         }
+
+        await SubmitAsync().ConfigureAwait(false);
     }
 
     private async Task SubmitAsync()

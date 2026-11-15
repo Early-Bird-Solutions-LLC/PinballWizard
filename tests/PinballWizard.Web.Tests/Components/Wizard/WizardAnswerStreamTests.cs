@@ -684,6 +684,59 @@ public sealed class WizardAnswerStreamTests
         return (client, histories);
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // #787: follow-up composer always visible after Complete; Enter submits
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Complete_state_shows_follow_up_composer_without_reveal_click()
+    {
+        var answer = BuildAnswer("Done.", citations: [BuildCitation("Source")]);
+        var (client, _) = BuildHistoryCapturingClient(new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "q1"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='follow-up-composer']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        // Input exists in the DOM immediately — no "Ask a follow-up" reveal.
+        cut.Find("[data-testid='question-input']");
+        Assert.Empty(cut.FindAll("[data-testid='new-question-button']"));
+
+        // Composer is after the answer body in document order.
+        var markup = cut.Markup;
+        var answerIdx = markup.IndexOf("Done.", StringComparison.Ordinal);
+        var composerIdx = markup.IndexOf("data-testid=\"follow-up-composer\"", StringComparison.Ordinal);
+        Assert.True(answerIdx >= 0 && composerIdx > answerIdx,
+            "Follow-up composer must render after the answer body (#787).");
+    }
+
+    [Fact]
+    public async Task FollowUp_Enter_key_submits_from_composer()
+    {
+        var answer = BuildAnswer("First.", citations: [BuildCitation("Source")]);
+        var (client, histories) = BuildHistoryCapturingClient(new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "first"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='follow-up-composer']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        await cut.InvokeAsync(() =>
+        {
+            var input = cut.Find("input");
+            input.Input("follow up via enter");
+            input.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Enter" });
+        });
+
+        cut.WaitForAssertion(() => Assert.Equal(2, histories.Count), timeout: TimeSpan.FromSeconds(3));
+        Assert.NotNull(histories[1]);
+    }
+
     [Fact]
     public async Task FollowUp_after_complete_adds_turn_to_thread_and_sends_history()
     {
@@ -694,27 +747,29 @@ public sealed class WizardAnswerStreamTests
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "Tell me about Godzilla"));
 
+        // #787: follow-up input is always in the DOM after Complete — no reveal click.
         cut.WaitForAssertion(
-            () => cut.Find("[data-testid='new-question-button']"),
+            () => cut.Find("[data-testid='follow-up-composer']"),
             timeout: TimeSpan.FromSeconds(3));
-
-        // "Ask a follow-up" — the completed turn joins the thread and the
-        // input returns.
-        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
-
-        var turn = cut.Find("[data-testid='conversation-turn']");
-        Assert.Contains("Tell me about Godzilla", turn.TextContent);
-        Assert.Contains("Godzilla is a Stern machine.", turn.TextContent);
         cut.Find("[data-testid='question-input']");
 
-        // Second ask (parameter path — same as the deep-link auto-submit)
-        // must carry the first turn as history.
-        cut.Render(p => p.Add(c => c.Question, "What is it worth?"));
+        // Type a follow-up and submit — commits the completed turn into the
+        // thread and sends it as history on the next stream call.
+        await cut.InvokeAsync(() =>
+        {
+            // Immediate=true → oninput, not onchange.
+            cut.Find("input").Input("What is it worth?");
+            cut.Find("[data-testid='ask-button']").Click();
+        });
 
         cut.WaitForAssertion(() =>
         {
             Assert.Equal(2, histories.Count);
         }, timeout: TimeSpan.FromSeconds(3));
+
+        var turn = cut.Find("[data-testid='conversation-turn']");
+        Assert.Contains("Tell me about Godzilla", turn.TextContent);
+        Assert.Contains("Godzilla is a Stern machine.", turn.TextContent);
 
         Assert.Null(histories[0]); // first ask: single-shot
         var sent = Assert.Single(histories[1]!);
@@ -735,16 +790,20 @@ public sealed class WizardAnswerStreamTests
         var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "off topic?"));
 
         cut.WaitForAssertion(
-            () => cut.Find("[data-testid='new-question-button']"),
+            () => cut.Find("[data-testid='follow-up-composer']"),
             timeout: TimeSpan.FromSeconds(3));
 
-        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
+        // Submit a second question from the always-visible composer.
+        await cut.InvokeAsync(() =>
+        {
+            cut.Find("input").Input("second question");
+            cut.Find("[data-testid='ask-button']").Click();
+        });
 
         // The refusal never becomes a thread turn — the router's history
         // contract is successful turns only.
         Assert.Empty(cut.FindAll("[data-testid='conversation-turn']"));
 
-        cut.Render(p => p.Add(c => c.Question, "second question"));
         cut.WaitForAssertion(() => Assert.Equal(2, histories.Count), timeout: TimeSpan.FromSeconds(3));
         Assert.Null(histories[1]); // still single-shot: no thread to send
     }
@@ -758,10 +817,16 @@ public sealed class WizardAnswerStreamTests
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "first question"));
 
+        // Commit the completed turn into the thread via a follow-up submit,
+        // then clear with New conversation (#787 composer is always visible).
         cut.WaitForAssertion(
-            () => cut.Find("[data-testid='new-question-button']"),
+            () => cut.Find("[data-testid='follow-up-composer']"),
             timeout: TimeSpan.FromSeconds(3));
-        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
+        await cut.InvokeAsync(() =>
+        {
+            cut.Find("input").Input("second question");
+            cut.Find("[data-testid='ask-button']").Click();
+        });
         cut.WaitForAssertion(
             () => cut.Find("[data-testid='conversation-thread']"),
             timeout: TimeSpan.FromSeconds(3));

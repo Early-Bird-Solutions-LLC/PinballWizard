@@ -119,12 +119,13 @@ public sealed class WizardE2ETests : IAsyncLifetime
             return;
         }
 
-        // "Ask a follow-up" — the completed turn must join the visible thread.
-        await page.Locator("[data-testid='new-question-button']").ClickAsync();
+        // #787: follow-up composer is always visible after Complete — submit
+        // a second question to commit the first turn into the thread.
+        await page.Locator("[data-testid='follow-up-composer']").WaitForAsync(
+            new() { State = WaitForSelectorState.Visible, Timeout = 10_000 });
+        await AskOnceAndAssertCitedAsync(page, "who designed it");
         await page.Locator("[data-testid='conversation-turn']").First.WaitForAsync(
             new() { State = WaitForSelectorState.Visible, Timeout = 10_000 });
-
-        await AskOnceAndAssertCitedAsync(page, "who designed it");
 
         // The thread still shows the first turn alongside the follow-up's
         // answer (the contract assertion above already covered citations
@@ -255,9 +256,9 @@ public sealed class WizardE2ETests : IAsyncLifetime
         }
         Assert.True(submitted, "Ask button never enabled — circuit not interactive or bind never committed.");
 
-        // Terminal state: "Ask another question" (Complete/Refusal) or
+        // Terminal state: always-visible follow-up composer (#787) or
         // the stream-error alert. Generous budget — a real model call.
-        var terminal = page.Locator("[data-testid='new-question-button'], [data-testid='stream-error-alert']");
+        var terminal = page.Locator("[data-testid='follow-up-composer'], [data-testid='stream-error-alert']");
         await terminal.First.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 120_000 });
 
         Assert.False(
