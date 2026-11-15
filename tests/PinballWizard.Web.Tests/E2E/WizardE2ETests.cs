@@ -246,8 +246,22 @@ public sealed class WizardE2ETests : IAsyncLifetime
             await page.WaitForTimeoutAsync(750);
             if (await askButton.IsEnabledAsync())
             {
+                // Snapshot before click: on a follow-up turn the composer is
+                // already visible from the prior Complete. Waiting only for
+                // Visible after click would return immediately and assert
+                // citations against the first answer (#787 Bugbot).
+                var followUpAlreadyVisible = await page
+                    .Locator("[data-testid='follow-up-composer']")
+                    .IsVisibleAsync();
+
                 await askButton.ClickAsync();
                 submitted = true;
+
+                if (followUpAlreadyVisible)
+                {
+                    await page.Locator("[data-testid='follow-up-composer']").WaitForAsync(
+                        new() { State = WaitForSelectorState.Hidden, Timeout = 30_000 });
+                }
             }
             else
             {
