@@ -282,7 +282,7 @@
     },
     "sourceGroup": "Match Play Events",
     "discoveryStatus": "Active",
-    "discoveryNotes": "Live tournament brackets, standings, floor (arenas/rounds/games), event detail, and in-event player lookup via the Match Play read-only API (query-time Wizard tools per ADR-0061 / ADR-0062). Not RAG-indexed — live competitive data must not be embedded (docs/knowledge-sources.md §5). Auth: MatchPlay:ApiToken (same Match Play bearer family as Opdb:ApiToken; DI falls back to Opdb:ApiToken when MatchPlay:ApiToken is unset). In-progress standings/floor cached ≥15s per Match Play handbook.",
+    "discoveryNotes": "Live tournament brackets/standings/floor/detail/player lookup via Match Play API (ADR-0061 / ADR-0062) plus Match Play Ratings from the public CDN CSV (ADR-0065 search/compare tools). Not RAG-indexed — live/semi-live competitive data must not be embedded (docs/knowledge-sources.md §5). Tournament API auth: MatchPlay:ApiToken (Opdb:ApiToken fallback). Ratings CDN needs no bearer; process caches the export (~12h).",
     "discoveryDate": "2026-11-15"
   },
   {
