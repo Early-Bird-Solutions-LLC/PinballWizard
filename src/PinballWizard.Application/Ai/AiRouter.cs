@@ -470,34 +470,72 @@ public sealed class AiRouter : IAiRouter
                 SingleWriter = true,
             });
 
+        // Linked CTS so a consumer that stops without cancelling the caller's
+        // token (Dispose / break) still aborts the Foundry producer (#781 Bugbot).
+        using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         var aggregateTask = AggregateStreamAsync(
             wizardAgent,
             question,
             trimmedHistory is null ? null : BuildConversationMessages(question, trimmedHistory),
             promptVersion,
             liveChunks.Writer,
-            cancellationToken);
+            producerCts.Token);
 
-        // Yield live chunks outside try/catch. Record first_token_ms on the
-        // first TextDelta — now wall-clock first visible token, not end-of-run.
+        // Yield live chunks outside try/catch (CS1626). try/finally is allowed
+        // with yield and lets us always observe aggregateTask — a non-429 fault
+        // completes the channel with an exception, so ReadAllAsync throws before
+        // the post-loop await would run (#781 Bugbot).
         var firstTokenRecorded = false;
-        await foreach (var chunk in liveChunks.Reader.ReadAllAsync(cancellationToken)
-            .ConfigureAwait(false))
+        List<ChatMessage> accumulatedMessages = [];
+        WizardAnswer? refusalFromException = null;
+        var producerObserved = false;
+
+        try
         {
-            if (!firstTokenRecorded && chunk is AnswerChunk.TextDelta)
+            await foreach (var chunk in liveChunks.Reader.ReadAllAsync(cancellationToken)
+                .ConfigureAwait(false))
             {
-                RecordFirstTokenMs(
-                    requestStopwatch,
-                    cacheState: "miss",
-                    outcome: "streamed");
-                firstTokenRecorded = true;
+                if (!firstTokenRecorded && chunk is AnswerChunk.TextDelta)
+                {
+                    RecordFirstTokenMs(
+                        requestStopwatch,
+                        cacheState: "miss",
+                        outcome: "streamed");
+                    firstTokenRecorded = true;
+                }
+
+                yield return chunk;
             }
 
-            yield return chunk;
+            (accumulatedMessages, refusalFromException) =
+                await aggregateTask.ConfigureAwait(false);
+            producerObserved = true;
         }
+        finally
+        {
+            if (!producerCts.IsCancellationRequested)
+                producerCts.Cancel();
 
-        var (accumulatedMessages, refusalFromException) =
-            await aggregateTask.ConfigureAwait(false);
+            if (!producerObserved)
+            {
+                try
+                {
+                    await aggregateTask.ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Observed — channel already surfaced this (or consumer aborted).
+                    _logger.LogDebug(
+                        ex,
+                        "Observed AggregateStreamAsync fault after channel reader exited.");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Producer stopped because we cancelled it above, or the caller did.
+                }
+            }
+        }
 
         // ── 429 path: emit Refusal + Final, no cache write ────────────
         if (refusalFromException is not null)
