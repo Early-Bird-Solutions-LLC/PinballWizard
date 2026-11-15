@@ -74,6 +74,7 @@ negative) it carries.
 | [0061](0061-matchplay-live-tournament-tools.md) | Match Play Events live-tournament tools (search + standings; not RAG) | Accepted |
 | [0062](0062-matchplay-live-event-floor-tools.md) | Match Play live event-floor Wizard tools (detail / arenas / rounds+games / player lookup) | Accepted |
 | [0063](0063-answer-subject-citation-filter.md) | Drop citations whose machine subject is absent from the answer | Accepted |
+| [0067](0067-ifpa-wppr-tools.md) | IFPA WPPR live player tools (search + profile; not RAG) | Accepted |
 
 ## Conventions
 

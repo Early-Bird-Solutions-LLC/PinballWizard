@@ -284,5 +284,20 @@
     "discoveryStatus": "Active",
     "discoveryNotes": "Live tournament brackets, standings, floor (arenas/rounds/games), event detail, and in-event player lookup via the Match Play read-only API (query-time Wizard tools per ADR-0061 / ADR-0062). Not RAG-indexed — live competitive data must not be embedded (docs/knowledge-sources.md §5). Auth: MatchPlay:ApiToken (same Match Play bearer family as Opdb:ApiToken; DI falls back to Opdb:ApiToken when MatchPlay:ApiToken is unset). In-progress standings/floor cached ≥15s per Match Play handbook.",
     "discoveryDate": "2026-11-15"
+  },
+  {
+    "id": "ifpa",
+    "displayName": "IFPA (WPPR)",
+    "scraperImplKey": "ifpa",
+    "baseUrl": "https://api.ifpapinball.com/",
+    "enabled": true,
+    "cadence": "none",
+    "politenessOverrides": {
+      "requestDelayMs": 1000
+    },
+    "sourceGroup": "IFPA",
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Live IFPA player search + WPPR profile tools via IFPA API (ADR-0067). Not RAG-indexed — live competitive rankings must not be embedded (docs/knowledge-sources.md §5). Auth: Ifpa:ApiKey (api_key query param per IFPA OpenAPI 2.1). No Match Play / OPDB token fallback.",
+    "discoveryDate": "2026-11-15"
   }
 ]

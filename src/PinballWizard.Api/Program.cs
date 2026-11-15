@@ -28,6 +28,7 @@ using PinballWizard.Infrastructure.Findability;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
+using PinballWizard.Infrastructure.Integrations.Ifpa;
 using PinballWizard.Infrastructure.Integrations.MatchPlay;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Landing;
@@ -115,6 +116,14 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKe
     || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
 {
     builder.Services.AddMatchPlayIntegration(builder.Configuration);
+}
+
+// IFPA WPPR live-player tools — gated on Ifpa:ApiKey (ADR-0067). Absent key =
+// provider not registered; IfpaWpprTool returns null (honest unavailable).
+// No Match Play / OPDB token fallback — IFPA issues a distinct key.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[IfpaOptions.ApiKeyKey]))
+{
+    builder.Services.AddIfpaIntegration(builder.Configuration);
 }
 
 // ── Cosmos persistence ─────────────────────────────────────────────────────
