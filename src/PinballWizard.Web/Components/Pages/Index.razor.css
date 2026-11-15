@@ -4,6 +4,11 @@
     padding-top: 1.5rem;
     padding-bottom: 3rem;
     position: relative;
+    /* #788 b): contain stray child min-content so / never page-scrolls at 320. */
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+    box-sizing: border-box;
 }
 
 .landing-page__status-row {
@@ -16,6 +21,8 @@
     display: flex;
     justify-content: center;
     margin-top: 2rem;
+    max-width: 100%;
+    min-width: 0;
 }
 
 /* The "muted" here was `opacity: 0.75` on the whole section, which dimmed the

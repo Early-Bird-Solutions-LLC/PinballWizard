@@ -1,0 +1,18 @@
+/* #788 e): "New conversation" clipped ~10px at 320 — allow wrap + shrink. */
+.wizard-ask-composer__actions {
+    flex-wrap: wrap;
+}
+
+.wizard-ask-composer__new-conversation {
+    white-space: normal;
+    text-align: start;
+    line-height: 1.25;
+    min-width: 0;
+}
+
+@media (max-width: 360px) {
+    .wizard-ask-composer__new-conversation {
+        font-size: 0.875rem;
+        padding-inline: 8px;
+    }
+}

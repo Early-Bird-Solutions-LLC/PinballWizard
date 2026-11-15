@@ -1,0 +1,7 @@
+/* #788 d): mid-width viewports where the desktop table is wider than the
+   content column must scroll inside the grid, not the document. */
+.app-data-grid {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+}
