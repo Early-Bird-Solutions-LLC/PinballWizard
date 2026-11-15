@@ -546,6 +546,20 @@ html, body {
     font-family: var(--pw-font-body);
 }
 
+/* ── Landing page (Index.razor MudContainer Class="landing-page") ─────── */
+/* Global because Class rides MudContainer — scoped Index.razor.css cannot
+   attach [b-xxxx] to that child root. Do NOT set max-width here: MudContainer
+   MaxWidth.Large (~1280px) already caps the measure. */
+.landing-page {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    position: relative;
+    /* #788 b): contain stray child min-content so / never page-scrolls at 320. */
+    min-width: 0;
+    overflow-x: clip;
+    box-sizing: border-box;
+}
+
 /* ── Admin dashboard summary cards (AppSummaryCard) ───────────────────── */
 
 /* Every AppSummaryCard tile in a MudGrid row is the same height regardless of
