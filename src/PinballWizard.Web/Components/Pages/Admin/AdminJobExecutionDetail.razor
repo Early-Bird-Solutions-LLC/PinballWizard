@@ -101,19 +101,20 @@
             }
             else
             {
-                @if (_logResult.Lines.Count > 0 || HasSearch || _logBusy)
+                @* Always show search once Log Analytics is Available. Gating on
+                   Lines/HasSearch/_logBusy hid the box for ~400ms after clearing a
+                   zero-match search (Immediate clears HasSearch before debounce
+                   sets _logBusy) — #899. *@
+                <div data-testid="exec-log-search">
+                    <MudTextField T="string" @bind-Value="_search" DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="@(_ => OnSearchAsync())" Immediate="true"
+                                  Placeholder="Search this run's logs…"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Class="mb-2" aria-label="Search this run's logs" />
+                </div>
+                @if (_logBusy)
                 {
-                    <div data-testid="exec-log-search">
-                        <MudTextField T="string" @bind-Value="_search" DebounceInterval="400"
-                                      OnDebounceIntervalElapsed="@(_ => OnSearchAsync())" Immediate="true"
-                                      Placeholder="Search this run's logs…"
-                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                                      Class="mb-2" aria-label="Search this run's logs" />
-                    </div>
-                    @if (_logBusy)
-                    {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
-                    }
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
                 }
                 @if (_logResult.Lines.Count == 0)
                 {
