@@ -12,8 +12,9 @@ namespace PinballWizard.Application.Findability;
 //   2. When more than one token remains, also strip question-intent words
 //      (strategy, tips, rules, …) so they cannot outrank short machine names
 //      like Jaws / Tron. A bare name query "strategy" keeps that sole token.
-//      If stripping intent would empty the query (e.g. "pinball wizard"),
-//      keep the intent tokens — they are the name (#780 Bugbot Medium).
+//      If stripping intent would empty the query, keep name-capable intent
+//      tokens (pinball/wizard) and drop pure fluff; if none are name-capable
+//      ("strategy tips"), keep them for bare name typing (#785 Bugbot High).
 //   3. Post-filter hits with TitleMatchesQuery ONLY when fluff was stripped
 //      (question-shaped). Bare / synonym / phonetic name typing must not
 //      require lexical title overlap (#780 Bugbot High).
@@ -55,6 +56,15 @@ public static class MachineSuggestQueryNormalizer
         "pinball", "play", "playing", "playfield",
     };
 
+    // Intent words that are also legitimate machine-name tokens (Pinball Wizard).
+    // When stopword stripping leaves ONLY intent words, keep these and drop pure
+    // fluff (strategy/tips/…) so "strategy for pinball wizard" cannot mark
+    // Invasion Strategy as on-topic via TitleMatchesQuery (#785 Bugbot High).
+    internal static readonly HashSet<string> NameCapableIntentWords = new(StringComparer.Ordinal)
+    {
+        "pinball", "wizard", "machine", "machines", "game", "games",
+    };
+
     // Minimum length for prefix matching while the user is still typing
     // the entity word ("transform" → Transformers).
     internal const int MinPrefixMatchLength = 3;
@@ -88,13 +98,29 @@ public static class MachineSuggestQueryNormalizer
                 .Where(static t => !QuestionIntentWords.Contains(t))
                 .ToList();
 
-            // If every remaining token is also an intent word (e.g. "pinball
-            // wizard"), keep them — they are the machine name, not fluff.
             if (withoutIntent.Count > 0)
             {
                 if (withoutIntent.Count < afterStopwords.Count)
                     removedIntent = true;
                 tokens = withoutIntent;
+            }
+            else
+            {
+                // All remaining tokens are intent words. Prefer name-capable
+                // ones (pinball/wizard) over pure fluff (strategy/tips) so a
+                // question about Pinball Wizard does not keep "strategy" and
+                // TitleMatchesQuery-hit Invasion Strategy (#785 Bugbot High).
+                // If none are name-capable ("strategy tips"), keep them for
+                // bare name typing of Invasion Strategy / tip sheets.
+                var nameCapable = afterStopwords
+                    .Where(static t => NameCapableIntentWords.Contains(t))
+                    .ToList();
+                if (nameCapable.Count > 0)
+                {
+                    if (nameCapable.Count < afterStopwords.Count)
+                        removedIntent = true;
+                    tokens = nameCapable;
+                }
             }
         }
 
@@ -164,8 +190,10 @@ public static class MachineSuggestQueryNormalizer
             .Replace("'", "", StringComparison.Ordinal)
             .Replace("\u2019", "", StringComparison.Ordinal); // ’
 
+        // Hyphens stay inside tokens ("x-men") — splitting on `-` dropped the
+        // length-1 "x" and searched only "men" (#785 Bugbot Medium).
         return lower.Split(
-            [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '"', ':', ';'],
+            [' ', '\t', ',', '.', '!', '?', '(', ')', '/', '"', ':', ';'],
             StringSplitOptions.RemoveEmptyEntries);
     }
 }

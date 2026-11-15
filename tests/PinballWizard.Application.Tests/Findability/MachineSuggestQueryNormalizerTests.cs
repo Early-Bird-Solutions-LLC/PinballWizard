@@ -150,4 +150,28 @@ public sealed class MachineSuggestQueryNormalizerTests
         Assert.Equal(["afm"], normalized.Tokens);
         Assert.True(normalized.RequireTitleTokenOverlap);
     }
+
+    [Fact]
+    public void Tokenize_HyphenatedName_KeepsJoinedToken()
+    {
+        // Splitting on '-' used to drop length-1 "x" from "x-men" (#785 Bugbot).
+        Assert.Equal(["x-men"], MachineSuggestQueryNormalizer.Tokenize("x-men"));
+        Assert.True(
+            MachineSuggestQueryNormalizer.TitleMatchesQuery("X-Men", ["x-men"]));
+    }
+
+    [Fact]
+    public void Tokenize_StrategyWithPinballWizard_DropsStrategyFluff()
+    {
+        // All-intent remainder used to keep "strategy" alongside pinball/wizard,
+        // so Invasion Strategy looked on-topic (#785 Bugbot High).
+        var tokens = MachineSuggestQueryNormalizer.Tokenize(
+            "whats a good strategy for pinball wizard");
+
+        Assert.Equal(["pinball", "wizard"], tokens);
+        Assert.False(
+            MachineSuggestQueryNormalizer.TitleMatchesQuery("Invasion Strategy", tokens));
+        Assert.True(
+            MachineSuggestQueryNormalizer.TitleMatchesQuery("Pinball Wizard", tokens));
+    }
 }
