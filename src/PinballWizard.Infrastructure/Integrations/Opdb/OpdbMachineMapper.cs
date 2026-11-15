@@ -34,10 +34,17 @@ public static class OpdbMachineMapper
 
         if (!dto.IsMachine) return null;
         if (string.IsNullOrWhiteSpace(dto.OpdbId)) return null;
-        if (dto.Manufacturer is null || string.IsNullOrWhiteSpace(dto.Manufacturer.Name)) return null;
+        if (dto.Manufacturer is null) return null;
 
-        var manufacturerName = dto.Manufacturer.Name;
-        var manufacturerKey = NormalizeManufacturerKey(FirstNonBlank(dto.Manufacturer.ShortName, manufacturerName)!);
+        // Match Play V1 exposes short `name` ("Stern") plus `fullName`
+        // ("Stern Pinball, Inc."). Prefer the long form for display; key
+        // normalization accepts either (Contains("stern") → "stern").
+        var manufacturerName = FirstNonBlank(
+            dto.Manufacturer.FullName, dto.Manufacturer.Name, dto.Manufacturer.ShortName);
+        if (string.IsNullOrWhiteSpace(manufacturerName)) return null;
+
+        var manufacturerKey = NormalizeManufacturerKey(FirstNonBlank(
+            dto.Manufacturer.ShortName, dto.Manufacturer.Name, dto.Manufacturer.FullName)!);
         var editionLabel = ExtractEditionLabel(dto.Name, dto.Features);
 
         return new Machine

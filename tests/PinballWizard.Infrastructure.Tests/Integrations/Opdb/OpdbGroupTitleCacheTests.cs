@@ -180,11 +180,12 @@ public sealed class OpdbGroupTitleCacheTests : IDisposable
         var gate = new PolitenessGate(robots, resolver, NullLogger<PolitenessGate>.Instance);
 
         var handler = new GroupStubHandler();
-        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://opdb.org/api/") };
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.matchplay.events/") };
 
         var opdbOptions = Options.Create(new OpdbOptions
         {
-            BaseUrl = "https://opdb.org/api/",
+            BaseUrl = "https://api.matchplay.events/",
+            ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json",
             ApiToken = "test-token",
             // Export cache disabled — these tests focus on the group-title cache.
             ExportCachePath = "",
@@ -215,16 +216,16 @@ public sealed class OpdbGroupTitleCacheTests : IDisposable
         {
             var body = JsonSerializer.Serialize(new
             {
-                opdb_id = segment,
-                is_machine_group = true,
+                opdbId = segment,
+                isMachineGroup = true,
                 name = groupName,
             });
-            _responses[$"/api/machines/{segment}"] = (body, HttpStatusCode.OK);
+            _responses[$"/api/opdb/entry/{segment}"] = (body, HttpStatusCode.OK);
         }
 
         public void SetGroupResponse404(string segment)
         {
-            _responses[$"/api/machines/{segment}"] = (null, HttpStatusCode.NotFound);
+            _responses[$"/api/opdb/entry/{segment}"] = (null, HttpStatusCode.NotFound);
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage(

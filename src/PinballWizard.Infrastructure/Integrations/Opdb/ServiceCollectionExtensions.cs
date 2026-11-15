@@ -41,7 +41,7 @@ public static class ServiceCollectionExtensions
             // HttpClient.Timeout is the outer wall — the inner timing
             // logic is the resilience handler's TotalRequestTimeout
             // (configured in ServiceDefaults). Both must be generous
-            // enough for OPDB's `/api/export` bulk response.
+            // enough for the Match Play OPDB V1 CDN export.
             client.Timeout = TimeSpan.FromSeconds(opdb.HttpTimeoutSeconds);
         });
 

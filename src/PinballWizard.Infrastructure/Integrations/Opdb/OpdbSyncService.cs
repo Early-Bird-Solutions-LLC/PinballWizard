@@ -105,15 +105,14 @@ public sealed class OpdbSyncService : IOpdbSyncService
         var currentAttributionById = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
 
         // Per-run cache of OPDB group-segment → clean franchise title
-        // (ADR-0029 D1). The is_machine_group record is NOT in the bulk
-        // export, so each distinct segment costs one extra polite OPDB
-        // GET — but only ONCE per run regardless of how many editions
-        // share the segment (Godzilla Pro+Premium/LE → one fetch).
-        // Bounded: ~hundreds of distinct segments. A null value is a
-        // cached miss (404 / non-group / no clean name) so a segment is
-        // never re-fetched; the existing name/opdbId title fallback then
-        // applies, unchanged. Local, not a field — per-run lifetime, GC'd
-        // after, and single-threaded by the sequential await foreach.
+        // (ADR-0029 D1). Match Play V1 export includes machineGroups;
+        // OpdbClient seeds those into its cache before yielding machines,
+        // so ResolveGroupTitleAsync is typically a memory hit (no HTTP).
+        // A null value is a confirmed miss (absent from export / blank
+        // name) so a segment is never re-fetched; the existing name/opdbId
+        // title fallback then applies. Local, not a field — per-run
+        // lifetime, GC'd after, and single-threaded by the sequential
+        // await foreach.
         var groupTitleCache = new Dictionary<string, string?>(StringComparer.Ordinal);
 
         if (isDryRun)
@@ -273,21 +272,25 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     if (string.IsNullOrWhiteSpace(aliasDto.OpdbId)) { skipped++; continue; }
 
                     var baseId = OpdbMachineMapper.GetBaseMachineOpdbId(aliasDto.OpdbId);
-                    if (string.IsNullOrWhiteSpace(baseId) || aliasDto.Manufacturer is null || string.IsNullOrWhiteSpace(aliasDto.Manufacturer.Name))
+                    var manufacturerKeySource = aliasDto.Manufacturer is null
+                        ? null
+                        : OpdbMachineMapper.FirstNonBlank(
+                            aliasDto.Manufacturer.ShortName,
+                            aliasDto.Manufacturer.Name,
+                            aliasDto.Manufacturer.FullName);
+                    if (string.IsNullOrWhiteSpace(baseId) || string.IsNullOrWhiteSpace(manufacturerKeySource))
                     {
                         skipped++;
                         continue;
                     }
 
                     // Same blank-string fallback shape the OpdbMachineMapper handles
-                    // for base machines — see OpdbMachineMapper.FirstNonBlank. OPDB's
-                    // /api/export emits some alias records with ShortName="" (empty
-                    // string), which previously fell through `??` as a literal "" and
-                    // tripped NormalizeManufacturerKey's blank-input guard, dropping
-                    // the alias as a logged sync skip. The Manufacturer.Name presence
-                    // check at line 185 already guarantees Name is non-blank.
-                    var partitionKey = OpdbMachineMapper.NormalizeManufacturerKey(
-                        OpdbMachineMapper.FirstNonBlank(aliasDto.Manufacturer.ShortName, aliasDto.Manufacturer.Name)!);
+                    // for base machines — see OpdbMachineMapper.FirstNonBlank. Match
+                    // Play V1 may emit ShortName="" (empty string), which previously
+                    // fell through `??` as a literal "" and tripped
+                    // NormalizeManufacturerKey's blank-input guard, dropping the
+                    // alias as a logged sync skip.
+                    var partitionKey = OpdbMachineMapper.NormalizeManufacturerKey(manufacturerKeySource);
                     var baseMachine = await _machines.GetByOpdbIdAsync(baseId, partitionKey, cancellationToken).ConfigureAwait(false);
                     if (baseMachine is null)
                     {
@@ -925,10 +928,10 @@ public sealed class OpdbSyncService : IOpdbSyncService
         string? resolved = null;
         try
         {
-            // GetMachineGroupTitleAsync consults the persistent on-disk cache
-            // first — a cache hit avoids the polite HTTP GET entirely (10 s/call).
-            // On a cold cache the result is stored to disk after each new entry,
-            // so subsequent sync runs skip the ~1,200-request / ~3.5-h re-fetch.
+            // GetMachineGroupTitleAsync consults the export-seeded /
+            // on-disk group-title cache first. After StreamAllMachinesAsync
+            // the Match Play V1 machineGroups array is already in memory,
+            // so this is typically zero HTTP.
             resolved = await _client.GetMachineGroupTitleAsync(segment, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

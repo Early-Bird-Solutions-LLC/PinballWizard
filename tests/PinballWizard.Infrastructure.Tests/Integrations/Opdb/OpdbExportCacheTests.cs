@@ -12,23 +12,17 @@ namespace PinballWizard.Infrastructure.Tests.Integrations.Opdb;
 
 /// <summary>
 /// Tests for the on-disk cache layer in <see cref="OpdbClient.StreamAllMachinesAsync"/>.
-/// OPDB's <c>/api/export</c> endpoint is rate-limited to once per hour
-/// per their published policy; the cache eliminates the rate-limit
-/// problem for repeat invocations within the configured TTL.
+/// Match Play OPDB V1 CDN export is cached on disk; the cache
+/// eliminates repeat CDN hits for dry-run / debug / apply sequences
+/// within the configured TTL.
 /// </summary>
-/// <remarks>
-/// Each test gets its own temp cache file (cleaned up on Dispose) so
-/// tests don't interfere with each other or with the developer's real
-/// <c>data/cache/opdb-export.json</c>.
-/// </remarks>
 public sealed class OpdbExportCacheTests : IDisposable
 {
+    private const string ExportPath = "/latest-opdb.json";
     private readonly string _cachePath;
 
     public OpdbExportCacheTests()
     {
-        // Path.GetTempFileName creates the file; delete it so the
-        // "first call = cache miss" tests start from a clean slate.
         _cachePath = Path.GetTempFileName();
         File.Delete(_cachePath);
     }
@@ -37,7 +31,6 @@ public sealed class OpdbExportCacheTests : IDisposable
     {
         if (File.Exists(_cachePath))
         {
-            // Clear read-only before delete; some tests set it to simulate OneDrive.
             File.SetAttributes(_cachePath, FileAttributes.Normal);
             File.Delete(_cachePath);
         }
@@ -46,10 +39,8 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_CacheMiss_FetchesNetworkAndPersists()
     {
-        // First call with no cache file → fetch from network, write the
-        // response body to disk, yield from memory.
         var (client, handler) = CreateClient(ttlSeconds: 3600);
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("AAA-AAAAA"), MachineJson("BBB-BBBBB")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("AAA-AAAAA"), MachineJson("BBB-BBBBB")));
 
         var collected = new List<OpdbMachineDto>();
         await foreach (var m in client.StreamAllMachinesAsync(CancellationToken.None))
@@ -65,16 +56,10 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_CacheHit_DoesNotHitNetwork()
     {
-        // Second call with a fresh cache file → bypass network entirely.
-        // Pre-seed the cache with a known body; assert the network
-        // handler is never invoked AND the yielded items match the
-        // cache contents (not whatever the handler would have returned).
-        File.WriteAllText(_cachePath, JsonArray(MachineJson("CACHED-1"), MachineJson("CACHED-2")));
+        File.WriteAllText(_cachePath, ExportEnvelope(MachineJson("CACHED-1"), MachineJson("CACHED-2")));
 
         var (client, handler) = CreateClient(ttlSeconds: 3600);
-        // Stub a different response — if the network were hit, the
-        // assertion below would fail.
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("NETWORK-1")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("NETWORK-1")));
 
         var collected = new List<OpdbMachineDto>();
         await foreach (var m in client.StreamAllMachinesAsync(CancellationToken.None))
@@ -89,13 +74,11 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_StaleCache_RefetchesFromNetwork()
     {
-        // Cache file exists but is older than TTL → refetch.
-        File.WriteAllText(_cachePath, JsonArray(MachineJson("STALE-1")));
-        // Backdate the file so it appears older than TTL.
+        File.WriteAllText(_cachePath, ExportEnvelope(MachineJson("STALE-1")));
         File.SetLastWriteTimeUtc(_cachePath, DateTime.UtcNow.AddHours(-2));
 
-        var (client, handler) = CreateClient(ttlSeconds: 3600); // 1-hour TTL; cache is 2 hours old.
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("FRESH-1"), MachineJson("FRESH-2")));
+        var (client, handler) = CreateClient(ttlSeconds: 3600);
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("FRESH-1"), MachineJson("FRESH-2")));
 
         var collected = new List<OpdbMachineDto>();
         await foreach (var m in client.StreamAllMachinesAsync(CancellationToken.None))
@@ -110,12 +93,8 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_CacheDisabledByEmptyPath_AlwaysHitsNetwork()
     {
-        // Even if a cache file exists at the project default path, an
-        // empty ExportCachePath in options forces every call to the
-        // network — used by tests that want to pin network behavior
-        // independent of the cache layer.
         var (client, handler) = CreateClient(ttlSeconds: 3600, cachePathOverride: "");
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("NET-1")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("NET-1")));
 
         await foreach (var _ in client.StreamAllMachinesAsync(CancellationToken.None)) { }
 
@@ -126,11 +105,8 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_CacheDisabledByZeroTtl_AlwaysHitsNetwork_ButStillPersists()
     {
-        // Ttl=0 means "always refetch" but the cache file IS still
-        // written so a subsequent run with non-zero TTL benefits.
-        // Documented in OpdbOptions.ExportCacheTtlSeconds.
         var (client, handler) = CreateClient(ttlSeconds: 0);
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("NET-1")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("NET-1")));
 
         await foreach (var _ in client.StreamAllMachinesAsync(CancellationToken.None)) { }
 
@@ -141,19 +117,11 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_CacheFileLocked_FallsBackToNetwork()
     {
-        // Cache file exists and is fresh, but is held open with an
-        // exclusive lock by another process (simulated). The client
-        // must fall back to the network fetch rather than hard-failing.
-        // This is the recovery path for: (a) Windows file-locking
-        // weirdness, (b) permission flips, (c) any IOException at
-        // File.OpenRead time. (Corrupt-JSON-in-cache is a different
-        // failure mode that surfaces during streaming, not at open.)
-        File.WriteAllText(_cachePath, JsonArray(MachineJson("CACHED-1")));
+        File.WriteAllText(_cachePath, ExportEnvelope(MachineJson("CACHED-1")));
 
         var (client, handler) = CreateClient(ttlSeconds: 3600);
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("FALLBACK-1")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("FALLBACK-1")));
 
-        // Hold an exclusive lock on the cache file so File.OpenRead throws.
         using var lockedHandle = new FileStream(_cachePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
         var collected = new List<OpdbMachineDto>();
@@ -162,9 +130,6 @@ public sealed class OpdbExportCacheTests : IDisposable
             collected.Add(m);
         }
 
-        // The fallback fetched from the network; the in-flight write to
-        // the cache *also* fails (we still hold the lock) but degrades
-        // gracefully — the run completes successfully.
         Assert.Equal(["FALLBACK-1"], collected.Select(m => m.OpdbId));
         Assert.Single(handler.Requests);
     }
@@ -172,16 +137,8 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_AtomicWrite_LeavesNoTempFile()
     {
-        // The cache write is atomic via a sibling `.tmp` file + Move.
-        // After a successful write, the .tmp file must NOT remain on
-        // disk. This pins the atomic-write contract — a future refactor
-        // that drops the `File.Move` step (e.g., reverts to direct
-        // `WriteAllBytesAsync(cachePath, ...)`) would also drop the
-        // crash-safety. The test would still pass on the surface but
-        // not from the same code path; that's an inherent limitation
-        // of testing post-conditions vs. invariants.
         var (client, handler) = CreateClient(ttlSeconds: 3600);
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("AAA")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("AAA")));
 
         await foreach (var _ in client.StreamAllMachinesAsync(CancellationToken.None)) { }
 
@@ -192,21 +149,12 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_PreExistingCacheFile_OverwriteSucceeds()
     {
-        // Regression: File.Move(src, dst, overwrite: true) throws
-        // UnauthorizedAccessException on Windows when the destination
-        // file exists and carries a read-only attribute or is held by a
-        // sync process (e.g. OneDrive). The fix separates "delete old"
-        // from "place new" so File.Move never uses MOVEFILE_REPLACE_EXISTING.
-        // Arrange: pre-seed a stale cache file (with a read-only attribute
-        // to simulate the OneDrive case) then trigger a refetch.
-        File.WriteAllText(_cachePath, JsonArray(MachineJson("OLD-1")));
-        // Set read-only to simulate the Windows MOVEFILE_REPLACE_EXISTING failure.
+        File.WriteAllText(_cachePath, ExportEnvelope(MachineJson("OLD-1")));
         File.SetAttributes(_cachePath, FileAttributes.ReadOnly);
-        // Backdate so the cache is stale and a refetch is triggered.
         File.SetLastWriteTimeUtc(_cachePath, DateTime.UtcNow.AddHours(-2));
 
         var (client, handler) = CreateClient(ttlSeconds: 3600);
-        handler.SetResponseFor("/api/export", JsonArray(MachineJson("FRESH-1")));
+        handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("FRESH-1")));
 
         try
         {
@@ -217,14 +165,12 @@ public sealed class OpdbExportCacheTests : IDisposable
             }
 
             Assert.Equal(["FRESH-1"], collected.Select(m => m.OpdbId));
-            // The cache was successfully overwritten (no longer read-only and holds new content).
             Assert.True(File.Exists(_cachePath), "cache file should exist after overwrite");
             var written = File.ReadAllText(_cachePath);
             Assert.Contains("FRESH-1", written);
         }
         finally
         {
-            // Ensure cleanup can run even if the assertion fails.
             if (File.Exists(_cachePath))
             {
                 File.SetAttributes(_cachePath, FileAttributes.Normal);
@@ -235,18 +181,13 @@ public sealed class OpdbExportCacheTests : IDisposable
     [Fact]
     public async Task StreamAllMachinesAsync_CachePersistFailure_DoesNotFailFetch()
     {
-        // Simulate an unwritable cache path (path component that can't
-        // be created — a file existing where we'd want a directory).
-        // The fetch must still succeed; the persist failure is logged
-        // and swallowed.
         var conflictingFilePath = Path.GetTempFileName();
-        // Use a path under the conflicting file so directory creation fails.
         var unwritablePath = Path.Combine(conflictingFilePath, "opdb-export.json");
 
         try
         {
             var (client, handler) = CreateClient(ttlSeconds: 3600, cachePathOverride: unwritablePath);
-            handler.SetResponseFor("/api/export", JsonArray(MachineJson("NET-1"), MachineJson("NET-2")));
+            handler.SetResponseFor(ExportPath, ExportEnvelope(MachineJson("NET-1"), MachineJson("NET-2")));
 
             var collected = new List<OpdbMachineDto>();
             await foreach (var m in client.StreamAllMachinesAsync(CancellationToken.None))
@@ -263,8 +204,6 @@ public sealed class OpdbExportCacheTests : IDisposable
         }
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
-
     private (OpdbClient client, StubHandler handler) CreateClient(int ttlSeconds, string? cachePathOverride = null)
     {
         var politenessOptions = Options.Create(new PolitenessOptions
@@ -278,14 +217,16 @@ public sealed class OpdbExportCacheTests : IDisposable
         var gate = new PolitenessGate(robots, resolver, NullLogger<PolitenessGate>.Instance);
 
         var handler = new StubHandler();
-        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://opdb.org/api/") };
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.matchplay.events/") };
 
         var opdbOptions = Options.Create(new OpdbOptions
         {
-            BaseUrl = "https://opdb.org/api/",
+            BaseUrl = "https://api.matchplay.events/",
+            ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json",
             ApiToken = "test-token",
             ExportCachePath = cachePathOverride ?? _cachePath,
             ExportCacheTtlSeconds = ttlSeconds,
+            GroupTitleCachePath = "",
         });
 
         return (
@@ -295,14 +236,15 @@ public sealed class OpdbExportCacheTests : IDisposable
 
     private static string MachineJson(string opdbId) => JsonSerializer.Serialize(new
     {
-        opdb_id = opdbId,
-        is_machine = true,
+        opdbId,
+        isMachine = true,
         name = $"Machine {opdbId}",
-        common_name = $"Machine {opdbId}",
-        manufacturer = new { manufacturer_id = 1, name = "Stern Pinball, Inc." },
+        commonName = $"Machine {opdbId}",
+        manufacturer = new { manufacturerId = 1, name = "Stern", fullName = "Stern Pinball, Inc." },
     });
 
-    private static string JsonArray(params string[] items) => "[" + string.Join(",", items) + "]";
+    private static string ExportEnvelope(params string[] machines) =>
+        "{\"machineGroups\":[],\"machines\":[" + string.Join(",", machines) + "],\"aliases\":[]}";
 
     private sealed class StubHandler : HttpMessageHandler
     {
@@ -327,10 +269,7 @@ public sealed class OpdbExportCacheTests : IDisposable
                     Content = new StringContent(entry.Body, Encoding.UTF8, "application/json"),
                 });
             }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("[]", Encoding.UTF8, "application/json"),
-            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 }

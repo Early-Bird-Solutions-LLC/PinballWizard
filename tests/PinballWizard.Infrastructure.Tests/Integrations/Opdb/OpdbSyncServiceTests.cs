@@ -48,11 +48,12 @@ public sealed class OpdbSyncServiceTests : IDisposable
         var resolver = new DefaultPerSourcePolitenessResolver(politenessOptions);
         var gate = new PolitenessGate(robots, resolver, NullLogger<PolitenessGate>.Instance);
 
-        _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://opdb.org/api/") };
+        _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.matchplay.events/") };
 
         var opdbOptions = Options.Create(new OpdbOptions
         {
-            BaseUrl = "https://opdb.org/api/",
+            BaseUrl = "https://api.matchplay.events/",
+            ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json",
             ApiToken = "test-token",
             ExportCachePath = "",      // Cache disabled — tests pin sync semantics, not cache.
             GroupTitleCachePath = "",  // Group-title disk cache disabled for same reason.
@@ -79,9 +80,9 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_NewMachine_InsertsAndCounts()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
-            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
-            MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
+            MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")]));
 
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -100,7 +101,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_ExistingMachine_MergesAndUpdates()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         var existing = new Machine
@@ -132,11 +133,11 @@ public sealed class OpdbSyncServiceTests : IDisposable
     {
         var nonMachine = JsonSerializer.Serialize(new
         {
-            opdb_id = "GRBN-X",
-            is_machine = false,
-            manufacturer = new { manufacturer_id = 1, name = "Stern" },
+            opdbId = "GRBN-X",
+            isMachine = false,
+            manufacturer = new { manufacturerId = 1, name = "Stern" },
         });
-        _handler.SetResponseFor("/api/export", $"[{nonMachine}]");
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(nonMachine));
 
         var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
@@ -152,7 +153,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunNewMachine_ProjectsInsertWithoutUpserting()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
             MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
 
@@ -179,7 +180,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_ApplyMode_RecordsSuccessfulRunResultOnIngestionSource()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
             MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
 
@@ -200,7 +201,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunMode_DoesNotRecordRunResultOnIngestionSource()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -217,7 +218,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_RecordRunResultThrows_DoesNotMaskOriginalSyncSuccess()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
@@ -244,7 +245,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // LastRunAt advances. This is the load-bearing assertion for the
         // most operationally important code path — operators look at the
         // dashboard precisely when runs are failing.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         var simulatedFailure = new InvalidOperationException("simulated cosmos read failure");
@@ -275,7 +276,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunExistingMachine_ProjectsUpdateWithoutUpserting()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         var existing = new Machine
@@ -317,7 +318,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // Pass 1 inserts the base machine; pass 2 appends the alias as an
         // edition and upserts the base again. Buffer ordering is exercised
         // because the alias precedes the base in the response.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)"),
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
@@ -360,7 +361,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // The alias has no base machine in the response — its base would
         // have been a separate record but isn't there. The alias is
         // counted as orphaned and no upsert happens for it.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GRBN-XYZ99-AABCD", manufacturer: "Stern Pinball, Inc.", name: "Phantom (LE)")));
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -387,7 +388,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // existing edition was last seen with a stale description; the
         // re-run should refresh both the description AND the source URL
         // without doubling the editions list.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)")));
 
         var existing = new Machine
@@ -429,7 +430,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // against it (replacing the legacy name-only entry with the
         // OpdbAliasId-bearing version). Without this fallback, every alias
         // run on legacy data would double the editions list.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)")));
 
         var existing = new Machine
@@ -469,17 +470,17 @@ public sealed class OpdbSyncServiceTests : IDisposable
         var baseJson = MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla");
         var aliasWithBlankShortName = JsonSerializer.Serialize(new
         {
-            opdb_id = "GweeP-MW95j-AvariantX",
-            is_alias = true,
+            opdbId = "GweeP-MW95j-AvariantX",
+            isAlias = true,
             name = "Godzilla (Limited Edition)",
             manufacturer = new
             {
-                manufacturer_id = 1,
+                manufacturerId = 1,
                 name = "Stern Pinball, Inc.",
                 shortname = "",  // blank, must NOT be promoted to the partition key
             },
         });
-        _handler.SetResponseFor("/api/export", JsonArray(baseJson, aliasWithBlankShortName));
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(baseJson, aliasWithBlankShortName));
 
         Machine? lastUpserted = null;
         _repository.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
@@ -507,11 +508,11 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // it"; skipped means "we couldn't even look").
         var aliasWithoutManufacturer = JsonSerializer.Serialize(new
         {
-            opdb_id = "GRBN-MQR4P-A97X1",
-            is_alias = true,
+            opdbId = "GRBN-MQR4P-A97X1",
+            isAlias = true,
             name = "Stranger Things (Premium LE)",
         });
-        _handler.SetResponseFor("/api/export", $"[{aliasWithoutManufacturer}]");
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(aliasWithoutManufacturer));
 
         var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
@@ -536,7 +537,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // lookup throws. Pass-1 never queries the phantom (it's not in
         // the response), so the throw only fires in pass-2 — isolating
         // the assertion to the alias-loop catch.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-OK000", manufacturer: "Stern Pinball, Inc.", name: "Good Title (Pro)", commonName: "Good Title"),
             AliasJson("GRBN-OK000-AYYYY", manufacturer: "Stern Pinball, Inc.", name: "Good Title (LE)"),
             AliasJson("GRBN-PHANTOM-AXXXX", manufacturer: "Stern Pinball, Inc.", name: "Phantom (LE)")));
@@ -569,7 +570,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunAlias_ProjectsAppendWithoutUpserting()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)"),
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
@@ -600,7 +601,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // base. The base seeds with its label-derived tokens
         // ["premium","le"]; after sync the set must be a superset of
         // {"premium","le","70th"}.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GweeP-Ml9pZ-Apremium", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium)"),
             AliasJson("GweeP-Ml9pZ-Ale", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (LE)"),
             AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
@@ -636,7 +637,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // twice against the same base must yield the same token set (no
         // duplicates). The base already carries the previously-folded
         // tokens (premium, le, 70th) from a prior run.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             AliasJson("GweeP-Ml9pZ-Apremium", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium)"),
             AliasJson("GweeP-Ml9pZ-Ale", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (LE)"),
             AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
@@ -677,7 +678,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_NewMachine_DualWritesTitleLookup()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -706,7 +707,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // new export carries name="New Name (Pro)" common_name="New Name".
         // Helper must remove the entry from the old normalized title's
         // lookup row AND upsert the new normalized title's lookup row.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "New Name (Pro)", commonName: "New Name")));
 
         var existing = new Machine
@@ -762,7 +763,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // Edge case: the rename leaves the old normalized title's row
         // empty (no other machines shared the title). The helper deletes
         // the row instead of upserting an empty list.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "New Name (Pro)", commonName: "New Name")));
 
         var existing = new Machine
@@ -794,7 +795,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     {
         // Dry-run must NOT mutate the lookup container. Matches the
         // existing dry-run-doesn't-touch-machines invariant.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -814,7 +815,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // the OPDB sync. The machine row already landed; the cross-
         // partition fallback in MachineGroundingTool keeps queries
         // working until the next sync repopulates the row.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -848,7 +849,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // pass-2. This pins that the edition-qualified rows are written AFTER
         // pass-2 (so the alias-derived "70th" row exists) — a pass-1-time
         // write would silently drop it.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla"),
             MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "Godzilla"),
             AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
@@ -924,11 +925,12 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // UPDATED (re-sync) path: both bases already exist, so phase-b takes the
         // `updated` branch and pass-2 re-reads the base. The edition-qualified
         // rows MUST still be written.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [
             MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
             MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: ""),
-            AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
-        _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
+            AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")
+            ], groups: [GroupJson("GweeP", "Godzilla")]));
 
         // BOTH bases ALREADY EXIST — the re-sync (updated) path the live run took.
         var pro = new Machine
@@ -977,10 +979,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // (GweeP-Ml9pZ). Both have empty common_name. ADR-0029: TWO
         // distinct Machine docs, BOTH titled "Godzilla" (from the group
         // record), both GroupId=GweeP. NOT folded into one.
-        _handler.SetResponseFor("/api/export", JsonArray(
-            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
-            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "")));
-        _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "")
+            ], groups: [GroupJson("GweeP", "Godzilla")]));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var captured = new ConcurrentBag<Machine>();
@@ -1005,11 +1007,11 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // three distinct Machine docs, all titled "Metallica", all
         // GroupId=GRBE4 — the "all-pm:1" majority pattern the fold model
         // could not handle.
-        _handler.SetResponseFor("/api/export", JsonArray(
-            MachineJson("GRBE4-MQK1Z", manufacturer: "Stern Pinball, Inc.", name: "Metallica (Pro)", commonName: ""),
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [MachineJson("GRBE4-MQK1Z", manufacturer: "Stern Pinball, Inc.", name: "Metallica (Pro)", commonName: ""),
             MachineJson("GRBE4-MJ9rE", manufacturer: "Stern Pinball, Inc.", name: "Metallica (Premium)", commonName: ""),
-            MachineJson("GRBE4-MOE4l", manufacturer: "Stern Pinball, Inc.", name: "Metallica (LE)", commonName: "")));
-        _handler.SetResponseFor("/api/machines/GRBE4", GroupJson("GRBE4", "Metallica"));
+            MachineJson("GRBE4-MOE4l", manufacturer: "Stern Pinball, Inc.", name: "Metallica (LE)", commonName: "")
+            ], groups: [GroupJson("GRBE4", "Metallica")]));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var captured = new ConcurrentBag<Machine>();
@@ -1028,17 +1030,18 @@ public sealed class OpdbSyncServiceTests : IDisposable
     public async Task SyncAsync_GroupRecordFetchedOncePerSegment()
     {
         // The is_machine_group fetch is memoized per run: two editions
-        // sharing GweeP must trigger exactly ONE GET /api/machines/GweeP.
-        _handler.SetResponseFor("/api/export", JsonArray(
-            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
-            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "")));
-        _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
+        // sharing GweeP must trigger ZERO Match Play entry GETs (titles from export).
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "")
+            ], groups: [GroupJson("GweeP", "Godzilla")]));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
-        Assert.Equal(1, _handler.RequestCountFor("/api/machines/GweeP"));
+        Assert.Equal(0, _handler.RequestCountFor("/api/opdb/entry/GweeP"));
+        Assert.Equal(1, _handler.RequestCountFor("/latest-opdb.json"));
     }
 
     [Fact]
@@ -1048,9 +1051,8 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // the machine keeps its name-derived title rather than the sync
         // failing. The title is the edition-suffixed name (the documented
         // pre-D1 behavior), and GroupId is still set for sibling relation.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "")));
-        _handler.SetResponseFor("/api/machines/GweeP", "{}", HttpStatusCode.NotFound);
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var captured = new ConcurrentBag<Machine>();
@@ -1068,16 +1070,12 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_GroupRecord500_FallsBackWithoutAbortingSync()
     {
-        // Distinct from the 404 case: a transient 5xx on the group
-        // endpoint exercises ResolveGroupTitleAsync's broad catch (404 is
-        // handled in GetMachineGroupAsync itself; 500 throws
-        // HttpRequestException). The sync must NOT abort — the record
-        // keeps its edition-suffixed title and GroupId is still set. This
-        // pins the best-effort contract against a future change that
-        // narrows the catch scope.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        // Historical name retained: under ADR-0059 there is no per-segment
+        // group HTTP during sync (titles come from export). A segment
+        // absent from machineGroups is the degradation path — same
+        // edition-suffixed title fallback as a former upstream failure.
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "")));
-        _handler.SetResponseFor("/api/machines/GweeP", "upstream error", HttpStatusCode.InternalServerError);
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var captured = new ConcurrentBag<Machine>();
@@ -1086,7 +1084,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
-        Assert.Equal(1, result.Inserted); // 5xx did NOT abort the sync
+        Assert.Equal(1, result.Inserted); // missing group did NOT abort the sync
         var m = Assert.Single(captured);
         Assert.Equal("Godzilla (Pro)", m.Title); // fell back to name
         Assert.Equal("GweeP", m.GroupId);
@@ -1102,9 +1100,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // *conflicting* group title and assert common_name still wins.
         // This proves the precedence, not an (incorrect) zero-fetch
         // claim — the resolver is memoized so the call cost is bounded.
-        _handler.SetResponseFor("/api/export", JsonArray(
-            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
-        _handler.SetResponseFor("/api/machines/GRBN", GroupJson("GRBN", "WRONG GROUP TITLE"));
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")
+            ], groups: [GroupJson("GRBN", "WRONG GROUP TITLE")]));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var captured = new ConcurrentBag<Machine>();
@@ -1127,7 +1126,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // Both Godzilla bases (Pro + Premium/LE) must map to "stern godzilla";
         // multi-token manufacturers (e.g. jjp → ["jjp","jersey","jack"]) produce
         // one row per token.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla"),
             MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "Godzilla")));
 
@@ -1160,7 +1159,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // written even when both machines already existed (GetByOpdbIdAsync
         // returns an existing machine rather than null), because phase (e) uses
         // editionTokenBases which is populated regardless of insert-vs-update.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla"),
             MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "Godzilla")));
 
@@ -1202,7 +1201,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // Phase (e) must write one lookup row per token, not one row for the
         // manufacturer as a whole. Verifies that the per-token loop in phase (e)
         // fires correctly for multi-token manufacturers.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("XYZ12-AB34C", manufacturer: "Jersey Jack Pinball", name: "Toy Story 4 (Standard Edition)", commonName: "Toy Story 4")));
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -1239,7 +1238,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // Phase (f) must add the longer game's OPDB entry into the shorter title's
         // lookup row so getMachineByTitle surfaces both in TitleCollisions and the
         // agent asks for clarification instead of guessing.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("IMwi-M1001", manufacturer: "Williams", name: "Iron Maiden", commonName: "Iron Maiden"),
             MachineJson("IMst-M2001", manufacturer: "Stern Pinball, Inc.", name: "Iron Maiden: Legacy of the Beast (Pro)", commonName: "Iron Maiden: Legacy of the Beast")));
 
@@ -1283,7 +1282,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // If the longer title's lookup row is absent (the longer game was never
         // synced, or the row was evicted), phase (f) must skip that collision
         // pair and keep running — not throw or fail the sync.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("IMwi-M1001", manufacturer: "Williams", name: "Iron Maiden", commonName: "Iron Maiden"),
             MachineJson("IMst-M2001", manufacturer: "Stern Pinball, Inc.", name: "Iron Maiden: Legacy of the Beast (Pro)", commonName: "Iron Maiden: Legacy of the Beast")));
 
@@ -1309,7 +1308,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     public async Task SyncAsync_AppliedRun_WritesScrapeRunHistory()
     {
         // Arrange: same as the applied-run RecordRunResultAsync test in this file.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
             MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -1329,7 +1328,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRun_DoesNotWriteScrapeRunHistory()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
@@ -1343,7 +1342,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_ScrapeRunWriteThrows_DoesNotFailSync()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
@@ -1366,7 +1365,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // Write-once on the UPDATE path: RunId is stamped once on first insert and
         // must NOT be overwritten on subsequent syncs. This mirrors the document-side
         // UpsertRawAsync_ExistingDocument_ReturnsUpdated_AndPreservesOriginalRunId test.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         // Seed an existing machine that was stamped on an earlier run.
@@ -1402,7 +1401,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_StampsRunId_OnNewlyInsertedMachine()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
@@ -1420,7 +1419,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_RunRecord_DocumentsNew_EqualsInsertedCount()
     {
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
@@ -1443,7 +1442,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // OPDB re-attributes "Sega Classics" from "sega" to "segaenterprises".
         // GetByOpdbIdAsync returns null (new partition → INSERT path).
         // Phase (g) full-catalog scan finds the stale "sega" copy and deletes it.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
 
         _repository.GetByOpdbIdAsync("SEGA-001", "segaenterprises", Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -1484,7 +1483,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // old insert-only trigger would have skipped cleanup entirely.
         // Phase (g) tracks ALL fetched machines (insert + update), so the full-catalog
         // scan still finds the stale "sega" copy and deletes it.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
 
         // Machine is already under the correct partition — this run is an UPDATE.
@@ -1532,7 +1531,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     {
         // Phase (g) is guarded by !isDryRun — a dry-run projection run must not
         // delete any Cosmos documents or issue any cross-partition scan.
-        _handler.SetResponseFor("/api/export", JsonArray(
+        _handler.SetResponseFor("/latest-opdb.json", JsonArray(
             MachineJson("SEGA-001", manufacturer: "Sega Enterprises", name: "Sega Classics", commonName: "Sega Classics")));
 
         _repository.GetByOpdbIdAsync("SEGA-001", "segaenterprises", Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -1561,8 +1560,8 @@ public sealed class OpdbSyncServiceTests : IDisposable
     private static string GroupJson(string segment, string name) =>
         JsonSerializer.Serialize(new
         {
-            opdb_id = segment,
-            is_machine_group = true,
+            opdbId = segment,
+            isMachineGroup = true,
             name,
             shortname = (string?)null,
         });
@@ -1570,23 +1569,53 @@ public sealed class OpdbSyncServiceTests : IDisposable
     private static string MachineJson(string opdbId, string manufacturer, string name, string commonName) =>
         JsonSerializer.Serialize(new
         {
-            opdb_id = opdbId,
-            is_machine = true,
+            opdbId,
+            isMachine = true,
             name,
-            common_name = commonName,
-            manufacturer = new { manufacturer_id = 1, name = manufacturer },
+            commonName,
+            manufacturer = new { manufacturerId = 1, name = manufacturer, fullName = manufacturer },
         });
 
     private static string AliasJson(string opdbId, string manufacturer, string name) =>
         JsonSerializer.Serialize(new
         {
-            opdb_id = opdbId,
-            is_alias = true,
+            opdbId,
+            isAlias = true,
             name,
-            manufacturer = new { manufacturer_id = 1, name = manufacturer },
+            manufacturer = new { manufacturerId = 1, name = manufacturer, fullName = manufacturer },
         });
 
-    private static string JsonArray(params string[] items) => "[" + string.Join(",", items) + "]";
+    /// <summary>
+    /// Builds a Match Play V1 export envelope. Items are classified by
+    /// <c>isAlias</c>; optional group records are passed separately when a
+    /// test needs ADR-0029 group titles without a Match Play entry GET.
+    /// </summary>
+    private static string JsonArray(params string[] items) => ExportEnvelope(items);
+
+    private static string ExportEnvelope(string[] items, string[]? groups = null)
+    {
+        var machines = new List<string>();
+        var aliases = new List<string>();
+        foreach (var item in items)
+        {
+            using var doc = JsonDocument.Parse(item);
+            if (doc.RootElement.TryGetProperty("isAlias", out var alias) && alias.ValueKind == JsonValueKind.True)
+            {
+                aliases.Add(item);
+            }
+            else
+            {
+                machines.Add(item);
+            }
+        }
+
+        groups ??= [];
+        return "{" +
+               $"\"machineGroups\":[{string.Join(",", groups)}]," +
+               $"\"machines\":[{string.Join(",", machines)}]," +
+               $"\"aliases\":[{string.Join(",", aliases)}]" +
+               "}";
+    }
 
     private sealed class StubHandler : HttpMessageHandler
     {
@@ -1616,10 +1645,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
                     Content = new StringContent(entry.Body, Encoding.UTF8, "application/json"),
                 });
             }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("[]", Encoding.UTF8, "application/json"),
-            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 
