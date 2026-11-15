@@ -400,10 +400,14 @@ jobs:
   # `az containerapp job update --image` is banned.
   #
   # ADR-0060 / #966 — two paths, gated by repo variable WORKLOAD_JOBS_STACK_ENABLED:
-  #   true  → az stack group create pinwiz-jobs-dev (infra/main-jobs.bicep).
-  #           ACA jobs only; NO Microsoft.CognitiveServices preflight.
-  #           Enable ONLY after docs/runbooks/migrate-aca-jobs-to-workload-stack.md.
-  #   false → az stack sub create pinwiz-shared-dev (interim; still Foundry-preflights).
+  #   true OR unset → az stack group create pinwiz-jobs-dev (infra/main-jobs.bicep).
+  #                   ACA jobs only; NO Microsoft.CognitiveServices preflight.
+  #                   Post-cutover default (migrate-aca-jobs-to-workload-stack.md done
+  #                   2026-11-15; manageAcaJobs=false committed). Unset → workload so
+  #                   image merges never Foundry-preflight even when the Actions var
+  #                   was never written (#993 / agent 403 on variables).
+  #   false         → az stack sub create pinwiz-shared-dev (emergency platform path;
+  #                   still Foundry-preflights — opt-in only).
   #
   # Only runs when CLI or infra files changed (gated by detect-changes). Skips
   # if the build-deploy matrix failed — never push a non-existent image tag.
@@ -448,13 +452,21 @@ jobs:
       - name: Select deployment stack path (ADR-0060)
         id: stackpath
         run: |
-          if [ "${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}" = "true" ]; then
-            echo "mode=workload" >> "$GITHUB_OUTPUT"
-            echo "Using WORKLOAD stack pinwiz-jobs-dev (no CognitiveServices preflight)."
-          else
+          # Post-cutover default is workload. Explicit false keeps an emergency
+          # platform-stack escape hatch; anything else (true, empty, garbage)
+          # stays on the jobs-only path so image merges cannot RequestConflict
+          # on CognitiveServices (#966 / #993).
+          MODE_VAR="${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}"
+          if [ "$MODE_VAR" = "false" ]; then
             echo "mode=platform" >> "$GITHUB_OUTPUT"
-            echo "Using PLATFORM stack pinwiz-shared-dev (interim — still Foundry-preflights)."
-            echo "After migrate-aca-jobs-to-workload-stack.md, set WORKLOAD_JOBS_STACK_ENABLED=true."
+            echo "Using PLATFORM stack pinwiz-shared-dev (WORKLOAD_JOBS_STACK_ENABLED=false — Foundry-preflights)."
+          else
+            echo "mode=workload" >> "$GITHUB_OUTPUT"
+            if [ "$MODE_VAR" = "true" ]; then
+              echo "Using WORKLOAD stack pinwiz-jobs-dev (WORKLOAD_JOBS_STACK_ENABLED=true)."
+            else
+              echo "Using WORKLOAD stack pinwiz-jobs-dev (default — var unset/empty; no CognitiveServices preflight)."
+            fi
           fi
 
       # ── Preserve currently-deployed app images (platform path only) ─────────
@@ -529,8 +541,8 @@ jobs:
           echo "  cliImageTag:        ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
 
       # ── Deployment Stack update (ADR-0060) ──────────────────────────────────
-      # WORKLOAD_JOBS_STACK_ENABLED=true → pinwiz-jobs-dev (group scope, jobs only).
-      # Otherwise → pinwiz-shared-dev (subscription scope; interim until migration).
+      # Default / true → pinwiz-jobs-dev (group scope, jobs only).
+      # Explicit false → pinwiz-shared-dev (subscription scope; emergency only).
       # Platform path only: empty developerObjectId + deleteResources strips RBAC (#744).
       # Workload path does not manage developer role assignments — skip this guard there.
       - name: Verify DEVELOPER_OBJECT_ID is configured

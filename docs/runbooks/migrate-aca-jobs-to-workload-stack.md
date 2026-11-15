@@ -170,12 +170,12 @@ exist.
 
 ## What this PR does / does not do
 
-| Done in the scaffold PR | Still operator (this runbook) |
+| Done in the scaffold / cutover PRs | Still operator (rare) |
 | --- | --- |
-| ADR-0060 + `aca-jobs` module + `main-jobs.bicep` | Live detach / adopt in Azure |
-| `manageAcaJobs` gate (default true) | Flip `manageAcaJobs=false` after detach |
-| `Deploy-WorkloadJobs.ps1` | First workload stack create in the subscription |
-| `deploy.yml` gated on `WORKLOAD_JOBS_STACK_ENABLED` | Set the repo variable to `true` |
+| ADR-0060 + `aca-jobs` module + `main-jobs.bicep` | Emergency: set `WORKLOAD_JOBS_STACK_ENABLED=false` to force platform path |
+| Live detach / adopt (2026-11-15) + `manageAcaJobs=false` committed | — |
+| `Deploy-WorkloadJobs.ps1` | — |
+| `deploy.yml` defaults to **workload** when the var is unset/true (platform only if explicitly `false`) | Optional: set var to `true` for explicit documentation; not required for green Deploy |
 | Container apps left on `az containerapp update` | — |
 
 ## Failure modes to refuse
