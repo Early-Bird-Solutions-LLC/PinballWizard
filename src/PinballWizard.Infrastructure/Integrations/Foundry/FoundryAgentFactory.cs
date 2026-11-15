@@ -280,8 +280,9 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
                 subAgentTools.Length);
         }
 
-        // Standalone agents (not connected to Wizard)
-        string[] standaloneAgentNames = [AgentName.GridSearch];
+        // Standalone agents (not connected to Wizard): GridSearch (admin NL
+        // filters) and OpsTriage (ADR-0064 alert diagnosis).
+        string[] standaloneAgentNames = [AgentName.GridSearch, AgentName.OpsTriage];
         foreach (var name in standaloneAgentNames)
         {
             var instructions = _promptProvider.GetPrompt(name);

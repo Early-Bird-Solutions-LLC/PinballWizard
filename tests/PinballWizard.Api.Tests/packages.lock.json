@@ -811,6 +811,7 @@
           "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
+          "Azure.Communication.Email": "[1.1.0, )",
           "Azure.Developer.Playwright": "[1.0.0, )",
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Query": "[1.7.1, )",
@@ -909,6 +910,15 @@
           "Azure.AI.Projects.Agents": "2.0.0",
           "Azure.Core": "1.53.0",
           "Azure.Storage.Blobs": "12.26.0"
+        }
+      },
+      "Azure.Communication.Email": {
+        "type": "CentralTransitive",
+        "requested": "[1.1.0, )",
+        "resolved": "1.1.0",
+        "contentHash": "yR0QWbrvM/RvOxrkFWaPqzltAiF/MGoVhjm++UkEpXvN00Brc/LevJXeg2BUVbIucoxx+kKW7HTAzGKspFh8Vg==",
+        "dependencies": {
+          "Azure.Core": "1.49.0"
         }
       },
       "Azure.Core": {
