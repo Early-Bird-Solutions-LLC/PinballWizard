@@ -119,6 +119,62 @@ public sealed class CgcGamePageScraperTests
     }
 
     [Fact]
+    public async Task ScrapeAsync_CapturedSite_DiscoversEveryMachineFromTheSiteRoot()
+    {
+        var (scraper, gate, handler) = BuildScraper(h =>
+        {
+            h.MapHtml($"{BaseUrl}/", CgcCapturedFixtures.Home());
+            foreach (var slug in CgcCapturedFixtures.MachineSlugs)
+            {
+                h.MapHtml($"{BaseUrl}/coinop/{slug}", CgcCapturedFixtures.MachinePage(slug));
+            }
+        });
+
+        var items = await ScrapeAllAsync(scraper);
+
+        var games = items.Where(i => i.Game is not null).Select(i => i.Game!).ToList();
+        Assert.Equal(
+            [
+                ("attack-from-mars", "Attack From Mars! Remake"),
+                ("cactus-canyon", "Cactus Canyon Remake"),
+                ("medieval-madness", "Medieval Madness Merlin Edition Pinball"),
+                ("monster-bash", "Monster Bash Remake"),
+                ("pulp-fiction", "Pulp Fiction Pinball"),
+            ],
+            games.Select(g => (g.Slug, g.Title)).OrderBy(g => g.Slug, StringComparer.Ordinal).ToArray());
+        Assert.All(games, g => Assert.Equal($"{BaseUrl}/coinop/{g.Slug}", g.Source!.ScrapedFrom));
+
+        var linksBySlug = items
+            .Where(i => i.Link is not null)
+            .GroupBy(i => i.Link!.GameSlug!)
+            .ToDictionary(g => g.Key, g => g.Select(i => i.Link!.FileUrl).ToList());
+        Assert.Equal(11, linksBySlug.Values.Sum(l => l.Count));
+        Assert.False(linksBySlug.ContainsKey("cactus-canyon"));
+        Assert.Contains($"{BaseUrl}/manuals/MMR_Manual_Rev_1_2.pdf", linksBySlug["medieval-madness"]);
+        Assert.Contains($"{BaseUrl}/manuals/MB_Manual_Rev_1.pdf", linksBySlug["monster-bash"]);
+        Assert.Contains($"{BaseUrl}/brochures/AFM_Brochure.pdf", linksBySlug["attack-from-mars"]);
+        Assert.Contains($"{BaseUrl}/brochures/Pulp_Fiction_Pinball_Rules_Manual.pdf", linksBySlug["pulp-fiction"]);
+        Assert.Equal(5, linksBySlug["pulp-fiction"].Count);
+
+        // Each item's discovery URL is the machine page it came from, not the site root.
+        foreach (var item in items)
+        {
+            var slug = item.Game?.Slug ?? item.Link!.GameSlug;
+            Assert.Equal($"{BaseUrl}/coinop/{slug}", item.DiscoveryUrl);
+            Assert.Equal("Chicago Gaming Game Page", item.DiscoveryContext);
+            Assert.Equal(SourceType.ChicagoGamingGamePage, item.SourceType);
+        }
+
+        // One root fetch plus one per machine; the upgrade sub-page is never requested.
+        Assert.Equal(1 + CgcCapturedFixtures.MachineSlugs.Length, handler.Requests.Count);
+        Assert.Equal($"{BaseUrl}/", handler.Requests[0].AbsoluteUri);
+        Assert.DoesNotContain(handler.Requests, u => u.AbsolutePath.EndsWith("/upgrade", StringComparison.Ordinal));
+        Assert.Equal(handler.Requests.Select(u => u.AbsoluteUri), gate.Acquired.Select(u => u.AbsoluteUri));
+        Assert.Equal(handler.Requests.Count, gate.Reported.Count);
+        Assert.Equal(handler.Requests.Count, gate.LeasesDisposed);
+    }
+
+    [Fact]
     public async Task ScrapeAsync_PerPageFetchFailure_DoesNotAbortRun()
     {
         // One bad page in the middle should NOT prevent siblings from yielding.
