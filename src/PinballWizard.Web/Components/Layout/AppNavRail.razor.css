@@ -57,3 +57,14 @@
     outline: 2px solid var(--mud-palette-primary);
     outline-offset: 2px;
 }
+
+/* #790 / #1035 Bugbot: hide lives HERE (same stylesheet as display:flex) so
+   it wins cascade after PinballWizard.Web.styles.css. A matching rule in
+   app.css lost to this file's earlier display:flex (equal specificity).
+   CSS forces icon-only rail width below 600px — leaving the toggle clickable
+   would make aria-expanded lie about what the user sees. */
+@media (max-width: 599.98px) {
+    .pw-admin-collapse-toggle {
+        display: none;
+    }
+}

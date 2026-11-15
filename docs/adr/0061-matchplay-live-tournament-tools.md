@@ -44,7 +44,8 @@ alongside Pinball Map / manufacturer scrapers.
    JSON arms), same Wizard-observable pattern as `getMarketValue`.
 
 5. **Non-goals for this ADR:** IFPA WPPR tools, Match Play Ratings CDN ingest, scraping
-   `matchplay.events` HTML, embedding historical standings into AI Search.
+   `matchplay.events` HTML, embedding historical standings into AI Search. Event-floor
+   tools (arenas / rounds / games / detail / player lookup) landed in ADR-0062.
 
 ## Consequences
 
