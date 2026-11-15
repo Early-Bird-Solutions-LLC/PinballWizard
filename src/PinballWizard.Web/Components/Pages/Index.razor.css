@@ -1,10 +1,6 @@
-/* Index page scoped styles. */
-
-.landing-page {
-    padding-top: 1.5rem;
-    padding-bottom: 3rem;
-    position: relative;
-}
+/* Index page scoped styles.
+   .landing-page itself lives in wwwroot/app.css — Class rides MudContainer,
+   which Blazor CSS isolation cannot attribute-scope. */
 
 .landing-page__status-row {
     display: flex;
@@ -16,6 +12,8 @@
     display: flex;
     justify-content: center;
     margin-top: 2rem;
+    max-width: 100%;
+    min-width: 0;
 }
 
 /* The "muted" here was `opacity: 0.75` on the whole section, which dimmed the
