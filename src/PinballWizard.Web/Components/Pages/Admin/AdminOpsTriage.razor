@@ -215,6 +215,10 @@
             return;
         }
 
+        // Capture before await — after Dispose, ComponentDisposalToken's getter
+        // throws ObjectDisposedException (#615); the struct copy stays readable.
+        var disposalToken = ComponentDisposalToken;
+
         _loading = true;
         _loadFailed = false;
         SafeStateHasChanged();
@@ -238,7 +242,7 @@
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            if (!ComponentDisposalToken.IsCancellationRequested)
+            if (!disposalToken.IsCancellationRequested)
             {
                 Logger.LogWarning("/admin/ops-triage load timed out after 30 s.");
                 _loadFailed = true;
