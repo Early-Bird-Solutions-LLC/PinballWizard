@@ -171,6 +171,25 @@ public sealed class AnswerCitedSubjectFilterTests
         Assert.Equal("AC/DC", AnswerCitedSubjectFilter.ExtractSubject("AC/DC (Premium Vault Edition) — Metadata"));
         Assert.Equal("Foo", AnswerCitedSubjectFilter.ExtractSubject("Foo (Super LE) — Metadata"));
         Assert.Equal("Bar", AnswerCitedSubjectFilter.ExtractSubject("Bar (Collector's Edition) — Metadata"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (70th Anniversary) — Rules"));
+    }
+
+    [Fact]
+    public void Filter_KeepsSectionOnlyCorpusTitleWithoutMachineSubject()
+    {
+        // Bugbot: "{section} (p. …)" without a machine was treated as a subject
+        // and dropped; BuildCorpusCitationTitle now stamps "Section · …".
+        var citations = new[]
+        {
+            Cite("Section · Multiball rules (p. 12–14)", "https://example.com/rules.pdf"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(
+            "On Godzilla, shoot the left orbit to start multiball.", citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Section · Multiball rules (p. 12–14)"));
     }
 
     [Fact]

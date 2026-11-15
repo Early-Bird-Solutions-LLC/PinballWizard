@@ -33,7 +33,11 @@ returned to the UI.
 - **Inherited** citations are never dropped — clarifying follow-ups often omit
   the machine name while still relying on prior-turn grounding (#780 contract).
 - Titles with **no extractable subject** (e.g. `OPDB record {id}`, Match Play
-  standings) fail open and stay — filtering requires a name we can match.
+  standings, corpus `Section · {heading} (p. …)` stamps) fail open and stay —
+  filtering requires a name we can match.
+- Parenthetical **edition labels** (Pro / Premium / LE / Vault / Super LE /
+  Collector's / `\d+(st|nd|rd|th) Anniversary`) are stripped before matching so
+  "Godzilla (70th Anniversary)" matches an answer that says "Godzilla".
 
 Empty-after-filter still hits ADR-0023's NoCitation gate.
 

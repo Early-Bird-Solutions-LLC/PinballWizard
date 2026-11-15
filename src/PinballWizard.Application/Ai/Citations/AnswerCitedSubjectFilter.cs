@@ -36,14 +36,21 @@ public static class AnswerCitedSubjectFilter
         @"^(?:Kineticist tutorial|Game rules|Pinball primer)\s*·\s*(?<subject>.+)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    // Corpus hits without MachineTitle are stamped "Section · …" — not a
+    // machine subject; fail open (keep).
+    private static readonly Regex SectionOnlyTitle = new(
+        @"^Section\s*·",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     // OPDB edition qualifiers (Pro / Premium / LE / …). Answers almost always
     // name the game without the edition; matching the full "Godzilla (Pro)"
     // string would drop every Pro/Premium corpus hit for a plain "Godzilla"
     // answer. Strip for subject matching only — the citation Title is unchanged.
     // Closed list mirrors OPDB edition labels used in linking/reconciliation
-    // fixtures (Pro, Premium/LE, Vault Edition, Super LE, Collector's, …).
+    // fixtures + DeriveEditionTokens anniversary forms (Pro, Premium/LE,
+    // Vault Edition, Super LE, Collector's, 70th Anniversary, …).
     private static readonly Regex EditionSuffix = new(
-        @"\s*\((?:Pro(?:\s+Vault(?:\s+Edition)?)?|Premium(?:/LE)?(?:\s+Vault(?:\s+Edition)?)?|Super\s+LE|LE|L/?E|Limited\s+Edition|Vault(?:\s+Edition)?|Collector(?:['\u2019]?s)?\s+Edition|Standard|Home|CE|SE|Deluxe|Special\s+Edition)\)\s*$",
+        @"\s*\((?:Pro(?:\s+Vault(?:\s+Edition)?)?|Premium(?:/LE)?(?:\s+Vault(?:\s+Edition)?)?|Super\s+LE|LE|L/?E|Limited\s+Edition|Vault(?:\s+Edition)?|Collector(?:['\u2019]?s)?\s+Edition|\d+(?:st|nd|rd|th)(?:\s+Anniversary)?|Standard|Home|CE|SE|Deluxe|Special\s+Edition)\)\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     // OPDB / Match Play titles without a human machine name — keep (fail
@@ -110,7 +117,9 @@ public static class AnswerCitedSubjectFilter
 
         var trimmed = title.Trim();
 
-        if (OpdbRecordTitle.IsMatch(trimmed) || MatchPlayTitle.IsMatch(trimmed))
+        if (OpdbRecordTitle.IsMatch(trimmed)
+            || MatchPlayTitle.IsMatch(trimmed)
+            || SectionOnlyTitle.IsMatch(trimmed))
         {
             return null;
         }
