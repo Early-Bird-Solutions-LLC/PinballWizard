@@ -58,7 +58,10 @@ public sealed class AdminOverflowSnapshotTests(
             new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         Directory.CreateDirectory(ScreenshotRoot);
-        var screenshotPath = Path.Combine(ScreenshotRoot, $"{label}.png");
+        // GetFileName: Path.Combine drops earlier args if a later segment is
+        // rooted — labels are InlineData constants, but code-quality gates
+        // still flag the pattern (#790).
+        var screenshotPath = Path.Combine(ScreenshotRoot, $"{Path.GetFileName(label)}.png");
         await page.ScreenshotAsync(new PageScreenshotOptions
         {
             Path     = screenshotPath,
