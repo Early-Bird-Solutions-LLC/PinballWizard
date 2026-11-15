@@ -943,13 +943,14 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        Console.WriteLine("Rebuilding AI Search RAG index (DROP + recreate) — all chunks will be removed...");
-        var rebuildResult = await bootstrapper.RecreateAsync(cancellationToken);
+        // Clear the hash ledger before the drop. A wipe that stops after the
+        // index is gone and before every hash row is deleted would leave
+        // --sync-pintips skipping tips that are no longer searchable.
         var rebuildIndexState = host.Services.GetService<PinballWizard.Application.Rag.Ingestion.IIndexState>();
         if (rebuildIndexState is not null)
         {
             var cleared = await rebuildIndexState.ClearAllAsync(cancellationToken);
-            Console.WriteLine($"Cleared {cleared} rag_index_state row(s) so re-ingest does not skip wiped chunks.");
+            Console.WriteLine($"Cleared {cleared} rag_index_state row(s) before dropping the index.");
         }
         else
         {
@@ -957,6 +958,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 "Warning: rag_index_state was not cleared (IIndexState is not configured). " +
                 "A later sync may skip documents whose hash was recorded before this wipe.");
         }
+
+        Console.WriteLine("Rebuilding AI Search RAG index (DROP + recreate) — all chunks will be removed...");
+        var rebuildResult = await bootstrapper.RecreateAsync(cancellationToken);
         Console.WriteLine(
             $"AI Search RAG index rebuilt: {rebuildResult.IndexName}. " +
             "Re-ingest now: --run-rag-backfill then --sync-metadata-cards.");
