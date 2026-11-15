@@ -218,11 +218,11 @@ For end-to-end local development with Cosmos and Azurite emulators, see the next
 For end-to-end local dev with Cosmos persistence (required for OPDB sync and per-source politeness overrides) and Azurite-backed blob storage (used by the RAG ingestion worker), spin up the [`PinballWizard.AppHost`](src/PinballWizard.AppHost/) orchestrator:
 
 ```pwsh
-# Start the Cosmos preview emulator + Azurite + Aspire dashboard
+# Start the Cosmos vNext emulator + Azurite + Aspire dashboard
 pwsh ./start-apphost.ps1
 ```
 
-First run pulls ~3 GB of container images (Cosmos preview emulator + Azurite); subsequent runs reuse persistent volumes. Requires Docker Desktop (for the emulator containers) and the .NET Aspire workload (`dotnet workload install aspire`).
+First run pulls ~3 GB of container images (Cosmos vNext emulator + Azurite); subsequent runs reuse persistent volumes. Requires Docker Desktop (for the emulator containers) and the .NET Aspire workload (`dotnet workload install aspire`).
 
 ### AI coding agent integration (Aspire MCP)
 
@@ -320,7 +320,7 @@ src/
 ├── PinballWizard.Web             ← Blazor Web App (auto-render mode) — chat surface, themes, admin pages
 ├── PinballWizard.Web.Client      ← Blazor WASM client project (interactive components)
 ├── PinballWizard.RagIngestionWorker ← Cosmos Change Feed worker — PdfPig, chunking, embedding, AI Search
-├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
+├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos vNext emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← OTel + service discovery + HTTP resilience + health checks
 tests/                              ← per-layer test projects (ADR-0030); see CONTRIBUTING.md § Test suites
 ├── PinballWizard.Core.Tests
@@ -346,7 +346,7 @@ infra/
 
 ## Deploy targets
 
-- **Local dev** — `pwsh ./start-apphost.ps1` brings up the Aspire orchestrator (Cosmos preview emulator + Azurite for blob storage), and the CLI auto-detects the emulator via `ConnectionStrings:cosmos`. See [Local development with .NET Aspire](#local-development-with-net-aspire) above.
+- **Local dev** — `pwsh ./start-apphost.ps1` brings up the Aspire orchestrator (Cosmos vNext emulator + Azurite for blob storage), and the CLI auto-detects the emulator via `ConnectionStrings:cosmos`. See [Local development with .NET Aspire](#local-development-with-net-aspire) above.
 - **Production** — Azure Container Apps. The Wizard chat surface and API run as an ACA App; each manufacturer scraper runs as an ACA Job on its own per-origin schedule (politeness is per-origin); the RAG Ingestion Worker runs as a Change Feed-triggered ACA Job. Deploy via [`infra/scripts/Deploy-SharedResources.ps1`](infra/scripts/Deploy-SharedResources.ps1) — see [Azure deploy — two-tier (Phase 1 / Phase 2+)](#azure-deploy--two-tier-phase-1--phase-2) above.
 
 ## Contributing
