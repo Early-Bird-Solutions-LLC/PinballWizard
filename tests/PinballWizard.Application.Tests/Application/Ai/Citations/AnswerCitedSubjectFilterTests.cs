@@ -166,6 +166,11 @@ public sealed class AnswerCitedSubjectFilterTests
         Assert.Equal(0, result.DroppedCount);
         Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Pro) — Rules"));
         Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Premium) (p. 4–6)"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Premium/LE) — Metadata"));
+        Assert.Equal("AC/DC", AnswerCitedSubjectFilter.ExtractSubject("AC/DC (Pro Vault Edition) — Metadata"));
+        Assert.Equal("AC/DC", AnswerCitedSubjectFilter.ExtractSubject("AC/DC (Premium Vault Edition) — Metadata"));
+        Assert.Equal("Foo", AnswerCitedSubjectFilter.ExtractSubject("Foo (Super LE) — Metadata"));
+        Assert.Equal("Bar", AnswerCitedSubjectFilter.ExtractSubject("Bar (Collector's Edition) — Metadata"));
     }
 
     [Fact]

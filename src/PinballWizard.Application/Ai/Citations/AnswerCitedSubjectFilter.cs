@@ -40,8 +40,10 @@ public static class AnswerCitedSubjectFilter
     // name the game without the edition; matching the full "Godzilla (Pro)"
     // string would drop every Pro/Premium corpus hit for a plain "Godzilla"
     // answer. Strip for subject matching only — the citation Title is unchanged.
+    // Closed list mirrors OPDB edition labels used in linking/reconciliation
+    // fixtures (Pro, Premium/LE, Vault Edition, Super LE, Collector's, …).
     private static readonly Regex EditionSuffix = new(
-        @"\s*\((?:Pro|Premium|LE|Limited\s+Edition|Standard|Home|CE|SE|Deluxe|Special\s+Edition)\)\s*$",
+        @"\s*\((?:Pro(?:\s+Vault(?:\s+Edition)?)?|Premium(?:/LE)?(?:\s+Vault(?:\s+Edition)?)?|Super\s+LE|LE|L/?E|Limited\s+Edition|Vault(?:\s+Edition)?|Collector(?:['\u2019]?s)?\s+Edition|Standard|Home|CE|SE|Deluxe|Special\s+Edition)\)\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     // OPDB / Match Play titles without a human machine name — keep (fail
