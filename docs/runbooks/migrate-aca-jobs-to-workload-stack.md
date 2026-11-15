@@ -51,9 +51,17 @@ in its managed set and absent from its template.
 
 ### 3. Detach jobs from the platform stack (no delete)
 
-Update the platform stack with **`--action-on-unmanage detachResources`**
-and `manageAcaJobs=false` in the same operation. Detach tells the stack to
-stop tracking the jobs **without deleting them**.
+Update the platform stack with **`--action-on-unmanage detachAll`**
+(az CLI ≥ 2.92; older docs said `detachResources`) and `manageAcaJobs=false`
+in the same operation. Detach tells the stack to stop tracking the jobs
+**without deleting them**.
+
+This cutover still compiles the **full** platform template, including Foundry.
+Cognitive Services parent-locks the account for child mutations — if
+`foundryProject` races the first model deployment, ARM returns
+`RequestConflict` on `accounts/projects/write` (not RTFP `715-123420`).
+Confirm `infra/modules/shared.bicep` serializes model deployments after
+`foundryProject` (`dependsOn`) before retrying. Idle-wait alone is not enough.
 
 ```bash
 ENV=dev
@@ -72,13 +80,13 @@ az stack sub create \
     ragIndexerImageTag='…' \
     cliImageTag='…' \
     developerObjectId='…' \
-  --action-on-unmanage detachResources \
+  --action-on-unmanage detachAll \
   --deny-settings-mode none \
   --yes
 ```
 
-**Critical:** this one run uses `detachResources`. Do not use `deleteResources`
-on this cutover run.
+**Critical:** this one run uses `detachAll` / detach semantics. Do not use
+`deleteResources` on this cutover run.
 
 After success, set `param manageAcaJobs = false` in the env bicepparam (or
 keep passing it inline) so future platform deploys with `deleteResources` do
@@ -177,3 +185,5 @@ exist.
 - Setting `deployFoundryModelDeployments=false` to "avoid" Foundry preflight →
   deletes model deployments.
 - Using `az containerapp job update --image` as a shortcut → invariant breach.
+- Retrying detach immediately after Foundry `RequestConflict` without the
+  project→deployment `dependsOn` serialization → same self-contention.
