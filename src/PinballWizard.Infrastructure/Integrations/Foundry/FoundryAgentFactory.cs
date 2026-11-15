@@ -43,6 +43,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
     private readonly MarketValueTool _marketValueTool;
     private readonly KineticistGuideLinkTool _kineticistGuideLinkTool;
     private readonly MatchPlayTournamentTool _matchPlayTournamentTool;
+    private readonly MatchPlayRatingsTool _matchPlayRatingsTool;
     private readonly IfpaWpprTool _ifpaWpprTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
@@ -66,6 +67,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         MarketValueTool marketValueTool,
         KineticistGuideLinkTool kineticistGuideLinkTool,
         MatchPlayTournamentTool matchPlayTournamentTool,
+        MatchPlayRatingsTool matchPlayRatingsTool,
         IfpaWpprTool ifpaWpprTool,
         ILogger<FoundryAgentFactory> logger)
     {
@@ -76,6 +78,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         ArgumentNullException.ThrowIfNull(marketValueTool);
         ArgumentNullException.ThrowIfNull(kineticistGuideLinkTool);
         ArgumentNullException.ThrowIfNull(matchPlayTournamentTool);
+        ArgumentNullException.ThrowIfNull(matchPlayRatingsTool);
         ArgumentNullException.ThrowIfNull(ifpaWpprTool);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -86,6 +89,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         _marketValueTool = marketValueTool;
         _kineticistGuideLinkTool = kineticistGuideLinkTool;
         _matchPlayTournamentTool = matchPlayTournamentTool;
+        _matchPlayRatingsTool = matchPlayRatingsTool;
         _ifpaWpprTool = ifpaWpprTool;
         _logger = logger;
         _initLock = new Lock();
@@ -216,6 +220,11 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             _matchPlayTournamentTool.GetMatchPlayTournamentFloorAsync);
         var findMatchPlayTournamentPlayers = AIFunctionFactory.Create(
             _matchPlayTournamentTool.FindMatchPlayTournamentPlayersAsync);
+        // Match Play Ratings CDN tools (ADR-0065) — no bearer required.
+        var searchMatchPlayRatings = AIFunctionFactory.Create(
+            _matchPlayRatingsTool.SearchMatchPlayRatingsAsync);
+        var compareMatchPlayRatings = AIFunctionFactory.Create(
+            _matchPlayRatingsTool.CompareMatchPlayRatingsAsync);
         // IFPA WPPR live tools (ADR-0067) — Wizard-only; return null when
         // Ifpa:ApiKey is absent.
         var searchIfpaPlayers = AIFunctionFactory.Create(
@@ -245,6 +254,8 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             getMatchPlayTournamentArenas,
             getMatchPlayTournamentFloor,
             findMatchPlayTournamentPlayers,
+            searchMatchPlayRatings,
+            compareMatchPlayRatings,
             searchIfpaPlayers,
             getIfpaPlayer,
         };
