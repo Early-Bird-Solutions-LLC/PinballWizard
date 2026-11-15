@@ -284,5 +284,20 @@
     "discoveryStatus": "Active",
     "discoveryNotes": "Live tournament brackets/standings/floor/detail/player lookup via Match Play API (ADR-0061 / ADR-0062) plus Match Play Ratings from the public CDN CSV (ADR-0065 search/compare tools). Not RAG-indexed — live/semi-live competitive data must not be embedded (docs/knowledge-sources.md §5). Tournament API auth: MatchPlay:ApiToken (Opdb:ApiToken fallback). Ratings CDN needs no bearer; process caches the export (~12h).",
     "discoveryDate": "2026-11-15"
+  },
+  {
+    "id": "ifpa",
+    "displayName": "IFPA (WPPR)",
+    "scraperImplKey": "ifpa",
+    "baseUrl": "https://api.ifpapinball.com/",
+    "enabled": true,
+    "cadence": "none",
+    "politenessOverrides": {
+      "requestDelayMs": 1000
+    },
+    "sourceGroup": "IFPA",
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Live IFPA player search + WPPR profile tools via IFPA API (ADR-0067). Not RAG-indexed — live competitive rankings must not be embedded (docs/knowledge-sources.md §5). Auth: Ifpa:ApiKey (api_key query param per IFPA OpenAPI 2.1). No Match Play / OPDB token fallback.",
+    "discoveryDate": "2026-11-15"
   }
 ]

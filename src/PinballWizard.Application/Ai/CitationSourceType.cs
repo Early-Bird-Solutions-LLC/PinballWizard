@@ -19,4 +19,5 @@ public enum CitationSourceType
     MarketValue = 4,    // Silverball Labs live-pricing result (ADR-0045)
     MatchPlayTournament = 5, // Match Play Events live standings (ADR-0061)
     MatchPlayRating = 6,     // Match Play Ratings CDN (ADR-0065)
+    IfpaWppr = 7,            // IFPA WPPR player / ranking result (ADR-0067)
 }

@@ -44,6 +44,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
     private readonly KineticistGuideLinkTool _kineticistGuideLinkTool;
     private readonly MatchPlayTournamentTool _matchPlayTournamentTool;
     private readonly MatchPlayRatingsTool _matchPlayRatingsTool;
+    private readonly IfpaWpprTool _ifpaWpprTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
@@ -67,6 +68,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         KineticistGuideLinkTool kineticistGuideLinkTool,
         MatchPlayTournamentTool matchPlayTournamentTool,
         MatchPlayRatingsTool matchPlayRatingsTool,
+        IfpaWpprTool ifpaWpprTool,
         ILogger<FoundryAgentFactory> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -77,6 +79,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         ArgumentNullException.ThrowIfNull(kineticistGuideLinkTool);
         ArgumentNullException.ThrowIfNull(matchPlayTournamentTool);
         ArgumentNullException.ThrowIfNull(matchPlayRatingsTool);
+        ArgumentNullException.ThrowIfNull(ifpaWpprTool);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options.Value;
@@ -87,6 +90,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         _kineticistGuideLinkTool = kineticistGuideLinkTool;
         _matchPlayTournamentTool = matchPlayTournamentTool;
         _matchPlayRatingsTool = matchPlayRatingsTool;
+        _ifpaWpprTool = ifpaWpprTool;
         _logger = logger;
         _initLock = new Lock();
     }
@@ -221,6 +225,12 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             _matchPlayRatingsTool.SearchMatchPlayRatingsAsync);
         var compareMatchPlayRatings = AIFunctionFactory.Create(
             _matchPlayRatingsTool.CompareMatchPlayRatingsAsync);
+        // IFPA WPPR live tools (ADR-0067) — Wizard-only; return null when
+        // Ifpa:ApiKey is absent.
+        var searchIfpaPlayers = AIFunctionFactory.Create(
+            _ifpaWpprTool.SearchIfpaPlayersAsync);
+        var getIfpaPlayer = AIFunctionFactory.Create(
+            _ifpaWpprTool.GetIfpaPlayerAsync);
 
         // Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
@@ -246,6 +256,8 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             findMatchPlayTournamentPlayers,
             searchMatchPlayRatings,
             compareMatchPlayRatings,
+            searchIfpaPlayers,
+            getIfpaPlayer,
         };
 
         foreach (var name in connectedSubAgentNames)
