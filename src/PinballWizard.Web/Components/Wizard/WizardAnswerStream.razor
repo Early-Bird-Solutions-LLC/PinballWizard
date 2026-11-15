@@ -38,76 +38,16 @@
 
 <div class="wizard-answer-stream" data-testid="wizard-answer-stream">
 
-    @* Document outline (#789): Idle → one visually-hidden <h1>; after submit
-       the live question is the visible <h1>. Prior thread turns use <h2> so
-       the page never has two <h1>s and screen readers get a real outline. *@
+    @* Document outline (#789 / Bugbot): <h1> MUST precede any <h2> in the DOM.
+       Flex order keeps the visual chronology (prior turns → live question →
+       answer body) while screen readers see h1 then h2. *@
     @if (_state == AnswerState.Idle)
     {
-        <h1 class="pw-visually-hidden">Ask the Wizard</h1>
-    }
-
-    @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
-       Lives in component state only — circuit lifetime, no persistence
-       (ADR-0027: the ban is on PERSISTENT session history; a page refresh
-       starts a fresh conversation). Each turn renders through the same
-       TokenRenderer + CitationStrip surfaces as the live answer. *@
-    @if (_thread.Count > 0)
-    {
-        <MudStack Spacing="4" Class="wizard-thread mb-6" data-testid="conversation-thread">
-            @foreach (var turn in _thread)
-            {
-                <div class="wizard-thread__turn" data-testid="conversation-turn">
-                    <MudText Typo="Typo.h2" Class="wizard-answer-stream__question"
-                             data-testid="turn-question">
-                        @turn.Question
-                    </MudText>
-                    <TokenRenderer SpanTexts="@turn.TextSpans" IsStreaming="false" />
-                    @if (turn.Citations.Count > 0)
-                    {
-                        <CitationStrip Citations="turn.Citations" />
-                    }
-                </div>
-            }
-        </MudStack>
-    }
-
-    @* ── Question input (always visible in Idle; hidden after submit) ──── *@
-    @if (_state == AnswerState.Idle)
-    {
-        <MudStack Spacing="3">
-            <MudTextField @bind-Value="_question"
-                          Placeholder="@(_thread.Count > 0 ? "Ask a follow-up…" : "Ask anything about pinball machines…")"
-                          Variant="Variant.Outlined"
-                          FullWidth="true"
-                          AutoFocus="true"
-                          aria-label="Question"
-                          data-testid="question-input"
-                          OnKeyDown="OnKeyDownAsync"
-                          Disabled="_state != AnswerState.Idle" />
-            <MudStack Row="true" Spacing="2">
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           OnClick="SubmitAsync"
-                           Disabled="string.IsNullOrWhiteSpace(_question)"
-                           data-testid="ask-button">
-                    @(_thread.Count > 0 ? "Ask the follow-up" : "Ask the Wizard")
-                </MudButton>
-                @if (_thread.Count > 0)
-                {
-                    <MudButton Variant="Variant.Text"
-                               Color="Color.Secondary"
-                               OnClick="StartNewConversation"
-                               data-testid="new-conversation-button">
-                        New conversation
-                    </MudButton>
-                }
-            </MudStack>
-        </MudStack>
+        <h1 class="pw-visually-hidden wizard-answer-stream__doc-title">Ask the Wizard</h1>
     }
     else
     {
-        @* Show the submitted question as the page <h1> while the answer streams *@
-        <MudStack Spacing="1" Class="mb-3">
+        <MudStack Spacing="1" Class="mb-3 wizard-answer-stream__doc-title">
             <MudText Typo="Typo.h1" Class="wizard-answer-stream__question"
                      data-testid="submitted-question">
                 @_submittedQuestion
@@ -154,61 +94,122 @@
         </MudStack>
     }
 
-    @* ── Thinking indicator (Submitted / Thinking, before first chunk) ─── *@
-    @if (_state is AnswerState.Submitted or AnswerState.Thinking)
+    @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
+       Lives in component state only — circuit lifetime, no persistence
+       (ADR-0027: the ban is on PERSISTENT session history; a page refresh
+       starts a fresh conversation). Each turn renders through the same
+       TokenRenderer + CitationStrip surfaces as the live answer. *@
+    @if (_thread.Count > 0)
     {
-        <WizardThinkingIndicator />
+        <MudStack Spacing="4" Class="wizard-thread mb-6" data-testid="conversation-thread">
+            @foreach (var turn in _thread)
+            {
+                <div class="wizard-thread__turn" data-testid="conversation-turn">
+                    <MudText Typo="Typo.h2" Class="wizard-answer-stream__question"
+                             data-testid="turn-question">
+                        @turn.Question
+                    </MudText>
+                    <TokenRenderer SpanTexts="@turn.TextSpans" IsStreaming="false" />
+                    @if (turn.Citations.Count > 0)
+                    {
+                        <CitationStrip Citations="turn.Citations" />
+                    }
+                </div>
+            }
+        </MudStack>
     }
 
-    @* ── Active tool call breadcrumb (during Streaming / CitationsArriving) *@
-    @if (!string.IsNullOrEmpty(_currentToolCallName) &&
-         _state is AnswerState.Streaming or AnswerState.CitationsArriving)
-    {
-        <ToolCallBreadcrumb ToolName="@_currentToolCallName" />
-    }
+    <div class="wizard-answer-stream__body">
+        @* ── Question input (always visible in Idle; hidden after submit) ──── *@
+        @if (_state == AnswerState.Idle)
+        {
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_question"
+                              Placeholder="@(_thread.Count > 0 ? "Ask a follow-up…" : "Ask anything about pinball machines…")"
+                              Variant="Variant.Outlined"
+                              FullWidth="true"
+                              AutoFocus="true"
+                              aria-label="Question"
+                              data-testid="question-input"
+                              OnKeyDown="OnKeyDownAsync"
+                              Disabled="_state != AnswerState.Idle" />
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               OnClick="SubmitAsync"
+                               Disabled="string.IsNullOrWhiteSpace(_question)"
+                               data-testid="ask-button">
+                        @(_thread.Count > 0 ? "Ask the follow-up" : "Ask the Wizard")
+                    </MudButton>
+                    @if (_thread.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Secondary"
+                                   OnClick="StartNewConversation"
+                                   data-testid="new-conversation-button">
+                            New conversation
+                        </MudButton>
+                    }
+                </MudStack>
+            </MudStack>
+        }
 
-    @* ── Streamed text (Streaming / CitationsArriving / Complete states) ── *@
-    @* ADR-0026 § 5: Refusal SUPERSEDES prior TextDelta — TokenRenderer is
-       NOT rendered in Refusal state. When a Refusal chunk arrives, _textDeltas
-       is cleared and _state transitions to Refusal so this block never renders. *@
-    @if (_state is AnswerState.Streaming or AnswerState.CitationsArriving or AnswerState.Complete)
-    {
-        @* Cascade the ordinal-ordered citation list so CitationMarker components
-           inside the rendered markdown can derive their hover tooltips with the
-           same N as the citation cards (Task 8). Name="OrderedCitations" matches
-           the [CascadingParameter(Name="OrderedCitations")] in CitationMarker. *@
-        <CascadingValue Value="@PinballWizard.Web.Components.Citations.CitationOrdering.InRenderOrder(_citations)"
-                        Name="OrderedCitations">
-            <TokenRenderer SpanTexts="_textDeltas"
-                           IsStreaming="_state is AnswerState.Streaming or AnswerState.CitationsArriving" />
-        </CascadingValue>
-    }
+        @* ── Thinking indicator (Submitted / Thinking, before first chunk) ─── *@
+        @if (_state is AnswerState.Submitted or AnswerState.Thinking)
+        {
+            <WizardThinkingIndicator />
+        }
 
-    @* ── CitationStrip (CitationsArriving / Complete) ─────────────────── *@
-    @if (_citations.Count > 0 &&
-         _state is AnswerState.CitationsArriving or AnswerState.Complete)
-    {
-        <CitationStrip Citations="_citations" AnswerBody="@string.Join(string.Empty, _textDeltas)" />
-    }
+        @* ── Active tool call breadcrumb (during Streaming / CitationsArriving) *@
+        @if (!string.IsNullOrEmpty(_currentToolCallName) &&
+             _state is AnswerState.Streaming or AnswerState.CitationsArriving)
+        {
+            <ToolCallBreadcrumb ToolName="@_currentToolCallName" />
+        }
 
-    @* ── RefusalPanel (Refusal state only — supersedes streamed text) ──── *@
-    @if (_state == AnswerState.Refusal && _refusalCategory.HasValue)
-    {
-        <RefusalPanel Category="_refusalCategory.Value"
-                      Detail="_refusalDetail"
-                      RetryAfterSeconds="_retryAfterSeconds"
-                      QuestionSelected="OnSuggestedRephraseSelectedAsync" />
-    }
+        @* ── Streamed text (Streaming / CitationsArriving / Complete states) ── *@
+        @* ADR-0026 § 5: Refusal SUPERSEDES prior TextDelta — TokenRenderer is
+           NOT rendered in Refusal state. When a Refusal chunk arrives, _textDeltas
+           is cleared and _state transitions to Refusal so this block never renders. *@
+        @if (_state is AnswerState.Streaming or AnswerState.CitationsArriving or AnswerState.Complete)
+        {
+            @* Cascade the ordinal-ordered citation list so CitationMarker components
+               inside the rendered markdown can derive their hover tooltips with the
+               same N as the citation cards (Task 8). Name="OrderedCitations" matches
+               the [CascadingParameter(Name="OrderedCitations")] in CitationMarker. *@
+            <CascadingValue Value="@PinballWizard.Web.Components.Citations.CitationOrdering.InRenderOrder(_citations)"
+                            Name="OrderedCitations">
+                <TokenRenderer SpanTexts="_textDeltas"
+                               IsStreaming="_state is AnswerState.Streaming or AnswerState.CitationsArriving" />
+            </CascadingValue>
+        }
 
-    @* ── Error state ─────────────────────────────────────────────────────── *@
-    @if (_state == AnswerState.Error)
-    {
-        <MudAlert Severity="Severity.Warning"
-                  data-testid="stream-error-alert"
-                  Class="mt-2">
-            The Wizard hit a snag. Retrying with a full response…
-        </MudAlert>
-    }
+        @* ── CitationStrip (CitationsArriving / Complete) ─────────────────── *@
+        @if (_citations.Count > 0 &&
+             _state is AnswerState.CitationsArriving or AnswerState.Complete)
+        {
+            <CitationStrip Citations="_citations" AnswerBody="@string.Join(string.Empty, _textDeltas)" />
+        }
+
+        @* ── RefusalPanel (Refusal state only — supersedes streamed text) ──── *@
+        @if (_state == AnswerState.Refusal && _refusalCategory.HasValue)
+        {
+            <RefusalPanel Category="_refusalCategory.Value"
+                          Detail="_refusalDetail"
+                          RetryAfterSeconds="_retryAfterSeconds"
+                          QuestionSelected="OnSuggestedRephraseSelectedAsync" />
+        }
+
+        @* ── Error state ─────────────────────────────────────────────────────── *@
+        @if (_state == AnswerState.Error)
+        {
+            <MudAlert Severity="Severity.Warning"
+                      data-testid="stream-error-alert"
+                      Class="mt-2">
+                The Wizard hit a snag. Retrying with a full response…
+            </MudAlert>
+        }
+    </div>
 
 </div>
 

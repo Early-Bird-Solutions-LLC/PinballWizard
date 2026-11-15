@@ -172,6 +172,40 @@ public sealed class WizardAnswerStreamTests
         await Task.CompletedTask;
     }
 
+    [Fact]
+    public async Task FollowUp_submit_keeps_h1_before_prior_turn_h2_in_dom()
+    {
+        // #789 Bugbot: prior turns as h2 must not precede the live h1 in the
+        // document outline. DOM order is h1 then h2; flex reorders visually.
+        var answer = BuildAnswer("First answer.", citations: [BuildCitation("Source A")]);
+        var (client, _) = BuildHistoryCapturingClient(
+            new AnswerChunk.TextDelta("First answer."),
+            new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "first question"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='new-question-button']"),
+            timeout: TimeSpan.FromSeconds(3));
+        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='conversation-thread']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        cut.Render(p => p.Add(c => c.Question, "who designed it"));
+        cut.WaitForAssertion(
+            () => Assert.Equal("who designed it", cut.Find("[data-testid='submitted-question']").TextContent.Trim()),
+            timeout: TimeSpan.FromSeconds(3));
+
+        var markup = cut.Markup;
+        var h1At = markup.IndexOf("<h1", StringComparison.OrdinalIgnoreCase);
+        var h2At = markup.IndexOf("<h2", StringComparison.OrdinalIgnoreCase);
+        Assert.True(h1At >= 0, "Expected a live <h1> for the follow-up question.");
+        Assert.True(h2At >= 0, "Expected a prior-turn <h2>.");
+        Assert.True(h1At < h2At, "Document outline must place <h1> before prior-turn <h2>.");
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Submitted_state_renders_thinking_indicator
     // ──────────────────────────────────────────────────────────────────────
