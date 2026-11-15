@@ -147,13 +147,13 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
                 description = root.TryGetProperty("description", out var d) ? d.GetString() : null;
                 canonicalUrl = root.TryGetProperty("url", out var u) ? u.GetString() : null;
 
-                if (root.TryGetProperty("author", out var authorEl)
-                    && authorEl.TryGetProperty("name", out var nameEl))
+                if (root.TryGetProperty("author", out var authorEl))
                 {
-                    author = nameEl.GetString();
+                    author = ReadAuthorName(authorEl);
                 }
 
                 if (root.TryGetProperty("datePublished", out var dateEl)
+                    && dateEl.ValueKind == JsonValueKind.String
                     && DateTimeOffset.TryParse(dateEl.GetString(), out var parsed))
                 {
                     publishedAt = parsed;
@@ -204,4 +204,38 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
             BodyText = bodyText,
         };
     }
+
+    // Schema.org author is a Person, a Text name, or a list of either.
+    // TryGetProperty on an array throws InvalidOperationException, which is
+    // not a JsonException, so the caller's catch does not see it and the
+    // whole sync dies on the first article that lists its authors.
+    private static string? ReadAuthorName(JsonElement authorEl)
+    {
+        switch (authorEl.ValueKind)
+        {
+            case JsonValueKind.String:
+                return NullIfBlank(authorEl.GetString());
+            case JsonValueKind.Object:
+                return authorEl.TryGetProperty("name", out var nameEl)
+                    ? NullIfBlank(nameEl.ValueKind == JsonValueKind.String ? nameEl.GetString() : null)
+                    : null;
+            case JsonValueKind.Array:
+                var names = new List<string>();
+                foreach (var item in authorEl.EnumerateArray())
+                {
+                    var name = ReadAuthorName(item);
+                    if (name is not null)
+                    {
+                        names.Add(name);
+                    }
+                }
+
+                return names.Count == 0 ? null : string.Join(", ", names);
+            default:
+                return null;
+        }
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 }

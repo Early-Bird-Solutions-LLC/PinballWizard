@@ -205,6 +205,64 @@ public sealed class TwipNewsletterClientTests
     }
 
     [Fact]
+    public async Task FetchArticleAsync_AuthorArray_ReadsEveryPersonName()
+    {
+        const string slug = "save-the-date";
+        const string html = """
+            <!DOCTYPE html>
+            <html><head>
+              <script type="application/ld+json">
+              {
+                "@type": "Article",
+                "headline": "Save the Date",
+                "author": [
+                  {"@type": "Person", "name": "Colin Alsheimer"},
+                  {"@type": "Person", "name": "Ada Lovelace"}
+                ]
+              }
+              </script>
+            </head>
+            <body><p class="dream-post-content-paragraph">Mark the calendar.</p></body>
+            </html>
+            """;
+
+        var (client, _, _) = BuildClient(h => h.MapHtml($"{BaseUrl}/p/{slug}", html));
+
+        var article = await client.FetchArticleAsync(slug, CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Equal("Colin Alsheimer, Ada Lovelace", article!.Author);
+        Assert.Equal("Save the Date", article.Title);
+    }
+
+    [Fact]
+    public async Task FetchArticleAsync_AuthorString_ReadsTheName()
+    {
+        const string slug = "byline";
+        const string html = """
+            <!DOCTYPE html>
+            <html><head>
+              <script type="application/ld+json">
+              {
+                "@type": "Article",
+                "headline": "Byline",
+                "author": "Colin Alsheimer"
+              }
+              </script>
+            </head>
+            <body><p class="dream-post-content-paragraph">Text.</p></body>
+            </html>
+            """;
+
+        var (client, _, _) = BuildClient(h => h.MapHtml($"{BaseUrl}/p/{slug}", html));
+
+        var article = await client.FetchArticleAsync(slug, CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Equal("Colin Alsheimer", article!.Author);
+    }
+
+    [Fact]
     public async Task FetchArticleAsync_NoJsonLd_ReturnsNull()
     {
         const string slug = "subscribe";
