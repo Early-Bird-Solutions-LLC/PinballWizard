@@ -78,6 +78,10 @@ on:
       # ^infra/ branch of that gate was unreachable and Bicep edits reached production
       # only via a manual stack run — the gap #859 exists to close.
       - 'infra/**'
+      # Cloudflare Terraform lock / plan churn must not rebuild ACA images or
+      # force pinwiz-jobs-dev (Renovate lock-only #957). Negation after the
+      # inclusive glob (GHA path filter rules).
+      - '!infra/cloudflare/**'
       # deploy/** holds scheduled-cli-job.bicep, the module every one of the 22 ACA
       # Jobs is built from. Omitting it meant a change to the job definitions could
       # merge and never deploy — the same inert-change defect as #859, one directory
