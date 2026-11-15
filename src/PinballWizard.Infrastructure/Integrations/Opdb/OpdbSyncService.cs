@@ -126,6 +126,8 @@ public sealed class OpdbSyncService : IOpdbSyncService
 
         try
         {
+            var v2Enrichment = await _client.LoadV2EnrichmentAsync(cancellationToken).ConfigureAwait(false);
+
             // ── Pass 1 — base machines ──────────────────────────────────
             // Two-phase: (a) stream all DTOs sequentially — this resolves
             // group titles via polite HTTP calls and must stay sequential;
@@ -152,6 +154,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 var mapped = OpdbMachineMapper.Map(dto, now, groupTitle);
                 if (mapped is null) { skipped++; continue; }
 
+                OpdbV2EnrichmentApplicator.Apply(mapped, v2Enrichment);
                 baseMachines.Add((dto, mapped, now));
 
                 if (fetched % 100 == 0)
@@ -210,6 +213,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             dto.OpdbId is not null
                                 ? groupTitleCacheReadOnly.GetValueOrDefault(OpdbMachineMapper.ExtractGroupSegment(dto.OpdbId) ?? string.Empty)
                                 : null);
+                        OpdbV2EnrichmentApplicator.Apply(existing, v2Enrichment);
                         if (!isDryRun)
                         {
                             await _machines.UpsertAsync(existing, ct).ConfigureAwait(false);
