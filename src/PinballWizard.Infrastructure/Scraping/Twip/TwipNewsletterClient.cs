@@ -266,14 +266,12 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
 
             case JsonValueKind.Array:
             {
-                var names = new List<string>();
-                foreach (var item in authorEl.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.Object) continue;
-                    var name = ReadPersonName(item);
-                    if (!string.IsNullOrWhiteSpace(name))
-                        names.Add(name);
-                }
+                var names = authorEl.EnumerateArray()
+                    .Where(item => item.ValueKind == JsonValueKind.Object)
+                    .Select(ReadPersonName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name!)
+                    .ToList();
 
                 return names.Count > 0
                     ? string.Join(", ", names)
