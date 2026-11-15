@@ -16,7 +16,10 @@ namespace PinballWizard.Application.Ai.Tools;
 // (same rationale as MarketValueTool / MatchPlayTournamentTool).
 //
 // Fail closed on unexpected faults — return null so the Wizard can degrade
-// honestly rather than aborting the turn. Broad catch mirrors MarketValueTool.
+// honestly rather than aborting the turn. Broad catch is intentional
+// (Invariant #17 / ADR-0067): mirrors MarketValueTool / MatchPlayTournamentTool.
+// Narrowing would let an unanticipated exception type crash the Wizard turn.
+// CodeQL cs/catch-of-all-exceptions → won't-fix (precedent PR #484).
 public sealed class IfpaWpprTool
 {
     internal const string SearchToolTag = "searchIfpaPlayers";
@@ -173,6 +176,8 @@ public sealed class IfpaWpprTool
         {
             throw;
         }
+        // Intentional boundary catch (Invariant #17): log/meter via onFault,
+        // return null. Do not narrow — unanticipated types must not abort the turn.
         catch (Exception ex)
         {
             return onFault(ex);
