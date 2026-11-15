@@ -164,7 +164,7 @@ $env:Opdb__ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-o
 dotnet run --project src/PinballWizard.Cli -- --source opdb
 ```
 
-Fetches the OPDB catalog (~2,400 machines) in a single GET of the Match Play V1 CDN export and writes each machine into `machines` + a title-lookup row into `machine_title_lookups` (dual-write per ADR-0025 section 1).
+Fetches the OPDB catalog (~2,400 machines) in a single GET of the Match Play V1 CDN export, plus one GET of the V2 export (`Opdb:V2ExportUrl`, default `opdb-v2.json`) to copy design credits and the primary backglass image onto mapped machines, and writes each machine into `machines` + a title-lookup row into `machine_title_lookups` (dual-write per ADR-0025 section 1).
 
 > **Time cost:** the full sync takes **30-90 minutes** due to the polite per-request delay enforced by `IPolitenessGate`. OPDB is a community resource and this delay is not negotiable. Plan accordingly, or use Option B for a quick start.
 
