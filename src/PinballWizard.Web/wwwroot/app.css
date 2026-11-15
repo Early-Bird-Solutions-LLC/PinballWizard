@@ -582,6 +582,32 @@ html.pw-admin-nav--collapsed .pw-admin-layout {
     --mud-drawer-width-left: 64px;
 }
 
+/* Narrow-viewport auto-collapse (#790).
+   AdminLayout keeps the rail Open="true" (static, always-expanded) so MudBlazor
+   never hides it below Breakpoint.Md. At phone widths that full rail (~240px)
+   plus MudMainContent produced page-level horizontal overflow (scrollWidth 447
+   on a 320px viewport) while the responsive snapshot gate stayed green —
+   because nothing asserted overflow. Mirror the collapsed-rail custom property
+   and label hiding below 600px without requiring the JS toggle or a Blazor
+   @onclick (FE-10 / static admin circuit profile unchanged). */
+@media (max-width: 599.98px) {
+    .pw-admin-layout {
+        --mud-drawer-width-left: 64px;
+    }
+
+    .pw-admin-layout .app-nav-rail--collapsible .pw-nav-label,
+    .pw-admin-layout .app-nav-rail--collapsible .pw-nav-header-text,
+    .pw-admin-layout .app-nav-rail--collapsible .admin-status-footer__text {
+        display: none;
+    }
+
+    /* App bar title + identity + back button also outgrow ~320px; let the
+       bar scroll internally rather than widening the document. */
+    .pw-admin-layout .mud-appbar .mud-toolbar {
+        overflow-x: auto;
+    }
+}
+
 /* Icon-only collapse: hide the nav-link labels, the rail header text, and the status-
    footer text. Icons and the toggle button stay visible; title tooltips are retained
    for a11y (spec §5.1). Scoped to the admin rail (.app-nav-rail--collapsible, added
