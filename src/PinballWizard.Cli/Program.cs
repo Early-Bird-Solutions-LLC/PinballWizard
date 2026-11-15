@@ -1601,19 +1601,22 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 if (chunks.Count == 0) continue;
 
                 var contentHash = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.ContentHash(tip, exportUrl);
-                if (pinTipsIndexState is not null)
-                {
-                    var lastIndexed = await pinTipsIndexState.GetLastIndexedHashAsync(
-                        documentId, target.MachineId, cancellationToken);
-                    if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(lastIndexed, contentHash))
-                    {
-                        pinTipsSkippedUnchanged++;
-                        continue;
-                    }
-                }
-
                 try
                 {
+                    // The hash read shares this target's failure boundary.
+                    // A Cosmos timeout or a bad ledger row must fail this
+                    // machine only; the rest of the export still indexes.
+                    if (pinTipsIndexState is not null)
+                    {
+                        var lastIndexed = await pinTipsIndexState.GetLastIndexedHashAsync(
+                            documentId, target.MachineId, cancellationToken);
+                        if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(lastIndexed, contentHash))
+                        {
+                            pinTipsSkippedUnchanged++;
+                            continue;
+                        }
+                    }
+
                     var result = await pinTipsIndexer.UpsertAsync(chunkRequest, chunks, pinTipsOptions, cancellationToken);
                     if (result.Failures.Count > 0)
                     {
