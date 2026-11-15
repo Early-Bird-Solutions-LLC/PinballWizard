@@ -8,20 +8,21 @@ Bicep templates for the pinwiz.ai shared and per-environment Azure resources.
 
 ```
 infra/
-├── main-shared.bicep              # Subscription-scoped entry point
+├── main-shared.bicep              # Platform stack entry (subscription scope)
 ├── main-shared.dev.bicepparam     # Dev environment parameters (committed)
-├── main-shared.prod.bicepparam    # (not yet — added when prod env is provisioned)
+├── main-jobs.bicep                # Workload stack entry — ACA jobs only (RG scope, ADR-0060)
+├── main-jobs.dev.bicepparam
 ├── modules/
-│   └── shared.bicep               # Resource-group-scoped shared resources
+│   ├── shared.bicep               # Platform resources (Cosmos / Foundry / KV / …)
+│   └── aca-jobs.bicep             # All pinwiz-job-* defs + job-MI RBAC (existing refs)
 └── scripts/
-    └── Deploy-SharedResources.ps1 # Deploy orchestrator with subscription guard
+    ├── Deploy-SharedResources.ps1 # Platform stack (az stack sub create)
+    └── Deploy-WorkloadJobs.ps1    # Workload stack (az stack group create)
 ```
 
-The two-file pattern (entry + module) keeps subscription-scoped concerns
-(resource group creation, naming, tagging) separate from resource-scoped
-concerns (the actual Cosmos / KV / ACR / etc. definitions). Adding a
-per-environment file later (`main-env.bicep` for ACA Apps + Jobs) follows the
-same pattern.
+Platform vs workload split is [ADR-0060](../docs/adr/0060-split-platform-workload-deployment-stacks.md).
+Image-only merges target the workload stack after the
+[migration runbook](../docs/runbooks/migrate-aca-jobs-to-workload-stack.md).
 
 ## What gets deployed
 

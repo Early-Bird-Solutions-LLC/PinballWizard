@@ -51,6 +51,9 @@ param cicdDeployPrincipalId string = ''
 @description('When false (default), provisions ONLY Phase 1 resources (Cosmos serverless + Log Analytics + Cosmos diagnostic settings). Set true when Phase 2 features (RAG, Blazor Web, Admin) start landing — adds App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + 3 blob containers, and the matching diagnostic settings + developer RBAC. Phase 1 monthly spend is ~$30/mo (Cosmos serverless idle + Log Analytics 1GB cap); Phase 2 brings the platform to ~$150/mo even when idle. WARNING: flipping true->false on an existing deploy DELETES the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. Use a separate environment if you need to test the Phase 1 baseline against a populated Phase 2 deploy.')
 param deployPhase2 bool = false
 
+@description('When true (default), the platform stack deploys ACA jobs (via modules/aca-jobs.bicep). Set false only AFTER the ADR-0060 detachResources migration so the workload stack pinwiz-jobs-{env} owns the jobs. WARNING: flipping true→false under --action-on-unmanage deleteResources WITHOUT detach first DELETES every pinwiz-job-*. See docs/runbooks/migrate-aca-jobs-to-workload-stack.md.')
+param manageAcaJobs bool = true
+
 @description('When true (default), the Foundry account also ships the chat / chat-heavy / embedding model deployments. Set false on the FIRST deploy of a fresh Foundry account — Azure validates each model deployment against the account-scoped RAI (Responsible AI) policy infrastructure, which does not exist yet on a brand-new account, so a one-shot deploy of (account + project + deployments) fails policy validation. Operational pattern: deploy with deployFoundryModelDeployments=false, then re-deploy with deployFoundryModelDeployments=true once the account is ready (typically within minutes of the first deploy completing). Has no effect when deployPhase2=false.')
 param deployFoundryModelDeployments bool = true
 
@@ -159,6 +162,7 @@ module shared 'modules/shared.bicep' = {
     developerObjectId: developerObjectId
     cicdDeployPrincipalId: cicdDeployPrincipalId
     deployPhase2: deployPhase2
+    manageAcaJobs: manageAcaJobs
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
     deployCohereRerank: deployCohereRerank

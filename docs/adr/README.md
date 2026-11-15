@@ -70,6 +70,7 @@ negative) it carries.
 | [0057](0057-on-demand-maintenance-jobs.md) | On-demand ACA jobs for `--relink-all` and `--gc-rag-index` | Accepted |
 | [0058](0058-politeness-gate-owns-429.md) | The politeness gate owns HTTP 429: per-origin `Retry-After` backoff, bounded budget, no retry below the gate or on bot challenges | Accepted |
 | [0059](0059-opdb-matchplay-cdn-export.md) | OPDB catalog via Match Play CDN V1 export after opdb.org `/api` shutdown | Accepted |
+| [0060](0060-split-platform-workload-deployment-stacks.md) | Split platform / workload deployment stacks for ACA job image repoint | Accepted |
 
 ## Conventions
 

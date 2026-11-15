@@ -396,25 +396,20 @@ jobs:
   # the gap where `pinwiz-cli` images merged to main but jobs ran a 26-day-old
   # build until an operator manually re-ran Deploy-SharedResources.ps1 (#859).
   #
-  # Using `az stack sub create` is the ONLY correct path (locked invariant
-  # DLV-02 / CLAUDE.md #16). `az containerapp job update --image` is banned.
+  # Deployment Stacks only (locked invariant DLV-02 / CLAUDE.md #16).
+  # `az containerapp job update --image` is banned.
+  #
+  # ADR-0060 / #966 — two paths, gated by repo variable WORKLOAD_JOBS_STACK_ENABLED:
+  #   true  → az stack group create pinwiz-jobs-dev (infra/main-jobs.bicep).
+  #           ACA jobs only; NO Microsoft.CognitiveServices preflight.
+  #           Enable ONLY after docs/runbooks/migrate-aca-jobs-to-workload-stack.md.
+  #   false → az stack sub create pinwiz-shared-dev (interim; still Foundry-preflights).
   #
   # Only runs when CLI or infra files changed (gated by detect-changes). Skips
   # if the build-deploy matrix failed — never push a non-existent image tag.
   #
-  # RBAC PREREQUISITE (one-time operator setup, not yet applied):
-  #   Grant the OIDC SP Owner at subscription scope so it can create the
-  #   subscription-scoped deploymentStack resource and manage the RBAC
-  #   assignments the Bicep template controls (sqlRoleAssignments, KV, Storage,
-  #   AI Search, per-app Contributor). Standard Contributor is not sufficient
-  #   because it lacks Microsoft.Authorization/roleAssignments/write.
-  #
-  #   az role assignment create \
-  #     --role Owner \
-  #     --assignee c8466e83-9470-4cad-92a1-2d4149263fdc \
-  #     --scope /subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840
-  #
-  #   Until this grant is applied, this job will fail on first run.
+  # RBAC: platform path needs subscription Owner on the OIDC SP; workload path
+  # needs permission to update the RG-scoped stack + job-MI role assignments.
   #
   deploy-jobs:
     name: Repoint ACA jobs via deployment stack
@@ -449,15 +444,27 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # ── Preserve currently-deployed app images ──────────────────────────────
+      # ── Select stack path early (needed before app-image discovery) ─────────
+      - name: Select deployment stack path (ADR-0060)
+        id: stackpath
+        run: |
+          if [ "${{ vars.WORKLOAD_JOBS_STACK_ENABLED }}" = "true" ]; then
+            echo "mode=workload" >> "$GITHUB_OUTPUT"
+            echo "Using WORKLOAD stack pinwiz-jobs-dev (no CognitiveServices preflight)."
+          else
+            echo "mode=platform" >> "$GITHUB_OUTPUT"
+            echo "Using PLATFORM stack pinwiz-shared-dev (interim — still Foundry-preflights)."
+            echo "After migrate-aca-jobs-to-workload-stack.md, set WORKLOAD_JOBS_STACK_ENABLED=true."
+          fi
+
+      # ── Preserve currently-deployed app images (platform path only) ─────────
       # Auto-discover the running wizard / api / ragindexer image tags so a
-      # CLI-only stack run does not revert those apps to the quickstart
-      # placeholder. Mirrors Deploy-SharedResources.ps1 lines 325-353. At this
-      # point build-deploy has already completed, so the apps are on the new SHA
-      # (or the previous SHA if those legs failed — either way, we preserve what
-      # is actually running rather than blindly assuming the new SHA).
+      # CLI-only platform stack run does not revert those apps to the quickstart
+      # placeholder. Skipped on the workload path — main-jobs.bicep does not
+      # manage Container Apps.
       - name: Discover current app image tags
         id: imgs
+        if: ${{ steps.stackpath.outputs.mode == 'platform' }}
         run: |
           RG="${{ vars.ACA_RESOURCE_GROUP }}"
 
@@ -521,32 +528,16 @@ jobs:
           echo "  ragIndexerImageTag: $RAGINDEXER"
           echo "  cliImageTag:        ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
 
-      # ── Deployment Stack update ─────────────────────────────────────────────
-      # Passes the committed bicepparam file (picks up cicdDeployPrincipalId,
-      # azureAdClientId, deployPhase2, searchLocation, etc.) and overrides:
-      #   - *ImageTag params with the auto-discovered / just-built values
-      #   - developerObjectId from the DEVELOPER_OBJECT_ID secret so the stack
-      #     preserves the human developer's data-plane role assignments. Without
-      #     this override the bicepparam's empty string causes deleteResources to
-      #     strip those assignments on every CI run (#744).
-      #
-      # Stack name convention: "pinwiz-shared-{env}" — matches Deploy-SharedResources.ps1.
-      # Location: eastus2 — matches the subscription-scope stack registration.
-      # action-on-unmanage deleteResources — Bicep-removed resources are cleaned up.
-      # Fail BEFORE the stack runs if DEVELOPER_OBJECT_ID is unset. Without this the
-      # step would pass developerObjectId="" straight through, and combined with
-      # --action-on-unmanage deleteResources that STRIPS the developer's Cosmos /
-      # Search / OpenAI data-plane role assignments (#744) — silently, on a run that
-      # otherwise looks successful. Restoring them is manual.
-      #
-      # Today the missing subscription-scope Owner grant masks this, because the stack
-      # call fails at authorization first. That is accidental protection, not a design:
-      # granting Owner without also adding the secret would expose it immediately. This
-      # guard makes the ordering explicit instead of relying on one gap covering another.
+      # ── Deployment Stack update (ADR-0060) ──────────────────────────────────
+      # WORKLOAD_JOBS_STACK_ENABLED=true → pinwiz-jobs-dev (group scope, jobs only).
+      # Otherwise → pinwiz-shared-dev (subscription scope; interim until migration).
+      # Platform path only: empty developerObjectId + deleteResources strips RBAC (#744).
+      # Workload path does not manage developer role assignments — skip this guard there.
       - name: Verify DEVELOPER_OBJECT_ID is configured
+        if: ${{ steps.stackpath.outputs.mode == 'platform' }}
         run: |
           if [ -z "${{ secrets.DEVELOPER_OBJECT_ID }}" ]; then
-            echo "::error::DEVELOPER_OBJECT_ID secret is not set. Refusing to run the deployment"
+            echo "::error::DEVELOPER_OBJECT_ID secret is not set. Refusing to run the platform"
             echo "::error::stack: an empty developerObjectId would strip developer data-plane"
             echo "::error::RBAC (Cosmos / Search / OpenAI) via --action-on-unmanage deleteResources (#744)."
             echo "::error::Add the secret with the developer's Entra Object ID, then re-run."
@@ -554,26 +545,45 @@ jobs:
           fi
           echo "DEVELOPER_OBJECT_ID is set."
 
-      # Preflight the stack with the SAME arguments before mutating anything.
-      # `az stack sub validate` exercises the real path — authorization, template
-      # compilation, and the .bicepparam-plus-inline-override parameter syntax — without
-      # deploying, so a missing RBAC grant surfaces here with remediation attached rather
-      # than as a raw AuthorizationFailed part-way through an unattended
-      # --action-on-unmanage deleteResources run.
-      #
-      # This is deliberately a capability probe, not a role-name lookup: checking for
-      # "Owner" would assert a proxy for the permission instead of the permission itself,
-      # and would pass or fail for reasons unrelated to whether the operation can actually
-      # run. Validate answers the only question that matters.
-      #
-      # KNOWN: as of this commit the OIDC service principal has NO subscription-scope role
-      # assignment, so this step is expected to fail until the grant below is applied. That
-      # is why it fails loudly with instructions rather than letting the create attempt it.
-      - name: Preflight the deployment stack (validate only)
+      - name: Preflight workload stack (validate only — no CognitiveServices)
+        if: ${{ steps.stackpath.outputs.mode == 'workload' }}
         run: |
-          # Captured rather than streamed, so the failure can be CLASSIFIED below instead
-          # of the operator having to interpret it. Echoed back on failure so nothing is
-          # hidden by the capture.
+          VALIDATE_OUT=$(mktemp)
+          if ! az stack group validate \
+            --name "pinwiz-jobs-dev" \
+            --resource-group "${{ vars.ACA_RESOURCE_GROUP }}" \
+            --template-file infra/main-jobs.bicep \
+            --parameters infra/main-jobs.dev.bicepparam \
+              cliImageTag="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}" \
+            --action-on-unmanage deleteResources \
+            --deny-settings-mode none > "$VALIDATE_OUT" 2>&1; then
+            cat "$VALIDATE_OUT"
+            echo "::error::Workload stack validation failed — NOT running the stack."
+            # Workload template has no CognitiveServices; 715-123420 here would be unexpected.
+            if grep -q "715-123420" "$VALIDATE_OUT"; then
+              echo "::error::Unexpected 715-123420 on the workload path — investigate; this"
+              echo "::error::template must not preflight Microsoft.CognitiveServices."
+            fi
+            exit 1
+          fi
+          echo "Workload stack validation passed (no CognitiveServices in template)."
+
+      - name: Run workload stack (repoints ACA jobs to pinwiz-cli:${{ github.sha }})
+        if: ${{ steps.stackpath.outputs.mode == 'workload' }}
+        run: |
+          az stack group create \
+            --name "pinwiz-jobs-dev" \
+            --resource-group "${{ vars.ACA_RESOURCE_GROUP }}" \
+            --template-file infra/main-jobs.bicep \
+            --parameters infra/main-jobs.dev.bicepparam \
+              cliImageTag="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}" \
+            --action-on-unmanage deleteResources \
+            --deny-settings-mode none \
+            --yes
+
+      - name: Preflight platform stack (validate only — interim path)
+        if: ${{ steps.stackpath.outputs.mode == 'platform' }}
+        run: |
           VALIDATE_OUT=$(mktemp)
           if ! az stack sub validate \
             --name "pinwiz-shared-dev" \
@@ -591,43 +601,29 @@ jobs:
             echo "::error::Deployment stack validation failed — NOT running the stack."
             echo "::error::"
 
-            # 715-123420 is the CognitiveServices RTFP throttle, and it arrives disguised
-            # as a Microsoft.CognitiveServices/accounts PREFLIGHT VALIDATION error. Without
-            # this branch the RBAC text below sends the reader to check permissions that are
-            # perfectly intact, while the real cause is that the stack has already run
-            # ~3-5 times today. Retrying extends the block rather than clearing it.
-            # Classify it once here so every future occurrence is not re-diagnosed from
-            # scratch — this has already cost a debugging session before.
             if grep -q "715-123420" "$VALIDATE_OUT"; then
               echo "::error::THROTTLE, NOT A FAILURE: Azure returned 715-123420"
-              echo "::error::(CognitiveServices RTFP). The stack template includes Foundry model"
-              echo "::error::deployments, and roughly 3-5 stack runs per day trips a service-side"
-              echo "::error::block that presents itself as a validation error."
+              echo "::error::(CognitiveServices RTFP). The platform stack still includes Foundry."
+              echo "::error::Complete ADR-0060 migration + set WORKLOAD_JOBS_STACK_ENABLED=true"
+              echo "::error::so image repoints stop preflighting CognitiveServices (#966)."
               echo "::error::"
-              echo "::error::WAIT — do NOT retry. Retrying extends the block. RBAC is NOT the"
-              echo "::error::problem here and re-granting roles will not help."
-              echo "::error::"
+              echo "::error::WAIT — do NOT retry. Retrying extends the block."
               echo "::error::The container images ARE built and pushed to ACR; only the ACA job"
-              echo "::error::repoint is deferred. The next successful stack run picks them up."
+              echo "::error::repoint is deferred."
               exit 1
             fi
 
             echo "::error::If this is an authorization failure, the GitHub OIDC service"
-            echo "::error::principal needs Owner at subscription scope. az stack sub create"
-            echo "::error::operates at subscription scope and the template writes role"
-            echo "::error::assignments, which require Microsoft.Authorization/*/write —"
-            echo "::error::Contributor is NOT sufficient:"
-            echo "::error::"
+            echo "::error::principal needs Owner at subscription scope:"
             echo "::error::  az role assignment create --role Owner \\"
             echo "::error::    --assignee c8466e83-9470-4cad-92a1-2d4149263fdc \\"
             echo "::error::    --scope /subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840"
-            echo "::error::"
-            echo "::error::Otherwise it is a template or parameter error — see the output above."
             exit 1
           fi
-          echo "Stack validation passed — proceeding to the live run."
+          echo "Platform stack validation passed — proceeding to the live run."
 
-      - name: Run deployment stack (repoints 22 ACA jobs to pinwiz-cli:${{ github.sha }})
+      - name: Run platform stack (interim — repoints jobs via pinwiz-shared-dev)
+        if: ${{ steps.stackpath.outputs.mode == 'platform' }}
         run: |
           az stack sub create \
             --name "pinwiz-shared-dev" \
