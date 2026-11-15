@@ -181,6 +181,36 @@ public sealed class RefusalCategoryViewTests
         Assert.Contains("Stern Iron Maiden", cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task NoCitationView_WithKnownMachineWithoutDocs_LabelsSubjectNotRelated()
+    {
+        // #784 — ADR-0053 gate must not call the subject a "related" machine.
+        await using var ctx = BuildCtx();
+        var known = new RelatedMachine("G50L9-MDxXD", "Challenger", "https://opdb.org/machines/G50L9-MDxXD");
+
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<NoCitationView>(1);
+            builder.AddAttribute(2, nameof(NoCitationView.KnownMachineWithoutIndexedDocs), known);
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<NoCitationView>();
+
+        cut.Find("[data-testid='known-machine-section']");
+        Assert.Contains("This machine:", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("Challenger", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(cut.FindAll("[data-testid='related-machines-section']"));
+
+        var reason = cut.Find("[data-testid='no-citation-reason']");
+        Assert.Contains("recognize this machine", reason.TextContent, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "don't directly address",
+            reason.TextContent,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // OutOfScopeView — spec: category label is "OUT OF SCOPE"
     // ─────────────────────────────────────────────────────────────────────────
