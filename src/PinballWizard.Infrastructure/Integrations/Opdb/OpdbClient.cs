@@ -59,6 +59,43 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
     /// is yielded so <see cref="GetMachineGroupTitleAsync"/> hits memory
     /// during the same sync pass.
     /// </summary>
+    // Loads design credits and backglass URLs from the V2 export.
+    // An empty V2ExportUrl skips the pass. A configured URL that does not
+    // return the entries document fails the caller — V1 is not a substitute
+    // for credits the V2 file was asked to supply.
+    public async Task<IReadOnlyDictionary<string, OpdbV2Enrichment>> LoadV2EnrichmentAsync(
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.V2ExportUrl))
+        {
+            Logger.LogInformation("OPDB: V2 enrichment URL is empty; designers and backglass images are unchanged.");
+            return new Dictionary<string, OpdbV2Enrichment>(StringComparer.Ordinal);
+        }
+
+        if (!Uri.TryCreate(_options.V2ExportUrl, UriKind.Absolute, out var url)
+            || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException(
+                $"Opdb:V2ExportUrl must be an absolute http(s) URL; got '{_options.V2ExportUrl}'.");
+        }
+
+        Logger.LogInformation("OPDB: fetching V2 enrichment from {Url}", url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var response = await SendPolitelyAsync(_httpClient, request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"OPDB V2 enrichment GET {url} failed with {(int)response.StatusCode} ({response.StatusCode}).",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var parsed = OpdbV2EnrichmentParser.Parse(json);
+        Logger.LogInformation("OPDB: parsed V2 enrichment for {Count} machine(s).", parsed.Count);
+        return parsed;
+    }
+
     public async IAsyncEnumerable<OpdbMachineDto> StreamAllMachinesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
