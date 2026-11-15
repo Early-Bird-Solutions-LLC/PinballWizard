@@ -68,11 +68,118 @@ public sealed class MachineSuggestServiceTests
 
         await service.SuggestAsync(query, top: 8, CancellationToken.None);
 
+        // Index receives the stopword-normalized search text (#785), which for
+        // these short name queries equals the trimmed significant tokens.
+        var expected = MachineSuggestQueryNormalizer.BuildSearchText(
+            MachineSuggestQueryNormalizer.Tokenize(query));
         await _index.Received(1).SearchAsync(
-            Arg.Is<string>(q => q == query),
+            Arg.Is<string>(q => q == expected),
             Arg.Any<int>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    // ── #785 stopword / question-shaped query ─────────────────────────────────
+
+    [Fact]
+    public async Task SuggestAsync_QuestionShapedQuery_SearchesNormalizedTokensNotRawSentence()
+    {
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>([]));
+        var service = BuildService();
+
+        await service.SuggestAsync(
+            "whats a good strategy for transformers", top: 8, CancellationToken.None);
+
+        // Stopwords + question-intent stripped; only the entity token is searched.
+        await _index.Received(1).SearchAsync(
+            "transformers",
+            Arg.Any<int>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SuggestAsync_QuestionShapedQuery_DropsHitsThatOnlyMatchShorterTokens()
+    {
+        // Simulates the live #785 failure mode: BM25 returns Transformers (good)
+        // plus Invasion Strategy / No Good Gofers / Fore (noise on shorter tokens).
+        var hits = new List<MachineSearchHit>
+        {
+            BuildHit("G-tf-2011", "Transformers", "Stern", 2011, groupId: null, score: 9.0),
+            BuildHit("G-inv", "Invasion Strategy", "Komputer Dynamics", 1976, groupId: null, score: 8.5),
+            BuildHit("G-ngg", "No Good Gofers", "Williams", 1997, groupId: null, score: 8.0),
+            BuildHit("G-fore", "Fore", "Bally", 1973, groupId: null, score: 7.5),
+            BuildHit("G-tf-2026", "Transformers: More Than Meets the Eye", "Stern", 2026, groupId: null, score: 7.0),
+        };
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync(
+            "whats a good strategy for transformers", top: 8, CancellationToken.None);
+
+        Assert.All(result, s => Assert.Contains("Transformers", s.Title, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, s => s.Title.Contains("Invasion", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, s => s.Title.Contains("Gofers", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, s => s.Title.Equals("Fore", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SuggestAsync_AllStopwords_ReturnsEmptyWithoutCallingIndex()
+    {
+        var service = BuildService();
+
+        var result = await service.SuggestAsync("whats a good for", top: 8, CancellationToken.None);
+
+        Assert.Empty(result);
+        await _index.DidNotReceive().SearchAsync(
+            Arg.Any<string>(),
+            Arg.Any<int>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SuggestAsync_BareAbbreviation_KeepsSynonymHitWithoutTitleOverlap()
+    {
+        // Index resolved AFM via synonym → Attack from Mars. Title has no "afm"
+        // token — post-filter must not drop it (Bugbot High).
+        var hits = new List<MachineSearchHit>
+        {
+            BuildHit("G-afm", "Attack from Mars", "Bally", 1995, groupId: null, score: 9.0),
+        };
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync("afm", top: 8, CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal("Attack from Mars", result[0].Title);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_QuestionWrappedAbbreviation_KeepsSynonymHit()
+    {
+        // Same synonym path wrapped in question fluff — RequireTitleTokenOverlap
+        // used to hard-wipe when lexical was empty (#785 Bugbot High).
+        var hits = new List<MachineSearchHit>
+        {
+            BuildHit("G-afm", "Attack from Mars", "Bally", 1995, groupId: null, score: 9.0),
+            BuildHit("G-fore", "Fore", "Bally", 1973, groupId: null, score: 7.5),
+        };
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync(
+            "whats a good strategy for afm", top: 8, CancellationToken.None);
+
+        Assert.Contains(result, s => s.Title.Equals("Attack from Mars", StringComparison.Ordinal));
+        // Soft filter: no lexical "afm" overlap → keep synonym set (including
+        // BM25 companions). PreferLexical alone must not empty the dropdown.
+        Assert.NotEmpty(result);
     }
 
     // ── Unconfigured index ────────────────────────────────────────────────────
@@ -188,9 +295,14 @@ public sealed class MachineSuggestServiceTests
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
-        var result = await service.SuggestAsync("from", top: 8, CancellationToken.None);
+        // Query "creature" — post-filter keeps only titles sharing that token.
+        // Attack from Mars is dropped; Creature from the Black Lagoon surfaces.
+        // (Query "from" is a stopword under #785 and would short-circuit before I/O.)
+        var result = await service.SuggestAsync("creature", top: 8, CancellationToken.None);
 
-        Assert.Equal(2, result.Count);
+        var suggestion = Assert.Single(result);
+        Assert.Equal("id2", suggestion.OpdbId);
+        Assert.Equal("Creature from the Black Lagoon", suggestion.Title);
     }
 
     // ── Rank order preservation ───────────────────────────────────────────────
