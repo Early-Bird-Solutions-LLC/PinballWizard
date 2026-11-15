@@ -140,6 +140,28 @@ public sealed class MachineSuggestQueryNormalizerTests
     }
 
     [Fact]
+    public void Tokenize_Possessive_KeepsBareMachineToken()
+    {
+        // Apostrophe-strip alone turned "godzilla's" → "godzillas", which
+        // misses the index token "godzilla" (#785 Bugbot Medium follow-up).
+        var tokens = MachineSuggestQueryNormalizer.Tokenize(
+            "what's Godzilla's multiball strategy");
+
+        Assert.Contains("godzilla", tokens);
+        Assert.DoesNotContain("godzillas", tokens);
+        Assert.True(
+            MachineSuggestQueryNormalizer.TitleMatchesQuery("Godzilla", tokens));
+    }
+
+    [Fact]
+    public void Tokenize_TrailingPluralPossessive_KeepsBareToken()
+    {
+        var tokens = MachineSuggestQueryNormalizer.Tokenize("Jaws' multiball");
+        Assert.Contains("jaws", tokens);
+        Assert.True(MachineSuggestQueryNormalizer.TitleMatchesQuery("Jaws", tokens));
+    }
+
+    [Fact]
     public void Normalize_QuestionWrappedAbbreviation_StillFlagsPreferLexical()
     {
         // Fluff stripped → PreferLexical true, but the service soft-filters so

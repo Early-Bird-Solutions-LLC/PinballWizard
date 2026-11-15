@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace PinballWizard.Application.Findability;
 
 // Prepares free-text typeahead queries for the machine suggest index (#785).
@@ -184,9 +186,26 @@ public static class MachineSuggestQueryNormalizer
     // points) so "don't" → "dont" and "what's" → "whats" — splitting on `'`
     // used to emit "don" / "s", and "don" prefix-matched unrelated titles
     // (Donkey Kong, …) via TitleMatchesQuery (#785 Bugbot Medium).
+    //
+    // Possessive `'s` is stripped first so "godzilla's" → "godzilla" rather
+    // than concatenating to "godzillas" (index + TitleMatchesQuery miss)
+    // (#785 Bugbot Medium follow-up). Contractions keep their apostrophe through
+    // this pass and become a single token on the general strip.
+    private static readonly Regex PossessiveSuffix = new(
+        @"(?<=\p{L})['\u2019]s\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    // Trailing plural possessive: "Jaws'" → "jaws" (no following s).
+    private static readonly Regex TrailingPluralPossessive = new(
+        @"(?<=s)['\u2019](?=\s|$|[^\p{L}])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private static string[] SplitTokens(string text)
     {
-        var lower = text.ToLowerInvariant()
+        var lower = text.ToLowerInvariant();
+        lower = PossessiveSuffix.Replace(lower, string.Empty);
+        lower = TrailingPluralPossessive.Replace(lower, string.Empty);
+        lower = lower
             .Replace("'", "", StringComparison.Ordinal)
             .Replace("\u2019", "", StringComparison.Ordinal); // ’
 
