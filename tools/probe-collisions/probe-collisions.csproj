@@ -6,7 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
-    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!-- Versions come from Directory.Packages.props (CPM). Inline Version=
+         attributes caused NU1008 (#961). -->
+    <PackageReference Include="Microsoft.Azure.Cosmos" />
+    <PackageReference Include="Azure.Identity" />
   </ItemGroup>
 </Project>
