@@ -51,9 +51,17 @@ in its managed set and absent from its template.
 
 ### 3. Detach jobs from the platform stack (no delete)
 
-Update the platform stack with **`--action-on-unmanage detachResources`**
-and `manageAcaJobs=false` in the same operation. Detach tells the stack to
-stop tracking the jobs **without deleting them**.
+Update the platform stack with **`--action-on-unmanage detachAll`**
+(az CLI ≥ 2.92; older docs said `detachResources`) and `manageAcaJobs=false`
+in the same operation. Detach tells the stack to stop tracking the jobs
+**without deleting them**.
+
+This cutover still compiles the **full** platform template, including Foundry.
+Cognitive Services parent-locks the account for child mutations — if
+`foundryProject` races the first model deployment, ARM returns
+`RequestConflict` on `accounts/projects/write` (not RTFP `715-123420`).
+Confirm `infra/modules/shared.bicep` serializes model deployments after
+`foundryProject` (`dependsOn`) before retrying. Idle-wait alone is not enough.
 
 ```bash
 ENV=dev
@@ -72,13 +80,13 @@ az stack sub create \
     ragIndexerImageTag='…' \
     cliImageTag='…' \
     developerObjectId='…' \
-  --action-on-unmanage detachResources \
+  --action-on-unmanage detachAll \
   --deny-settings-mode none \
   --yes
 ```
 
-**Critical:** this one run uses `detachResources`. Do not use `deleteResources`
-on this cutover run.
+**Critical:** this one run uses `detachAll` / detach semantics. Do not use
+`deleteResources` on this cutover run.
 
 After success, set `param manageAcaJobs = false` in the env bicepparam (or
 keep passing it inline) so future platform deploys with `deleteResources` do
@@ -160,14 +168,31 @@ If the workload stack is wrong before you enable CI:
 Prefer fixing forward with a corrected `main-jobs.bicep` when the jobs still
 exist.
 
+## Post-cutover emergency hatch (one-way door)
+
+After live detach + `manageAcaJobs=false` (2026-11-15), the two stacks no
+longer share job ownership. Treat them as separate runbooks:
+
+| Need | Action | Does **not** |
+| --- | --- | --- |
+| Hotfix a **job image** (CLI/scraper/indexer jobs) | Merge to `main` (Deploy defaults to **workload** → `pinwiz-jobs-{env}`) **or** run `pwsh ./infra/scripts/Deploy-WorkloadJobs.ps1 -Environment {env}` | Touch Foundry / CognitiveServices |
+| Repair **Foundry / shared platform** only | Set repo var `WORKLOAD_JOBS_STACK_ENABLED=false` for one Deploy (or run `Deploy-SharedResources.ps1`) | Repoint ACA jobs — platform template excludes them |
+| Both Foundry **and** jobs broken | Two sequential ops: platform hatch, then workload job deploy — **not** one combined emergency Deploy | — |
+
+`WORKLOAD_JOBS_STACK_ENABLED=false` is therefore a **Foundry/shared escape
+hatch**, not a “revert to single-stack deploy that also updates jobs.” Job
+verify in `deploy.yml` is gated to `mode=workload` for that reason. Unset or
+`true` keeps image merges on the jobs-only path (no CognitiveServices
+preflight).
+
 ## What this PR does / does not do
 
-| Done in the scaffold PR | Still operator (this runbook) |
+| Done in the scaffold / cutover PRs | Still operator (rare) |
 | --- | --- |
-| ADR-0060 + `aca-jobs` module + `main-jobs.bicep` | Live detach / adopt in Azure |
-| `manageAcaJobs` gate (default true) | Flip `manageAcaJobs=false` after detach |
-| `Deploy-WorkloadJobs.ps1` | First workload stack create in the subscription |
-| `deploy.yml` gated on `WORKLOAD_JOBS_STACK_ENABLED` | Set the repo variable to `true` |
+| ADR-0060 + `aca-jobs` module + `main-jobs.bicep` | Foundry emergency: set `WORKLOAD_JOBS_STACK_ENABLED=false` (platform only — see hatch above) |
+| Live detach / adopt (2026-11-15) + `manageAcaJobs=false` committed | Job hotfix when CI stuck: `Deploy-WorkloadJobs.ps1` |
+| `Deploy-WorkloadJobs.ps1` | — |
+| `deploy.yml` defaults to **workload** when the var is unset/true (platform only if explicitly `false`) | Optional: set var to `true` for explicit documentation; not required for green Deploy |
 | Container apps left on `az containerapp update` | — |
 
 ## Failure modes to refuse
@@ -177,3 +202,5 @@ exist.
 - Setting `deployFoundryModelDeployments=false` to "avoid" Foundry preflight →
   deletes model deployments.
 - Using `az containerapp job update --image` as a shortcut → invariant breach.
+- Retrying detach immediately after Foundry `RequestConflict` without the
+  project→deployment `dependsOn` serialization → same self-contention.
