@@ -168,12 +168,29 @@ If the workload stack is wrong before you enable CI:
 Prefer fixing forward with a corrected `main-jobs.bicep` when the jobs still
 exist.
 
+## Post-cutover emergency hatch (one-way door)
+
+After live detach + `manageAcaJobs=false` (2026-11-15), the two stacks no
+longer share job ownership. Treat them as separate runbooks:
+
+| Need | Action | Does **not** |
+| --- | --- | --- |
+| Hotfix a **job image** (CLI/scraper/indexer jobs) | Merge to `main` (Deploy defaults to **workload** → `pinwiz-jobs-{env}`) **or** run `pwsh ./infra/scripts/Deploy-WorkloadJobs.ps1 -Environment {env}` | Touch Foundry / CognitiveServices |
+| Repair **Foundry / shared platform** only | Set repo var `WORKLOAD_JOBS_STACK_ENABLED=false` for one Deploy (or run `Deploy-SharedResources.ps1`) | Repoint ACA jobs — platform template excludes them |
+| Both Foundry **and** jobs broken | Two sequential ops: platform hatch, then workload job deploy — **not** one combined emergency Deploy | — |
+
+`WORKLOAD_JOBS_STACK_ENABLED=false` is therefore a **Foundry/shared escape
+hatch**, not a “revert to single-stack deploy that also updates jobs.” Job
+verify in `deploy.yml` is gated to `mode=workload` for that reason. Unset or
+`true` keeps image merges on the jobs-only path (no CognitiveServices
+preflight).
+
 ## What this PR does / does not do
 
 | Done in the scaffold / cutover PRs | Still operator (rare) |
 | --- | --- |
-| ADR-0060 + `aca-jobs` module + `main-jobs.bicep` | Emergency: set `WORKLOAD_JOBS_STACK_ENABLED=false` to force platform path |
-| Live detach / adopt (2026-11-15) + `manageAcaJobs=false` committed | — |
+| ADR-0060 + `aca-jobs` module + `main-jobs.bicep` | Foundry emergency: set `WORKLOAD_JOBS_STACK_ENABLED=false` (platform only — see hatch above) |
+| Live detach / adopt (2026-11-15) + `manageAcaJobs=false` committed | Job hotfix when CI stuck: `Deploy-WorkloadJobs.ps1` |
 | `Deploy-WorkloadJobs.ps1` | — |
 | `deploy.yml` defaults to **workload** when the var is unset/true (platform only if explicitly `false`) | Optional: set var to `true` for explicit documentation; not required for green Deploy |
 | Container apps left on `az containerapp update` | — |
