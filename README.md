@@ -339,10 +339,12 @@ docs/
 ├── ui/ (prototypes, screen specs, theme specs)
 └── scraper_plan_v4.md / infra_analysis.md / architecture-v2.md (reference / forward direction)
 infra/
-├── main-shared.bicep (two-tier deploy)
+├── main-shared.bicep (two-tier deploy; platform stack)
+├── main-jobs.bicep (ACA jobs workload stack, ADR-0060)
 ├── modules/shared.bicep
+├── modules/aca-jobs.bicep
 ├── dashboards/pinwiz-ops-workbook.json
-└── scripts/Deploy-SharedResources.ps1
+└── scripts/Deploy-SharedResources.ps1 / Deploy-WorkloadJobs.ps1
 ```
 
 ## Deploy targets

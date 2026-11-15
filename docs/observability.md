@@ -363,7 +363,7 @@ ContainerAppConsoleLogs_CL
 >
 > `startswith`, not `==`, for `ContainerJobName_s`. ACA job names carry a five-character environment suffix —
 > `substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)`, see
-> `infra/modules/shared.bicep`. It is *deterministic* per subscription + resource group
+> `infra/modules/aca-jobs.bicep`. It is *deterministic* per subscription + resource group
 > (so it is stable across stack runs, and `pinwiz-job-stern-games-buutj` is correct for
 > the current dev RG), but it differs in any other environment or if the resource group
 > is ever rebuilt. A hardcoded suffix returns **zero rows with no error** there, which
