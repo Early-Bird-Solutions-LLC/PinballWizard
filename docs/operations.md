@@ -61,9 +61,9 @@ No staging / pre-prod separation at current scale. `dev` is the live showcase en
 | Resource type | Mechanism | Trigger |
 | --- | --- | --- |
 | ACA Apps (Wizard, Api, RAG-indexer) | `az containerapp update --image :{sha}` — each matrix leg | Every source change (their respective paths) |
-| 19 ACA Jobs (scraper, linker, OPDB, and other scheduled crons) plus 3 manual jobs (`pinwiz-job-relink-all-*`, `pinwiz-job-gc-rag-index-*`, and `pinwiz-job-kineticist-sync-*`, whose weekly schedule is paused) | `az stack sub create` (`deploy-jobs` job) | CLI/infra/`deploy/` paths changed since the last successful stack run |
+| 19 ACA Jobs (scraper, linker, OPDB, and other scheduled crons) plus 3 manual jobs (`pinwiz-job-relink-all-*`, `pinwiz-job-gc-rag-index-*`, and `pinwiz-job-kineticist-sync-*`, whose weekly schedule is paused) | `az stack sub create` on `pinwiz-shared-dev` (`deploy-jobs` job), or `az stack group create` on the RG-scoped workload stack `pinwiz-jobs-dev` when repo variable `WORKLOAD_JOBS_STACK_ENABLED=true` ([ADR-0060](adr/0060-split-platform-workload-deployment-stacks.md)) | CLI/infra/`deploy/` paths changed since the last successful stack run |
 
-**ACA Jobs and the CLI image.** All 22 jobs share a single `cliImageTag` parameter threaded through `infra/main-shared.bicep`. The `deploy-jobs` workflow job runs a full subscription-scoped Deployment Stack update with the new `pinwiz-cli:{sha}` tag — all 22 jobs are repointed atomically. This closes the historical gap where job images could lag merged code by weeks (issue #859). The manual jobs (`--relink-all`, `--gc-rag-index`, and the paused `--sync-kineticist-tutorials`) have no cron; start them with `az containerapp job start` ([ADR-0057](adr/0057-on-demand-maintenance-jobs.md)).
+**ACA Jobs and the CLI image.** All 22 jobs share a single `cliImageTag` parameter threaded through `infra/main-shared.bicep`. The `deploy-jobs` workflow job runs a full subscription-scoped Deployment Stack update with the new `pinwiz-cli:{sha}` tag — all 22 jobs are repointed atomically. This closes the historical gap where job images could lag merged code by weeks (issue #859). Job definitions now live in `infra/modules/aca-jobs.bicep`, shared by the platform stack (`manageAcaJobs = true`, the default) and the workload stack (`infra/main-jobs.bicep`). The workload path is enabled only after the [ACA jobs migration runbook](runbooks/migrate-aca-jobs-to-workload-stack.md); until then the platform stack above remains the repoint path. The manual jobs (`--relink-all`, `--gc-rag-index`, and the paused `--sync-kineticist-tutorials`) have no cron; start them with `az containerapp job start` ([ADR-0057](adr/0057-on-demand-maintenance-jobs.md)).
 
 The stack run is gated on CLI, infra, or `deploy/` (the `scheduled-cli-job` Bicep module every job is built from) path changes to avoid triggering the Azure CognitiveServices RTFP throttle (error 715-123420) that fires after ~3–5 rapid Foundry model-deployment cycles. This is a CognitiveServices-specific throttle, not a Deployment Stack limit (which has no documented per-day cap per Microsoft Learn).
 
@@ -73,7 +73,7 @@ The comparison base for that path check is the HEAD SHA of the most recent `depl
 
 ### Manual (infra-only changes / emergency redeploy)
 
-All Azure resource deployments use `az stack sub create` (subscription-scoped Deployment Stacks). Never `az deployment sub create` — Deployment Stacks automatically delete resources removed from Bicep ([CLAUDE.md locked invariant #16](../CLAUDE.md)).
+Platform resource deployments use `az stack sub create` (subscription-scoped Deployment Stacks); the ADR-0060 workload stack uses `az stack group create` via `infra/scripts/Deploy-WorkloadJobs.ps1`. Never `az deployment sub create` — Deployment Stacks automatically delete resources removed from Bicep ([CLAUDE.md locked invariant #16](../CLAUDE.md)).
 
 ```pwsh
 # What-if first
