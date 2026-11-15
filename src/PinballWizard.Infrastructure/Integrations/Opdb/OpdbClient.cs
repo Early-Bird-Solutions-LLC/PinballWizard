@@ -8,31 +8,27 @@ using PinballWizard.Infrastructure.Scraping.Polite;
 namespace PinballWizard.Infrastructure.Integrations.Opdb;
 
 /// <summary>
-/// Typed HTTP client for the OPDB (Open Pinball Database) REST API.
-/// Extends <see cref="PoliteScraperBase"/> so requests to opdb.org
-/// flow through the politeness gate with the same per-origin throttle
-/// + 429-backoff invariants as every other source.
+/// Typed HTTP client for the OPDB catalog via Match Play (CDN export +
+/// optional entry API). Extends <see cref="PoliteScraperBase"/> so
+/// outbound requests flow through the politeness gate.
 /// </summary>
 /// <remarks>
-/// Authenticates via bearer token from <see cref="OpdbOptions.ApiToken"/>.
-/// Public endpoints are also reachable without a token; for the v1
-/// sync we always include the token because the endpoints we hit
-/// require it.
+/// Since 2026-10-01 opdb.org <c>/api/*</c> is shut down (see ADR-0059).
+/// Catalog sync uses the Match Play OPDB V1 CDN export exclusively —
+/// there is no silent fallback to the retired <c>/api/export</c> path.
 /// </remarks>
 public sealed class OpdbClient : PoliteScraperBase, IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly OpdbOptions _options;
 
-    // Group-title cache: segment → title (or null = confirmed 404 / non-group).
-    // Loaded lazily from disk on first GetMachineGroupTitleAsync call; persisted
-    // after each new entry so a fresh client in the NEXT sync run benefits
-    // immediately. Lock protects concurrent reads/writes if the client is ever
-    // shared across tasks (currently single-threaded in ResolveGroupTitleAsync,
-    // but defensive).
+    // Group-title cache: segment → title (or null = confirmed miss).
+    // Seeded from the export's machineGroups array during
+    // StreamAllMachinesAsync; also loaded/persisted on disk.
     private readonly SemaphoreSlim _groupCacheLock = new(1, 1);
     private Dictionary<string, string?>? _groupTitleCache;
     private bool _groupCacheLoadWarned;
+    private bool _exportCatalogLoaded;
     private bool _disposed;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -57,53 +53,38 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
     }
 
     /// <summary>
-    /// Streams the full OPDB machine catalog. Each yielded record is a
-    /// parsed <see cref="OpdbMachineDto"/>; the caller decides whether
-    /// to filter, map, or upsert.
+    /// Streams the full OPDB machine catalog (base machines then aliases)
+    /// from the Match Play V1 CDN export. Group titles from the same
+    /// envelope are seeded into the group-title cache before any item
+    /// is yielded so <see cref="GetMachineGroupTitleAsync"/> hits memory
+    /// during the same sync pass.
     /// </summary>
-    /// <remarks>
-    /// OPDB exposes the complete machine catalog via a single bulk
-    /// endpoint, <c>/api/export</c>, which returns one large JSON
-    /// array of every machine. There is no paginated <c>/api/machines</c>
-    /// endpoint (404 against the live API) — see DL-0003.
-    /// <para>
-    /// Cache behavior: when <see cref="OpdbOptions.ExportCachePath"/> is
-    /// set and a fresh cache file exists (modified within
-    /// <see cref="OpdbOptions.ExportCacheTtlSeconds"/>), this method
-    /// streams from the cache instead of hitting the network. OPDB's
-    /// published policy on <c>/api/export</c> is once-per-hour; the
-    /// cache eliminates the rate-limit problem for any repeat call
-    /// within the TTL window. Cache miss: fetch + buffer + write to
-    /// disk + yield from memory. Persist failures degrade gracefully
-    /// (logged, fetch still succeeds).
-    /// </para>
-    /// </remarks>
     public async IAsyncEnumerable<OpdbMachineDto> StreamAllMachinesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var sourceStream = await OpenExportStreamAsync(cancellationToken).ConfigureAwait(false);
 
+        OpdbExportEnvelopeDto envelope;
         await using (sourceStream)
         {
-            await foreach (var dto in JsonSerializer
-                .DeserializeAsyncEnumerable<OpdbMachineDto>(sourceStream, JsonOptions, cancellationToken)
-                .ConfigureAwait(false))
-            {
-                if (dto is not null)
-                {
-                    yield return dto;
-                }
-            }
+            envelope = await ParseExportEnvelopeAsync(sourceStream, cancellationToken).ConfigureAwait(false);
+        }
+
+        await SeedGroupTitlesFromExportAsync(envelope.MachineGroups, cancellationToken).ConfigureAwait(false);
+
+        foreach (var dto in envelope.Machines.Where(static d => d is not null))
+        {
+            yield return dto!;
+        }
+
+        foreach (var dto in envelope.Aliases.Where(static d => d is not null))
+        {
+            yield return dto!;
         }
     }
 
     private async Task<Stream> OpenExportStreamAsync(CancellationToken cancellationToken)
     {
-        // Cache hit short-circuit. When the cache path is configured AND
-        // the file is fresh enough (mtime within TTL), open it for streaming
-        // and return — no network call. Disabling the cache (empty path) or
-        // setting Ttl=0 forces the network path. The mtime is set by
-        // WriteCacheFile on the previous fetch.
         var cachePath = _options.ExportCachePath;
         var ttl = TimeSpan.FromSeconds(_options.ExportCacheTtlSeconds);
         if (!string.IsNullOrWhiteSpace(cachePath) && ttl > TimeSpan.Zero && File.Exists(cachePath))
@@ -120,10 +101,6 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
                 }
                 catch (IOException ex)
                 {
-                    // Cache file unreadable (locked, permission flip, etc.).
-                    // Fall through to the network path; do NOT delete the
-                    // file — the next clean fetch will overwrite it
-                    // atomically below. Logging at warning is enough.
                     Logger.LogWarning(
                         ex,
                         "OPDB: cache file at {Path} could not be opened; falling back to network fetch.",
@@ -138,17 +115,25 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
             }
         }
 
-        // Cache miss / disabled: fetch from network, buffer, persist
-        // best-effort, return a memory stream over the buffer.
-        var url = new Uri(new Uri(_options.BaseUrl, UriKind.Absolute), "export");
-        Logger.LogDebug("OPDB: fetching catalog from {Url}", url);
+        var exportUrl = ResolveExportUrl();
+        Logger.LogDebug("OPDB: fetching catalog from {Url}", exportUrl);
 
         byte[] bytes;
-        using (var request = new HttpRequestMessage(HttpMethod.Get, url))
+        using (var request = new HttpRequestMessage(HttpMethod.Get, exportUrl))
         {
-            ApplyAuth(request);
+            // CDN export is public — do not attach the Match Play API bearer
+            // token (wrong credential surface; would also leak the secret
+            // to DigitalOcean Spaces request logs).
             using var response = await SendPolitelyAsync(_httpClient, request, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException(
+                    $"OPDB Match Play export GET {exportUrl} failed with {(int)response.StatusCode} ({response.StatusCode}). " +
+                    "The retired opdb.org /api/export path is not used as a fallback (ADR-0059).",
+                    inner: null,
+                    statusCode: response.StatusCode);
+            }
+
             bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -160,18 +145,131 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
         return new MemoryStream(bytes, writable: false);
     }
 
+    private Uri ResolveExportUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_options.ExportUrl))
+        {
+            throw new InvalidOperationException(
+                "Opdb:ExportUrl is required. Set it to the Match Play OPDB V1 CDN URL " +
+                "(https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json). " +
+                "The retired opdb.org /api/export endpoint is not a valid substitute (ADR-0059).");
+        }
+
+        if (!Uri.TryCreate(_options.ExportUrl, UriKind.Absolute, out var absolute)
+            || (absolute.Scheme != Uri.UriSchemeHttp && absolute.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException(
+                $"Opdb:ExportUrl must be an absolute http(s) URL; got '{_options.ExportUrl}'.");
+        }
+
+        return absolute;
+    }
+
+    private async Task<OpdbExportEnvelopeDto> ParseExportEnvelopeAsync(
+        Stream sourceStream,
+        CancellationToken cancellationToken)
+    {
+        OpdbExportEnvelopeDto? envelope;
+        try
+        {
+            envelope = await JsonSerializer
+                .DeserializeAsync<OpdbExportEnvelopeDto>(sourceStream, JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                "OPDB export JSON could not be parsed as the Match Play V1 envelope " +
+                "({ machineGroups, machines, aliases }). " +
+                "Confirm Opdb:ExportUrl points at latest-opdb.json (not opdb-v2.json / slim / the retired opdb.org /api/export array).",
+                ex);
+        }
+
+        if (envelope is null)
+        {
+            throw new InvalidOperationException(
+                "OPDB export deserialized to null. Confirm Opdb:ExportUrl returns the Match Play V1 envelope.");
+        }
+
+        // Fail closed on the wrong document shape. A top-level JSON array
+        // (legacy opdb.org /api/export) deserializes as an empty object under
+        // this DTO type in some paths, or throws above; an opdb-v2 payload
+        // has `entries` and leaves Machines/Aliases at default empty lists.
+        // Distinguishing "legitimately empty catalog" from "wrong URL" is
+        // done by requiring the property presence via a second peek only when
+        // both machine collections are empty AND machineGroups is empty —
+        // an empty-but-valid V1 file is vanishingly unlikely (~2.2k machines
+        // today). Operators pointing at V2 would sync zero machines silently
+        // without this guard.
+        if (envelope.Machines.Count == 0 && envelope.Aliases.Count == 0 && envelope.MachineGroups.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "OPDB export envelope has empty machines, aliases, and machineGroups. " +
+                "This usually means Opdb:ExportUrl points at the wrong document " +
+                "(e.g. opdb-v2.json with an `entries` array, or a non-OPDB payload). " +
+                "Expected Match Play V1: https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json");
+        }
+
+        Logger.LogInformation(
+            "OPDB: parsed Match Play V1 export ({MachineCount} machines, {AliasCount} aliases, {GroupCount} groups).",
+            envelope.Machines.Count, envelope.Aliases.Count, envelope.MachineGroups.Count);
+
+        return envelope;
+    }
+
+    private async Task SeedGroupTitlesFromExportAsync(
+        IReadOnlyList<OpdbMachineGroupDto> groups,
+        CancellationToken cancellationToken)
+    {
+        await _groupCacheLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureGroupCacheLoadedAsync().ConfigureAwait(false);
+
+            var seeded = 0;
+            foreach (var group in groups)
+            {
+                if (string.IsNullOrWhiteSpace(group.OpdbId))
+                {
+                    continue;
+                }
+
+                // Only accept real group records; defensive against a
+                // mis-shaped payload stuffing machines into machineGroups.
+                if (!group.IsMachineGroup)
+                {
+                    _groupTitleCache![group.OpdbId] = null;
+                    continue;
+                }
+
+                _groupTitleCache![group.OpdbId] =
+                    string.IsNullOrWhiteSpace(group.Name) ? null : group.Name;
+                seeded++;
+            }
+
+            _exportCatalogLoaded = true;
+            PersistGroupCacheBestEffort();
+
+            Logger.LogInformation(
+                "OPDB: seeded {SeededCount} group titles from export machineGroups (catalog loaded for this process).",
+                seeded);
+        }
+        finally
+        {
+            _groupCacheLock.Release();
+        }
+    }
+
     /// <summary>
-    /// Convenience: fetches a single OPDB machine by its OPDB ID.
-    /// Returns null if OPDB returns 404. Other non-success statuses
-    /// throw.
+    /// Fetches a single OPDB machine by its OPDB ID via the Match Play
+    /// entry API. Returns null on 404. Other non-success statuses throw.
+    /// Prefer the bulk export for catalog sync.
     /// </summary>
     public async Task<OpdbMachineDto?> GetMachineAsync(string opdbId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(opdbId);
 
-        var baseUri = new Uri(_options.BaseUrl, UriKind.Absolute);
-        var url = new Uri(baseUri, $"machines/{Uri.EscapeDataString(opdbId)}");
-
+        var url = BuildEntryUrl(opdbId);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyAuth(request);
 
@@ -187,24 +285,49 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
     }
 
     /// <summary>
-    /// Fetches an OPDB <c>is_machine_group</c> record by its group
-    /// segment (the leading part of an OPDB ID before the first hyphen,
-    /// e.g. <c>GweeP</c>). The group record carries the clean franchise
-    /// title and is NOT present in the bulk <c>/api/export</c> feed —
-    /// this per-segment call is the only way to obtain it. Returns null
-    /// if OPDB returns 404 (no group record for that segment) or if the
-    /// returned record is not actually a group (defensive: the
-    /// <c>machines/{id}</c> path also serves machine/alias records, so a
-    /// caller passing a full machine ID would otherwise get a non-group
-    /// body). Other non-success statuses throw.
+    /// Resolves an OPDB machine-group record by segment. After a successful
+    /// <see cref="StreamAllMachinesAsync"/> in this process, titles come
+    /// from the export-seeded cache (no HTTP). Otherwise optionally hits
+    /// Match Play <c>GET /api/opdb/entry/{segment}</c>. Returns null when
+    /// the segment is absent or not a group.
     /// </summary>
     public async Task<OpdbMachineGroupDto?> GetMachineGroupAsync(string groupSegment, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(groupSegment);
 
-        var baseUri = new Uri(_options.BaseUrl, UriKind.Absolute);
-        var url = new Uri(baseUri, $"machines/{Uri.EscapeDataString(groupSegment)}");
+        await _groupCacheLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureGroupCacheLoadedAsync().ConfigureAwait(false);
+            if (_groupTitleCache!.TryGetValue(groupSegment, out var cachedTitle))
+            {
+                if (cachedTitle is null)
+                {
+                    return null;
+                }
 
+                return new OpdbMachineGroupDto
+                {
+                    OpdbId = groupSegment,
+                    IsMachineGroup = true,
+                    Name = cachedTitle,
+                };
+            }
+
+            if (_exportCatalogLoaded)
+            {
+                // Complete V1 export did not contain this segment — confirmed miss.
+                _groupTitleCache[groupSegment] = null;
+                PersistGroupCacheBestEffort();
+                return null;
+            }
+        }
+        finally
+        {
+            _groupCacheLock.Release();
+        }
+
+        var url = BuildEntryUrl(groupSegment);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyAuth(request);
 
@@ -218,27 +341,13 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
             .ReadFromJsonAsync<OpdbMachineGroupDto>(JsonOptions, cancellationToken)
             .ConfigureAwait(false);
 
-        // The machines/{id} endpoint is polymorphic — it serves machine,
-        // alias, and group records. Only return a body that is actually a
-        // group so a mis-passed full machine ID degrades to null rather
-        // than yielding a group DTO with IsMachineGroup=false.
         return group is { IsMachineGroup: true } ? group : null;
     }
 
     /// <summary>
-    /// Fetches an OPDB <c>is_machine_group</c> record by its group
-    /// segment, consulting the persistent on-disk cache first. A cache
-    /// hit (including a null "negative" entry from a prior 404) avoids
-    /// the polite HTTP GET entirely — fewer requests is more polite.
-    /// Cache misses hit the network, and the result (title OR null) is
-    /// persisted best-effort so subsequent runs do not re-fetch.
+    /// Fetches an OPDB group title by segment, consulting the persistent
+    /// on-disk / export-seeded cache first.
     /// </summary>
-    /// <remarks>
-    /// The in-memory dictionary in <see cref="OpdbSyncService"/> remains
-    /// a harmless per-run fast path; this disk-backed cache is the
-    /// cross-run layer that eliminates the ~1,200-request re-fetch
-    /// problem observed on 2026-06-10 (~3.5 h run time).
-    /// </remarks>
     public async Task<string?> GetMachineGroupTitleAsync(string groupSegment, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(groupSegment);
@@ -250,8 +359,14 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
 
             if (_groupTitleCache!.TryGetValue(groupSegment, out var cached))
             {
-                // null = confirmed 404/non-group; return it directly — do NOT re-fetch.
                 return cached;
+            }
+
+            if (_exportCatalogLoaded)
+            {
+                _groupTitleCache[groupSegment] = null;
+                PersistGroupCacheBestEffort();
+                return null;
             }
         }
         finally
@@ -259,18 +374,12 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
             _groupCacheLock.Release();
         }
 
-        // Cache miss: hit the network (outside the lock — politeness gate
-        // may hold for 10 s and we must not block the lock that long).
         var group = await GetMachineGroupAsync(groupSegment, cancellationToken).ConfigureAwait(false);
         var resolved = string.IsNullOrWhiteSpace(group?.Name) ? null : group!.Name;
 
         await _groupCacheLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // _groupTitleCache is non-null here — the first lock section
-            // initialized it. Another caller may have written this entry
-            // while we held the network call outside the lock;
-            // last-writer-wins is fine for stable franchise names.
             _groupTitleCache![groupSegment] = resolved;
             PersistGroupCacheBestEffort();
         }
@@ -282,9 +391,20 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
         return resolved;
     }
 
+    private Uri BuildEntryUrl(string opdbId)
+    {
+        var baseUri = new Uri(_options.BaseUrl, UriKind.Absolute);
+        // Ensure trailing-slash semantics so "api/opdb/entry/X" appends under BaseUrl.
+        if (!baseUri.AbsoluteUri.EndsWith('/'))
+        {
+            baseUri = new Uri(baseUri.AbsoluteUri + "/", UriKind.Absolute);
+        }
+
+        return new Uri(baseUri, $"api/opdb/entry/{Uri.EscapeDataString(opdbId)}");
+    }
+
     private async Task EnsureGroupCacheLoadedAsync()
     {
-        // Must be called under _groupCacheLock.
         if (_groupTitleCache is not null)
         {
             return;
@@ -338,12 +458,6 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
 
     private void PersistGroupCacheBestEffort()
     {
-        // Must be called under _groupCacheLock.
-        // Persist on each new entry: new entries are rare in steady state
-        // (~hundreds of distinct segments, essentially stable after first
-        // run), so per-entry persistence is negligible vs the 10-s/call
-        // cost of re-fetching. If this proves noisy under high-churn, move
-        // to end-of-run persistence.
         var cachePath = _options.GroupTitleCachePath;
         if (string.IsNullOrWhiteSpace(cachePath) || _groupTitleCache is null)
         {
@@ -364,20 +478,6 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
         }
     }
 
-    /// <summary>
-    /// Atomically writes <paramref name="bytes"/> to <paramref name="cachePath"/>
-    /// via a sibling <c>.tmp</c> file + rename. Crashes mid-write leave the
-    /// prior file intact. A pre-existing destination file is explicitly deleted
-    /// before the rename so that <c>File.Move</c> does not use
-    /// <c>MOVEFILE_REPLACE_EXISTING</c> semantics — on Windows, that flag can
-    /// return <c>ERROR_ACCESS_DENIED</c> when the destination exists and carries
-    /// a read-only attribute (e.g. set by OneDrive sync) or is temporarily
-    /// held open by another process, even if the caller has write permission on
-    /// the directory. Separating "delete old" from "place new" makes each step
-    /// independently auditable and avoids the ambiguous
-    /// <see cref="UnauthorizedAccessException"/> that was observed in the
-    /// 2026-06-10 live sync run (CWD = <c>C:\Users\JimKeeley</c>).
-    /// </summary>
     private void WriteCacheFile(string cachePath, byte[] bytes)
     {
         var tmpPath = cachePath + ".tmp";
@@ -391,13 +491,6 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
 
             File.WriteAllBytes(tmpPath, bytes);
 
-            // Delete the existing destination before moving so the rename
-            // never needs to overwrite — eliminates MOVEFILE_REPLACE_EXISTING
-            // and the associated UnauthorizedAccessException on Windows when
-            // the destination exists and has a read-only attribute (e.g. set
-            // by OneDrive sync) or is temporarily held open by a sync process.
-            // Clearing ReadOnly before Delete avoids a second UnauthorizedAccessException
-            // from the Delete itself.
             if (File.Exists(cachePath))
             {
                 var attrs = File.GetAttributes(cachePath);
@@ -416,15 +509,6 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Cache persist is best-effort. A write failure (path unwritable,
-            // disk full, etc.) is logged but not fatal — the caller still has
-            // the in-memory copy. Best-effort cleanup of the temp file in case
-            // the failure was at the Move step. Catch Exception, not just
-            // IOException: File.Delete throws UnauthorizedAccessException in
-            // exactly the read-only/ACL environments this method exists to
-            // survive, and the export-cache caller has no outer guard. An
-            // orphaned .tmp after an abnormal kill is harmless — it is
-            // overwritten by the next persist.
             try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch (Exception) { /* best-effort cleanup; ignore */ }
             Logger.LogWarning(
                 ex,

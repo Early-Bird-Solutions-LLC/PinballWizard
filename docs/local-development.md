@@ -158,7 +158,8 @@ Writes the 10 canonical `IngestionSource` records (one per manufacturer + OPDB) 
 
 ```pwsh
 $env:Opdb__ApiToken = $env:OPDB_API_TOKEN     # from machine env var
-$env:Opdb__BaseUrl  = "https://opdb.org/api/"
+$env:Opdb__BaseUrl   = "https://api.matchplay.events/"
+$env:Opdb__ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json"
 
 dotnet run --project src/PinballWizard.Cli -- --source opdb
 ```

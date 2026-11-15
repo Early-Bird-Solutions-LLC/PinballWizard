@@ -8,19 +8,15 @@ namespace PinballWizard.Core.Configuration;
 /// machines across all manufacturer sources.
 /// </summary>
 /// <remarks>
-/// Phase 1.1 of the parallel execution plan. OPDB is API-based (not a
-/// site scraper), so it is the lowest-risk first integration on the
-/// Clean Architecture layout — validates the layout cleanly
-/// accommodates non-Stern sources before per-manufacturer scrapers
-/// start landing.
+/// Since 2026-10-01 the opdb.org <c>/api/*</c> surface is shut down.
+/// Bulk catalog sync reads the Match Play OPDB V1 CDN export
+/// (<see cref="ExportUrl"/>); optional per-entry lookups use the Match
+/// Play API at <see cref="BaseUrl"/>. See ADR-0059.
 /// <para>
-/// API token: get one at https://opdb.org/api by registering. The
-/// token is a simple bearer credential and MUST NOT be committed.
-/// Set it via environment variable <c>OPDB__APITOKEN</c> (the double
-/// underscore is the .NET configuration convention for nested keys),
-/// the user-secrets store in development, or an Azure Key Vault
-/// secret in production (referenced through Key Vault Configuration
-/// Provider when Phase 4 lands).
+/// API token: Match Play bearer credential for optional entry/changelog
+/// endpoints. The CDN export itself is public and does not require a
+/// token. Set via <c>OPDB__APITOKEN</c> / Key Vault <c>Opdb-ApiToken</c>
+/// when entry API calls are needed; never commit the token.
 /// </para>
 /// </remarks>
 public sealed class OpdbOptions
@@ -37,16 +33,28 @@ public sealed class OpdbOptions
     /// </summary>
     public const string BaseUrlKey = $"{SectionName}:{nameof(BaseUrl)}";
 
-    /// <summary>OPDB API base URL. Defaults to the public production endpoint.</summary>
+    /// <summary>
+    /// Match Play API base URL used for optional per-entry / changelog
+    /// requests (e.g. group-title lookup when the export has not yet
+    /// been parsed this process). Defaults to the public Match Play API.
+    /// </summary>
     [Required]
     [Url]
-    public string BaseUrl { get; set; } = "https://opdb.org/api/";
+    public string BaseUrl { get; set; } = "https://api.matchplay.events/";
 
     /// <summary>
-    /// Bearer token for OPDB API requests. Required for any non-public
-    /// endpoint. Empty string is allowed during local-only sync runs
-    /// against the freely-available <c>/api/changelog</c> endpoint, but
-    /// is rejected for any sync that touches the machines list.
+    /// Absolute URL of the Match Play OPDB V1 bulk export JSON.
+    /// This is the sole catalog source for <c>StreamAllMachinesAsync</c>
+    /// — there is no fallback to the retired opdb.org <c>/api/export</c>.
+    /// </summary>
+    [Required]
+    [Url]
+    public string ExportUrl { get; set; } =
+        "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json";
+
+    /// <summary>
+    /// Bearer token for Match Play API requests. Not sent on CDN export
+    /// fetches (public). Empty is allowed for export-only sync runs.
     /// </summary>
     public string ApiToken { get; set; } = string.Empty;
 
@@ -54,72 +62,52 @@ public sealed class OpdbOptions
     /// Total HTTP timeout in seconds. Governs both the
     /// <see cref="HttpClient.Timeout"/> on the typed OPDB client and the
     /// <c>TotalRequestTimeout</c> on the OPDB-specific resilience handler.
-    /// OPDB's <c>/api/export</c> returns the entire machine catalog in a
-    /// single response (~2.4&#160;MB / ~2,360 records as of 2026-05-04) and
-    /// can take 30s+ when OPDB's CDN cache is cold or rate-limiting is in
-    /// effect; defaulting to 120s gives reasonable headroom while still
-    /// bounding hung calls.
+    /// The Match Play OPDB V1 export is ~3.5&#160;MB and usually returns in
+    /// under a second from the CDN; 120s still bounds hung calls.
     /// </summary>
     [Range(5, 600)]
     public int HttpTimeoutSeconds { get; set; } = 120;
 
     /// <summary>
-    /// On-disk cache path for the <c>/api/export</c> response. Set to a
-    /// relative path under the project root (default
+    /// On-disk cache path for the Match Play OPDB V1 export response. Set
+    /// to a relative path under the project root (default
     /// <c>data/cache/opdb-export.json</c>) or an absolute path for
     /// production deployments. Empty / whitespace disables the cache —
-    /// every call hits the network. The cache stores the raw OPDB
-    /// response body verbatim; freshness is judged by file modification
-    /// time vs <see cref="ExportCacheTtlSeconds"/>.
+    /// every call hits the network. The cache stores the raw response
+    /// body verbatim; freshness is judged by file modification time vs
+    /// <see cref="ExportCacheTtlSeconds"/>.
     /// </summary>
     /// <remarks>
-    /// OPDB's published policy on <c>/api/export</c> is "once per hour"
-    /// (https://opdb.org/api). Re-running the sync within the hour
-    /// without a cache produces hard 429s and can cascade into a
-    /// multi-hour cooldown. The cache eliminates the rate-limit problem
-    /// for any repeat invocation within the TTL window — debug runs,
-    /// dry-runs, and applies all share the same fetch.
+    /// The CDN export updates about once per day and advertises
+    /// <c>Cache-Control: max-age=3600</c>. Default TTL of 1 hour matches
+    /// that hint and avoids repeat CDN hits during dry-run / debug /
+    /// apply sequences in the same hour.
     /// </remarks>
     public string ExportCachePath { get; set; } = "data/cache/opdb-export.json";
 
     /// <summary>
     /// Time-to-live for the on-disk export cache, in seconds. Default
-    /// 3600 (1 hour) matches OPDB's published once-per-hour policy on
-    /// <c>/api/export</c>; setting longer is fine (the catalog rarely
-    /// changes within a day) but shorter risks tripping the rate limit.
-    /// Set to 0 to force every call to bypass the cache (the file is
-    /// still written on success, so a subsequent run with a non-zero
-    /// TTL can use it).
+    /// 3600 (1 hour). Set to 0 to force every call to bypass the cache
+    /// (the file is still written on success, so a subsequent run with a
+    /// non-zero TTL can use it).
     /// </summary>
     [Range(0, 86400)]
     public int ExportCacheTtlSeconds { get; set; } = 3600;
 
     /// <summary>
-    /// On-disk cache path for <c>GET /api/machines/{segment}</c>
-    /// (group-title) responses. Each cached entry is a JSON object mapping
-    /// group segment → resolved title (or <c>null</c> for a 404 /
-    /// non-group result). Freshness is judged by file modification time
-    /// vs <see cref="GroupTitleCacheTtlSeconds"/>. Empty / whitespace
-    /// disables the cache — every sync run re-fetches all segments.
+    /// On-disk cache path for group-title resolutions (segment → title).
+    /// Populated primarily from the export's <c>machineGroups</c> array
+    /// during <c>StreamAllMachinesAsync</c>; optional Match Play entry
+    /// GETs fill gaps only when the export has not been loaded this
+    /// process. Empty / whitespace disables the cache.
     /// </summary>
-    /// <remarks>
-    /// Franchise / group names essentially never change; a 14-day TTL
-    /// avoids ~1,200 polite OPDB GETs (×10 s each = ~3.5 h) on every
-    /// fresh sync run. Negative entries (null) are stored so a 404
-    /// segment is not re-asked each run. The cache is loaded once per
-    /// <see cref="OpdbClient"/> lifetime (lazy, on first
-    /// <c>GetMachineGroupAsync</c> call) and persisted best-effort after
-    /// each new entry.
-    /// </remarks>
     public string GroupTitleCachePath { get; set; } = "data/cache/opdb-group-titles.json";
 
     /// <summary>
     /// Time-to-live for the group-title cache file, in seconds. Default
-    /// 1 209 600 (14 days). The whole cache file expires by mtime —
-    /// consistent with the export cache's TTL semantics and the simplest
-    /// correct approach given that group names are stable. Set to 0 to
-    /// force every call to bypass the cache (new entries are still written
-    /// on success).
+    /// 1 209 600 (14 days). The whole cache file expires by mtime.
+    /// Set to 0 to force every call to bypass the cache (new entries are
+    /// still written on success).
     /// </summary>
     [Range(0, int.MaxValue)]
     public int GroupTitleCacheTtlSeconds { get; set; } = 1_209_600; // 14 days

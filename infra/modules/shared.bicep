@@ -2816,11 +2816,16 @@ module opdbSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if
     env: [
       { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
-      { name: 'Opdb__BaseUrl', value: 'https://opdb.org/api/' }
+      // Match Play hosts OPDB after the 2026-10-01 opdb.org /api shutdown (ADR-0059).
+      // ExportUrl is the sole catalog source (CDN V1 JSON); BaseUrl is the Match Play
+      // API origin for optional per-entry lookups. No silent fallback to opdb.org.
+      { name: 'Opdb__BaseUrl', value: 'https://api.matchplay.events/' }
+      { name: 'Opdb__ExportUrl', value: 'https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json' }
       {
-        // OPDB API token sourced from Key Vault via the ACA secrets block below.
-        // The token value never appears in Bicep, params, or source — resolved
-        // at run time by the UAMI (Key Vault Secrets User, acaIdentityKvSecretsUser).
+        // Match Play API token (optional for CDN export-only sync). Sourced from
+        // Key Vault via the ACA secrets block below. The token value never appears
+        // in Bicep, params, or source — resolved at run time by the UAMI
+        // (Key Vault Secrets User, acaIdentityKvSecretsUser).
         name: 'Opdb__ApiToken'
         secretRef: 'opdb-api-token'
       }

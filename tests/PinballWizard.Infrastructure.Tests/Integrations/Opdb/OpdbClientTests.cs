@@ -11,13 +11,14 @@ using Xunit;
 namespace PinballWizard.Infrastructure.Tests.Integrations.Opdb;
 
 /// <summary>
-/// Unit tests for <see cref="OpdbClient"/>: <c>/api/export</c> stream
-/// behavior, auth header application, single-machine 404 → null
-/// behavior. Routes through a stub <see cref="HttpMessageHandler"/> —
-/// no live network.
+/// Unit tests for <see cref="OpdbClient"/>: Match Play V1 CDN export
+/// stream behavior, no-auth on CDN, entry API 404 → null, fail-closed
+/// wrong-shape handling. Routes through a stub
+/// <see cref="HttpMessageHandler"/> — no live network.
 /// </summary>
 public sealed class OpdbClientTests : IDisposable
 {
+    private const string ExportPath = "/latest-opdb.json";
     private readonly StubHandler _handler = new();
     private readonly HttpClient _httpClient;
     private readonly OpdbClient _client;
@@ -39,15 +40,13 @@ public sealed class OpdbClientTests : IDisposable
         var resolver = new DefaultPerSourcePolitenessResolver(politenessOptions);
         var gate = new PolitenessGate(_robotsCache, resolver, NullLogger<PolitenessGate>.Instance);
 
-        _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://opdb.org/api/") };
+        _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.matchplay.events/") };
 
         var opdbOptions = Options.Create(new OpdbOptions
         {
-            BaseUrl = "https://opdb.org/api/",
+            BaseUrl = "https://api.matchplay.events/",
+            ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json",
             ApiToken = "test-token",
-            // Caches disabled for these tests — they pin network contract
-            // behavior, not the cache layer. Cache-specific tests are in
-            // OpdbExportCacheTests and OpdbGroupTitleCacheTests.
             ExportCachePath = "",
             GroupTitleCachePath = "",
         });
@@ -62,15 +61,13 @@ public sealed class OpdbClientTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamAllMachinesAsync_HitsExportEndpoint_NotPaginatedMachines()
+    public async Task StreamAllMachinesAsync_HitsMatchPlayV1Export_NotRetiredOpdbOrgPath()
     {
-        // Pins the corrected endpoint after the Item 4 hand-off finding
-        // (DL-0003): the live OPDB API returns 404 on /api/machines?page=...
-        // but 200 on /api/export. If a future refactor reaches for paging
-        // again, this test fails because no /api/machines?... response is
-        // stubbed and the export response is what /api/export expects.
-        _handler.SetResponseFor("/api/export",
-            JsonArray(MachineJson("AAA-AAAAA"), MachineJson("BBB-BBBBB"), MachineJson("CCC-CCCCC")));
+        // Pins ADR-0059: catalog comes from Match Play CDN V1, never
+        // opdb.org /api/export (404 since 2026-10-01).
+        _handler.SetResponseFor(ExportPath,
+            ExportEnvelope(
+                machines: [MachineJson("AAA-AAAAA"), MachineJson("BBB-BBBBB"), MachineJson("CCC-CCCCC")]));
 
         var collected = new List<OpdbMachineDto>();
         await foreach (var m in _client.StreamAllMachinesAsync(CancellationToken.None))
@@ -81,45 +78,105 @@ public sealed class OpdbClientTests : IDisposable
         Assert.Equal(3, collected.Count);
         Assert.Equal(["AAA-AAAAA", "BBB-BBBBB", "CCC-CCCCC"], collected.Select(m => m.OpdbId));
 
-        // Exactly one request — no pagination.
         Assert.Single(_handler.Requests);
-        Assert.Equal("/api/export", _handler.Requests[0].RequestUri!.PathAndQuery);
+        Assert.Equal(ExportPath, _handler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Equal("mp-data.sfo3.cdn.digitaloceanspaces.com", _handler.Requests[0].RequestUri!.Host);
     }
 
     [Fact]
-    public async Task StreamAllMachinesAsync_EmptyArray_YieldsNothing()
+    public async Task StreamAllMachinesAsync_YieldsMachinesThenAliases_AndSeedsGroupTitles()
     {
-        _handler.SetResponseFor("/api/export", JsonArray());
+        _handler.SetResponseFor(ExportPath, ExportEnvelope(
+            machines: [MachineJson("GweeP-MW95j")],
+            aliases: [AliasJson("GweeP-MW95j-A70th")],
+            groups: [GroupJson("GweeP", "Godzilla")]));
 
-        var count = 0;
-        await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
+        var collected = new List<OpdbMachineDto>();
+        await foreach (var m in _client.StreamAllMachinesAsync(CancellationToken.None))
         {
-            count++;
+            collected.Add(m);
         }
 
-        Assert.Equal(0, count);
+        Assert.Equal(["GweeP-MW95j", "GweeP-MW95j-A70th"], collected.Select(m => m.OpdbId));
+        Assert.True(collected[0].IsMachine);
+        Assert.True(collected[1].IsAlias);
+
+        // Group title available from export seed — no entry-API HTTP.
+        var title = await _client.GetMachineGroupTitleAsync("GweeP", CancellationToken.None);
+        Assert.Equal("Godzilla", title);
+        Assert.Single(_handler.Requests); // only the export GET
     }
 
     [Fact]
-    public async Task StreamAllMachinesAsync_AppliesBearerToken()
+    public async Task StreamAllMachinesAsync_EmptyEnvelope_ThrowsRatherThanSilentEmptyCatalog()
     {
-        _handler.SetResponseFor("/api/export", JsonArray());
+        _handler.SetResponseFor(ExportPath, """{"machineGroups":[],"machines":[],"aliases":[]}""");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
+            {
+                // Intentionally drain the async stream to trigger enumeration-time exception.
+            }
+        });
+
+        Assert.Contains("empty machines, aliases, and machineGroups", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("latest-opdb.json", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StreamAllMachinesAsync_V2EntriesShape_ThrowsRatherThanSilentEmptyCatalog()
+    {
+        // opdb-v2.json uses { "entries": [...] } — must not deserialize as
+        // an empty V1 envelope and sync zero machines.
+        _handler.SetResponseFor(ExportPath, """{"entries":[{"opdbId":"G0l2e","entryType":"machineGroup"}]}""");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
+            {
+                // Intentionally drain the async stream to trigger enumeration-time exception.
+            }
+        });
+
+        Assert.Contains("empty machines, aliases, and machineGroups", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StreamAllMachinesAsync_Export404_ThrowsWithoutFallback()
+    {
+        _handler.SetResponseFor(ExportPath, """{"message":"not found"}""", HttpStatusCode.NotFound);
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(async () =>
+        {
+            await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
+            {
+                // Intentionally drain the async stream to trigger enumeration-time exception.
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+        Assert.Contains("not used as a fallback", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StreamAllMachinesAsync_DoesNotAttachBearerTokenToCdnExport()
+    {
+        _handler.SetResponseFor(ExportPath, ExportEnvelope(machines: [MachineJson("AAA-AAAAA")]));
 
         await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
         {
-            // drain
+            // Drain stream so the CDN GET is recorded for the Authorization assertion.
         }
 
-        var firstRequest = _handler.Requests[0];
-        Assert.NotNull(firstRequest.Headers.Authorization);
-        Assert.Equal("Bearer", firstRequest.Headers.Authorization!.Scheme);
-        Assert.Equal("test-token", firstRequest.Headers.Authorization.Parameter);
+        var firstRequest = Assert.Single(_handler.Requests);
+        Assert.Null(firstRequest.Headers.Authorization);
     }
 
     [Fact]
     public async Task GetMachineAsync_404_ReturnsNull()
     {
-        _handler.SetResponseFor("/api/machines/UNKNOWN", null, HttpStatusCode.NotFound);
+        _handler.SetResponseFor("/api/opdb/entry/UNKNOWN", null, HttpStatusCode.NotFound);
 
         var result = await _client.GetMachineAsync("UNKNOWN", CancellationToken.None);
 
@@ -129,12 +186,14 @@ public sealed class OpdbClientTests : IDisposable
     [Fact]
     public async Task GetMachineAsync_200_ReturnsMappedDto()
     {
-        _handler.SetResponseFor("/api/machines/GRBN-MQR4P", MachineJson("GRBN-MQR4P"));
+        _handler.SetResponseFor("/api/opdb/entry/GRBN-MQR4P", MachineJson("GRBN-MQR4P"));
 
         var result = await _client.GetMachineAsync("GRBN-MQR4P", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("GRBN-MQR4P", result!.OpdbId);
+        Assert.NotNull(_handler.Requests[0].Headers.Authorization);
+        Assert.Equal("test-token", _handler.Requests[0].Headers.Authorization!.Parameter);
     }
 
     [Fact]
@@ -146,17 +205,14 @@ public sealed class OpdbClientTests : IDisposable
     [Fact]
     public async Task GetMachineAsync_DeserializesPhysicalMachine()
     {
-        // ADR-0029: physical_machine is captured for provenance only. The
-        // wire field must round-trip (nullable int) so diagnostics can see
-        // it even though it is never used for canonical selection.
-        _handler.SetResponseFor("/api/machines/GweeP-Ml9pZ", JsonSerializer.Serialize(new
+        _handler.SetResponseFor("/api/opdb/entry/GweeP-Ml9pZ", JsonSerializer.Serialize(new
         {
-            opdb_id = "GweeP-Ml9pZ",
-            is_machine = true,
-            physical_machine = 0,
+            opdbId = "GweeP-Ml9pZ",
+            isMachine = true,
+            physicalMachine = 0,
             name = "Godzilla (Premium/LE)",
-            common_name = "",
-            manufacturer = new { manufacturer_id = 1, name = "Stern Pinball, Inc." },
+            commonName = "",
+            manufacturer = new { manufacturerId = 1, name = "Stern", fullName = "Stern Pinball, Inc." },
         }));
 
         var result = await _client.GetMachineAsync("GweeP-Ml9pZ", CancellationToken.None);
@@ -168,10 +224,10 @@ public sealed class OpdbClientTests : IDisposable
     [Fact]
     public async Task GetMachineGroupAsync_200_ReturnsGroupWithCleanTitle()
     {
-        _handler.SetResponseFor("/api/machines/GweeP", JsonSerializer.Serialize(new
+        _handler.SetResponseFor("/api/opdb/entry/GweeP", JsonSerializer.Serialize(new
         {
-            opdb_id = "GweeP",
-            is_machine_group = true,
+            opdbId = "GweeP",
+            isMachineGroup = true,
             name = "Godzilla",
             shortname = "GZ",
         }));
@@ -187,7 +243,7 @@ public sealed class OpdbClientTests : IDisposable
     [Fact]
     public async Task GetMachineGroupAsync_404_ReturnsNull()
     {
-        _handler.SetResponseFor("/api/machines/NOGRP", null, HttpStatusCode.NotFound);
+        _handler.SetResponseFor("/api/opdb/entry/NOGRP", null, HttpStatusCode.NotFound);
 
         var result = await _client.GetMachineGroupAsync("NOGRP", CancellationToken.None);
 
@@ -197,11 +253,7 @@ public sealed class OpdbClientTests : IDisposable
     [Fact]
     public async Task GetMachineGroupAsync_NonGroupBody_ReturnsNull()
     {
-        // Defensive: the machines/{id} endpoint is polymorphic. A full
-        // machine ID returns a machine body (is_machine_group absent →
-        // false). GetMachineGroupAsync must degrade to null, not hand back
-        // a bogus group DTO.
-        _handler.SetResponseFor("/api/machines/GweeP-MW95j", MachineJson("GweeP-MW95j"));
+        _handler.SetResponseFor("/api/opdb/entry/GweeP-MW95j", MachineJson("GweeP-MW95j"));
 
         var result = await _client.GetMachineGroupAsync("GweeP-MW95j", CancellationToken.None);
 
@@ -217,14 +269,43 @@ public sealed class OpdbClientTests : IDisposable
 
     private static string MachineJson(string opdbId) => JsonSerializer.Serialize(new
     {
-        opdb_id = opdbId,
-        is_machine = true,
+        opdbId,
+        isMachine = true,
         name = $"Machine {opdbId}",
-        common_name = $"Machine {opdbId}",
-        manufacturer = new { manufacturer_id = 1, name = "Stern Pinball, Inc." },
+        commonName = $"Machine {opdbId}",
+        manufacturer = new { manufacturerId = 1, name = "Stern", fullName = "Stern Pinball, Inc." },
     });
 
-    private static string JsonArray(params string[] items) => "[" + string.Join(",", items) + "]";
+    private static string AliasJson(string opdbId) => JsonSerializer.Serialize(new
+    {
+        opdbId,
+        isAlias = true,
+        name = $"Alias {opdbId}",
+        manufacturer = new { manufacturerId = 1, name = "Stern", fullName = "Stern Pinball, Inc." },
+    });
+
+    private static string GroupJson(string segment, string name) => JsonSerializer.Serialize(new
+    {
+        opdbId = segment,
+        isMachineGroup = true,
+        name,
+        shortname = (string?)null,
+    });
+
+    private static string ExportEnvelope(
+        string[]? machines = null,
+        string[]? aliases = null,
+        string[]? groups = null)
+    {
+        machines ??= [];
+        aliases ??= [];
+        groups ??= [];
+        return "{" +
+               $"\"machineGroups\":[{string.Join(",", groups)}]," +
+               $"\"machines\":[{string.Join(",", machines)}]," +
+               $"\"aliases\":[{string.Join(",", aliases)}]" +
+               "}";
+    }
 
     private sealed class StubHandler : HttpMessageHandler
     {
@@ -236,28 +317,32 @@ public sealed class OpdbClientTests : IDisposable
             _responses[pathAndQuery] = (body, status);
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage(
-            "CodeQuality",
-            "cs/local-not-disposed",
-            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
             var key = request.RequestUri!.PathAndQuery;
             if (_responses.TryGetValue(key, out var entry))
             {
-                var response = new HttpResponseMessage(entry.Status);
-                if (entry.Body is not null)
-                {
-                    response.Content = new StringContent(entry.Body, Encoding.UTF8, "application/json");
-                }
-                return Task.FromResult(response);
+                return Task.FromResult(CreateResponse(entry.Status, entry.Body));
             }
-            // Unknown path — return empty array so paging terminates cleanly in tests that don't pre-stub all pages.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+
+            return Task.FromResult(CreateResponse(HttpStatusCode.NotFound));
+        }
+
+        /// <summary>
+        /// Builds a response whose ownership transfers to the HttpClient
+        /// caller via return (no local try/finally dispose — the returned
+        /// instance must not be wrapped in <c>using</c>).
+        /// </summary>
+        private static HttpResponseMessage CreateResponse(HttpStatusCode status, string? body = null)
+        {
+            var response = new HttpResponseMessage(status);
+            if (body is not null)
             {
-                Content = new StringContent("[]", Encoding.UTF8, "application/json"),
-            });
+                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            }
+
+            return response;
         }
     }
 }

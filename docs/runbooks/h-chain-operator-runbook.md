@@ -191,7 +191,8 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 
    ```powershell
    $env:Opdb__ApiToken = [Environment]::GetEnvironmentVariable('OPDB_API_TOKEN','User')
-   $env:Opdb__BaseUrl  = 'https://opdb.org/api/'
+   $env:Opdb__BaseUrl   = 'https://api.matchplay.events/'
+   $env:Opdb__ExportUrl = 'https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json'
    dotnet run --project src/PinballWizard.Cli -- --source opdb 2>&1 | Tee-Object -FilePath opdb-sync-h2-$(Get-Date -Format 'yyyy-MM-dd').log
    ```
 

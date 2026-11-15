@@ -351,6 +351,73 @@ public sealed class OpdbMachineMapperTests
         Assert.Equal("stern", machine!.PartitionKey);
     }
 
+    [Fact]
+    public void Map_V1ShortNameAndFullName_PartitionKeyMatchesLegacyFullName()
+    {
+        // Match Play V1 splits legacy OPDB manufacturer `name` into short
+        // `name` + `fullName`. Preferring the short brand for the Cosmos
+        // partition key re-hashes makers outside NormalizeManufacturerKey's
+        // Contains special-cases (insert instead of merge). Keying from
+        // fullName must match a legacy doc keyed from the long name alone.
+        const string shortBrand = "Gottlieb";
+        const string fullLegal = "D. Gottlieb & Co.";
+
+        var fromV1 = OpdbMachineMapper.Map(
+            new OpdbMachineDto
+            {
+                OpdbId = "Gxxxx-Ayyyy",
+                IsMachine = true,
+                CommonName = "Black Hole",
+                Manufacturer = new OpdbManufacturerDto
+                {
+                    Name = shortBrand,
+                    FullName = fullLegal,
+                },
+            },
+            NowFixed);
+
+        var fromLegacyFullNameAsName = OpdbMachineMapper.Map(
+            new OpdbMachineDto
+            {
+                OpdbId = "Gxxxx-Ayyyy",
+                IsMachine = true,
+                CommonName = "Black Hole",
+                Manufacturer = new OpdbManufacturerDto
+                {
+                    Name = fullLegal,
+                },
+            },
+            NowFixed);
+
+        Assert.NotNull(fromV1);
+        Assert.NotNull(fromLegacyFullNameAsName);
+        Assert.Equal(fromLegacyFullNameAsName!.PartitionKey, fromV1!.PartitionKey);
+        Assert.Equal(
+            OpdbMachineMapper.NormalizeManufacturerKey(fullLegal),
+            fromV1.PartitionKey);
+        Assert.NotEqual(
+            OpdbMachineMapper.NormalizeManufacturerKey(shortBrand),
+            fromV1.PartitionKey);
+        Assert.Equal(fullLegal, fromV1.ManufacturerDisplayName);
+    }
+
+    [Fact]
+    public void ResolveManufacturerKeySource_PrefersShortNameThenFullNameThenName()
+    {
+        Assert.Equal(
+            "S",
+            OpdbMachineMapper.ResolveManufacturerKeySource(
+                new OpdbManufacturerDto { ShortName = "S", Name = "N", FullName = "F" }));
+        Assert.Equal(
+            "F",
+            OpdbMachineMapper.ResolveManufacturerKeySource(
+                new OpdbManufacturerDto { ShortName = "", Name = "N", FullName = "F" }));
+        Assert.Equal(
+            "N",
+            OpdbMachineMapper.ResolveManufacturerKeySource(
+                new OpdbManufacturerDto { Name = "N" }));
+    }
+
     [Theory]
     [InlineData("Stern Pinball, Inc.", "stern")]
     [InlineData("Jersey Jack Pinball", "jjp")]
