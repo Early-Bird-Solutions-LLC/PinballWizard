@@ -23,9 +23,14 @@ and snake_case wire shape. Continuing to call opdb.org cannot succeed.
 
 ## Decision
 
-1. **Sole catalog source:** `OpdbOptions.ExportUrl` defaults to the Match Play
-   **V1** CDN URL (`latest-opdb.json`). `StreamAllMachinesAsync` GETs that URL
-   only — no fallback to opdb.org `/api/export`, V2, or slim.
+1. **Sole catalog source (intentional V1 interim):** `OpdbOptions.ExportUrl`
+   defaults to the Match Play **V1** CDN URL (`latest-opdb.json`).
+   `StreamAllMachinesAsync` GETs that URL only — no fallback to opdb.org
+   `/api/export`, V2, or slim. Match Play migration guidance is "point at
+   `opdb-v2.json` (or `latest-opdb.json` if designer credits can wait)". V1
+   restores machines / aliases / groups for the weekly job; V2 `people` /
+   `images` enrichment is an explicit follow-up, not a catalog-identity
+   blocker for this repair.
 2. **Envelope parse, fail closed:** Deserialize
    `{ machineGroups, machines, aliases }`. Wrong shape (V2 `entries`, legacy
    top-level array, empty-all-three) throws `InvalidOperationException` with a
@@ -47,13 +52,15 @@ and snake_case wire shape. Continuing to call opdb.org cannot succeed.
 - **Silent multi-URL fallback** (try opdb.org, then CDN): Rejected — violates
   the locked "fallbacks must not hide failures" invariant and would mask
   config drift.
-- **Adopt V2 `entries` envelope now:** Rejected for this fix — larger mapper
-  change (`entryType`, nested `people`/images). V1 preserves machines / aliases /
-  groups separation the sync already understands. V2 is the path that carries
-  designer credits (`people`); V1 machine rows have no `designers` / `people`
-  field. That gap already exists in production (every sampled machine has
-  empty `designers` — #611 / ADR-0049), so delaying V2 does not regress
-  findability. Revisit V2 when designers become in-scope or Match Play retires V1.
+- **Adopt V2 `entries` envelope in this PR:** Deferred — larger mapper change
+  (`entryType`, nested `people`/`images`). Migration note explicitly allows V1
+  when designer credits can wait. V1 preserves machines / aliases / groups
+  separation the sync already understands. V2 is the path that carries designer
+  credits (`people`); V1 machine rows have no `designers` / `people` field.
+  That gap already exists in production (every sampled machine has empty
+  `designers` — #611 / ADR-0049), so delaying V2 does not regress findability.
+  Fail-closed today if `ExportUrl` is pointed at V2 by mistake. Revisit V2 when
+  designers become in-scope or Match Play retires V1.
 - **Match Play entry API only (no CDN):** Rejected — Match Play docs require
   CDN for bulk OPDB; entry API is for single lookups.
 
@@ -75,6 +82,8 @@ and snake_case wire shape. Continuing to call opdb.org cannot succeed.
 ## Related
 
 - Scraper health audit 2026-11-15 (OPDB `/api/export` 404 = NEW)
+- Match Play migration note (2026-11-15): prefer `opdb-v2.json`, or
+  `latest-opdb.json` when designer credits can wait
 - [Match Play data exports](https://docs.matchplay.events/data-exports)
 - Tilt Forums OPDB shutdown notice (2026-10-01)
 - ADR-0029 (version-aware OPDB ingestion / group titles)
