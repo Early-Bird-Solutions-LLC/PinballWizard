@@ -289,13 +289,18 @@ jobs:
           fi
           rm -f "$DIFF_ERR"
 
-          if printf '%s\n' "$CHANGED" | grep -qE \
-            '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|infra/|deploy/)'; then
+          # infra/cloudflare is Terraform state for the edge CDN — not the ACA
+          # jobs / Foundry Bicep estate. A .terraform.lock.hcl bump must not
+          # force pinwiz-jobs-dev (seen on #957: lock-only merge → full stack).
+          STACK_TOUCHED=$(printf '%s\n' "$CHANGED" | grep -E \
+            '^(src/PinballWizard\.(Cli|Application|Infrastructure|Core|ServiceDefaults)/|Directory\.(Build|Packages)\.props|deploy/|infra/)' \
+            | grep -vE '^infra/cloudflare/' || true)
+          if [ -n "$STACK_TOUCHED" ]; then
             echo "run_stack=true" >> "$GITHUB_OUTPUT"
             echo "CLI or infra paths changed since $BASE_SHA — deployment stack will run."
           else
             echo "run_stack=false" >> "$GITHUB_OUTPUT"
-            echo "No CLI or infra changes since last successful stack deployment ($BASE_SHA) — skipping."
+            echo "No CLI or infra (non-cloudflare) changes since last successful stack deployment ($BASE_SHA) — skipping."
           fi
 
   build-deploy:
