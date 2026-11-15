@@ -57,7 +57,7 @@ public sealed class CgcMenuClientLiveShapeTests
         // the old machines index is gone, the root serves the navigation that links
         // each shipped coin-op title.
         handler.Map(RetiredIndexUrl, _ => new HttpResponseMessage(HttpStatusCode.NotFound));
-        handler.MapHtml(options.BaseUrl + "/", CapturedHomepage());
+        handler.MapHtml(options.BaseUrl + "/", CgcCapturedFixtures.Home());
 
         var client = BuildClient(handler, options);
 
@@ -149,11 +149,6 @@ public sealed class CgcMenuClientLiveShapeTests
             GamePathPrefix = section.GetProperty("GamePathPrefix").GetString()!,
         };
     }
-
-    private static string CapturedHomepage() =>
-        File.ReadAllText(Path.Combine(
-            RepoRoot(), "tests", "PinballWizard.Infrastructure.Tests",
-            "Fixtures", "Cgc", "homepage.captured.html"));
 
     private static string RepoRoot()
     {
