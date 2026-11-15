@@ -66,14 +66,21 @@ $rg        = "rg-pinwiz-shared-$Environment"
 $scriptDir = $PSScriptRoot
 $infraDir  = Split-Path -Parent $scriptDir
 
-$templateFile   = Join-Path $infraDir 'main-jobs.bicep'
-$parametersFile = Join-Path $infraDir "main-jobs.$Environment.bicepparam"
-$localOverride  = Join-Path $infraDir "main-jobs.$Environment.local.bicepparam"
+. (Join-Path $scriptDir 'BicepParamOverlay.ps1')
 
-if (Test-Path $localOverride) {
-    Write-Host "Using LOCAL override parameters file: $localOverride" -ForegroundColor Yellow
-    $parametersFile = $localOverride
-}
+$templateFile    = Join-Path $infraDir 'main-jobs.bicep'
+$committedParams = Join-Path $infraDir "main-jobs.$Environment.bicepparam"
+$localOverride   = Join-Path $infraDir "main-jobs.$Environment.local.bicepparam"
+
+# #400: never wholesale-replace committed params with *.local.bicepparam.
+# Workload stack has no personal overlays today — local file is ignored with
+# a warning if present (cliImageTag comes from -CliImageTag / discovery).
+$paramSource = Resolve-BicepParamSource `
+    -CommittedPath $committedParams `
+    -LocalPath $localOverride `
+    -AllowedLocalParams @()
+$parametersFile = $paramSource.ParametersFile
+$paramOverlays = @($paramSource.OverlayArgs)
 
 if (-not (Test-Path $templateFile)) {
     throw "Template file not found: $templateFile"
@@ -148,6 +155,7 @@ if ($WhatIf) {
         --resource-group $rg `
         --template-file $templateFile `
         --parameters $parametersFile `
+            @paramOverlays `
             cliImageTag="$CliImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none
@@ -162,6 +170,7 @@ else {
         --resource-group $rg `
         --template-file $templateFile `
         --parameters $parametersFile `
+            @paramOverlays `
             cliImageTag="$CliImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none `
