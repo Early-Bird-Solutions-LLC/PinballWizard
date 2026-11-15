@@ -1,0 +1,14 @@
+/* #788 d): mid-width viewports where the desktop table is wider than the
+   content column must scroll inside the grid, not the document.
+   overflow-y: clip is exempt from the CSS "if one axis is not visible, the
+   other computes to auto" coercion — so we get horizontal scroll without a
+   vertical scroll container that traps focus. Padding keeps Elevation=2
+   shadows / focus rings from being paint-clipped at the wrapper edge. */
+.app-data-grid {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: clip;
+    padding-block: 4px;
+    margin-block: -4px;
+}
