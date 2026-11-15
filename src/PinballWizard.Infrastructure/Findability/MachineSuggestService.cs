@@ -67,6 +67,14 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         if (nonWsCount < MinNonWhitespaceChars)
             return [];
 
+        // Strip question stopwords before hitting the index (#785). A full
+        // sentence like "whats a good strategy for transformers" otherwise
+        // BM25-matches Fore / No Good Gofers / Invasion Strategy on fluff.
+        var queryTokens = MachineSuggestQueryNormalizer.Tokenize(query);
+        var searchText = MachineSuggestQueryNormalizer.BuildSearchText(queryTokens);
+        if (searchText.Length == 0)
+            return [];
+
         // Index not configured → degrade honestly to empty (invariant #17).
         if (_index is null)
         {
@@ -85,8 +93,21 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         // no fabricated suggestions. Cancellation propagates normally.
         try
         {
-            var hits = await _index.SearchAsync(query, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
-            return CollapseEditions(hits, top);
+            var hits = await _index.SearchAsync(
+                searchText, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
+
+            // Post-filter: multi-token queries keep only titles that share a
+            // max-length significant token (drops Invasion Strategy when the
+            // distinctive word is "transformers").
+            IReadOnlyList<MachineSearchHit> filtered = hits;
+            if (queryTokens.Count > 1)
+            {
+                filtered = hits
+                    .Where(h => MachineSuggestQueryNormalizer.TitleMatchesQuery(h.Title, queryTokens))
+                    .ToList();
+            }
+
+            return CollapseEditions(filtered, top);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -68,8 +68,73 @@ public sealed class MachineSuggestServiceTests
 
         await service.SuggestAsync(query, top: 8, CancellationToken.None);
 
+        // Index receives the stopword-normalized search text (#785), which for
+        // these short name queries equals the trimmed significant tokens.
+        var expected = MachineSuggestQueryNormalizer.BuildSearchText(
+            MachineSuggestQueryNormalizer.Tokenize(query));
         await _index.Received(1).SearchAsync(
-            Arg.Is<string>(q => q == query),
+            Arg.Is<string>(q => q == expected),
+            Arg.Any<int>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    // ── #785 stopword / question-shaped query ─────────────────────────────────
+
+    [Fact]
+    public async Task SuggestAsync_QuestionShapedQuery_SearchesNormalizedTokensNotRawSentence()
+    {
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>([]));
+        var service = BuildService();
+
+        await service.SuggestAsync(
+            "whats a good strategy for transformers", top: 8, CancellationToken.None);
+
+        // Stopwords (whats/a/good/for) stripped; "strategy transformers" reaches the index.
+        await _index.Received(1).SearchAsync(
+            "strategy transformers",
+            Arg.Any<int>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SuggestAsync_QuestionShapedQuery_DropsHitsThatOnlyMatchShorterTokens()
+    {
+        // Simulates the live #785 failure mode: BM25 returns Transformers (good)
+        // plus Invasion Strategy / No Good Gofers / Fore (noise on shorter tokens).
+        var hits = new List<MachineSearchHit>
+        {
+            BuildHit("G-tf-2011", "Transformers", "Stern", 2011, groupId: null, score: 9.0),
+            BuildHit("G-inv", "Invasion Strategy", "Komputer Dynamics", 1976, groupId: null, score: 8.5),
+            BuildHit("G-ngg", "No Good Gofers", "Williams", 1997, groupId: null, score: 8.0),
+            BuildHit("G-fore", "Fore", "Bally", 1973, groupId: null, score: 7.5),
+            BuildHit("G-tf-2026", "Transformers: More Than Meets the Eye", "Stern", 2026, groupId: null, score: 7.0),
+        };
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync(
+            "whats a good strategy for transformers", top: 8, CancellationToken.None);
+
+        Assert.All(result, s => Assert.Contains("Transformers", s.Title, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, s => s.Title.Contains("Invasion", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, s => s.Title.Contains("Gofers", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, s => s.Title.Equals("Fore", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SuggestAsync_AllStopwords_ReturnsEmptyWithoutCallingIndex()
+    {
+        var service = BuildService();
+
+        var result = await service.SuggestAsync("whats a good for", top: 8, CancellationToken.None);
+
+        Assert.Empty(result);
+        await _index.DidNotReceive().SearchAsync(
+            Arg.Any<string>(),
             Arg.Any<int>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
@@ -188,7 +253,10 @@ public sealed class MachineSuggestServiceTests
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
-        var result = await service.SuggestAsync("from", top: 8, CancellationToken.None);
+        // Single-token name query — post-filter is not applied; both mocked hits
+        // surface. (Query "from" used to exercise this path but is now a stopword
+        // under #785 and would short-circuit before the index call.)
+        var result = await service.SuggestAsync("creature", top: 8, CancellationToken.None);
 
         Assert.Equal(2, result.Count);
     }
