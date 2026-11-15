@@ -269,5 +269,20 @@
     "discoveryStatus": "Active",
     "discoveryNotes": "Colin Alsheimer / Kineticist granted explicit permission to index TWIP newsletter content per ADR-0043 (June 2026). robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths. No API key required — content is publicly accessible.",
     "discoveryDate": "2026-06-26"
+  },
+  {
+    "id": "matchplay",
+    "displayName": "Match Play Events",
+    "scraperImplKey": "matchplay",
+    "baseUrl": "https://api.matchplay.events/",
+    "enabled": true,
+    "cadence": "none",
+    "politenessOverrides": {
+      "requestDelayMs": 1000
+    },
+    "sourceGroup": "Match Play Events",
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Live tournament brackets and standings via the Match Play read-only API (query-time Wizard tools searchMatchPlayTournaments / getMatchPlayTournamentStandings). Not RAG-indexed — live competitive data must not be embedded (docs/knowledge-sources.md §5; ADR-0061). Auth: MatchPlay:ApiToken (same Match Play bearer family as Opdb:ApiToken; DI falls back to Opdb:ApiToken when MatchPlay:ApiToken is unset). Standings for in-progress tournaments are cached ≥15s per Match Play handbook.",
+    "discoveryDate": "2026-11-15"
   }
 ]
