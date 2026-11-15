@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Rag.Chunking;
@@ -44,6 +45,20 @@ public sealed class PinTipsSynthesizer
 
     public static string TitleFor(PinTip tip) =>
         string.Create(CultureInfo.InvariantCulture, $"PinTips {tip.Category} ({tip.OpdbId})");
+
+    // SHA-256 of the text that gets indexed. Vote totals are included because
+    // they are part of that text. A tip whose body, category, votes, and id
+    // are unchanged produces the same hash, so a later sync can skip the embed.
+    public static string ContentHash(PinTip tip, string sourceUrl)
+    {
+        ArgumentNullException.ThrowIfNull(tip);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(BuildText(tip, sourceUrl)));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    public static bool IsUnchanged(string? storedHash, string currentHash) =>
+        !string.IsNullOrWhiteSpace(storedHash)
+        && string.Equals(storedHash, currentHash, StringComparison.Ordinal);
 
     private static string BuildText(PinTip tip, string sourceUrl)
     {

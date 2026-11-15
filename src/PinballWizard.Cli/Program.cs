@@ -1538,6 +1538,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var pinTipsFailed = 0;
         var pinTipsRawFailed = 0;
         var pinTipsUnlinked = 0;
+        var pinTipsSkippedUnchanged = 0;
         var pinTipsOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
         var pinTipsSource = SynthesizedSourceDescriptors.PinTips;
         var exportUrl = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.PinTipsOptions>>().Value.ExportUrl;
@@ -1582,6 +1583,17 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 var chunks = pinTipsSynthesizer.Synthesize(tip, exportUrl, chunkRequest);
                 if (chunks.Count == 0) continue;
 
+                var contentHash = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.ContentHash(tip, exportUrl);
+                if (pinTipsRawDocs is not null)
+                {
+                    var stored = await pinTipsRawDocs.GetAsync(documentId, cancellationToken);
+                    if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(stored?.ContentHash, contentHash))
+                    {
+                        pinTipsSkippedUnchanged++;
+                        continue;
+                    }
+                }
+
                 try
                 {
                     var result = await pinTipsIndexer.UpsertAsync(chunkRequest, chunks, pinTipsOptions, cancellationToken);
@@ -1600,6 +1612,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     {
                         pinTipsRawFailed++;
                     }
+                    else if (pinTipsRawDocs is not null)
+                    {
+                        try
+                        {
+                            await pinTipsRawDocs.DenormalizeContentHashAsync(documentId, contentHash, cancellationToken);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            Console.Error.WriteLine($"  Warning: content-hash stamp failed for {documentId}: {ex.Message}");
+                            pinTipsRawFailed++;
+                        }
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -1609,7 +1633,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             }
         }
 
-        Console.WriteLine($"--sync-pintips complete: indexed={pinTipsIndexed} unlinked={pinTipsUnlinked} failed={pinTipsFailed} raw_doc_write_failed={pinTipsRawFailed}");
+        Console.WriteLine($"--sync-pintips complete: indexed={pinTipsIndexed} skipped_unchanged={pinTipsSkippedUnchanged} unlinked={pinTipsUnlinked} failed={pinTipsFailed} raw_doc_write_failed={pinTipsRawFailed}");
         if (pinTipsFailed > 0) Environment.ExitCode = 1;
         return;
     }
