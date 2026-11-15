@@ -228,6 +228,48 @@ public sealed class AiRouterMultiTurnTests
         Assert.DoesNotContain(final.Answer.Citations, c => c.SourceUrl == PriorTurnCitation.SourceUrl);
     }
 
+    [Fact]
+    public async Task AnswerStreamingAsync_NewIntentFollowUp_DoesNotInheritPriorCitations()
+    {
+        // #780: "games similar to X" as a follow-up must not borrow the
+        // prior rules/manuals citations to clear NoCitation / confidence.
+        // Text-only agent output + new-intent question → refuse like cold.
+        var updates = new[]
+        {
+            MakeTextUpdate("Here are five machines similar to Medieval Madness."),
+        };
+        var (router, _, _, confidence) = BuildRouter(updates);
+        SetConfidencePass(confidence);
+
+        var rulesTurn = new ConversationTurn(
+            "what are the rules for Medieval Madness",
+            "Medieval Madness rules involve casting spell modes.",
+            [PriorTurnCitation]);
+
+        var followUpChunks = await CollectChunksAsync(
+            router,
+            "show me games similar to Medieval Madness",
+            [rulesTurn]);
+
+        var followUpFinal = Assert.IsType<AnswerChunk.Final>(followUpChunks[^1]);
+        Assert.True(followUpFinal.Answer.IsRefusal,
+            "New-intent follow-up without live retrieval must refuse — not inherit prior citations (#780).");
+        Assert.Equal(RefusalCategory.NoCitation, followUpFinal.Answer.RefusalCategory);
+
+        // Same question cold (null history) with the same text-only agent
+        // output must refuse with the same category — verdict consistency.
+        var (coldRouter, cache, _, coldConfidence) = BuildRouter(updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(coldConfidence);
+        var coldChunks = await CollectChunksAsync(
+            coldRouter,
+            "show me games similar to Medieval Madness",
+            history: null);
+        var coldFinal = Assert.IsType<AnswerChunk.Final>(coldChunks[^1]);
+        Assert.True(coldFinal.Answer.IsRefusal);
+        Assert.Equal(followUpFinal.Answer.RefusalCategory, coldFinal.Answer.RefusalCategory);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Non-streaming sibling
     // ─────────────────────────────────────────────────────────────────────
