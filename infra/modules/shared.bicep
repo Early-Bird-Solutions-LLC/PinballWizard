@@ -875,6 +875,15 @@ resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
+  // Serialize after the Foundry project. Cognitive Services parent-locks the
+  // account for child mutations — project write racing the first model
+  // deployment yields RequestConflict on accounts/projects/write (seen on
+  // pinwiz-shared-dev stack updates / ACA jobs detach cutover, 2026-11-15).
+  // Chat→heavy→embedding→Cohere already chain below; this extends the chain
+  // so the full Foundry subgraph is one serial path on the account.
+  dependsOn: [
+    foundryProject
+  ]
 }
 
 resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-09-01' = if (deployPhase2 && deployFoundryModelDeployments) {
