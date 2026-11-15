@@ -84,7 +84,7 @@ This category is structurally different from everything above — see §5.
 | Source | Data | Access |
 |---|---|---|
 | **IFPA (ifpapinball.com)** | World rankings, player profiles, WPPR points | Public API — Wizard tools per ADR-0067; not RAG-indexed |
-| **Match Play Events (matchplay.events)** | Live tournament brackets, standings, floor (arenas/rounds/games), event detail, in-event player lookup | API on active tournaments — Wizard tools per ADR-0061 / ADR-0062; not RAG-indexed |
+| **Match Play Events (matchplay.events)** | Live tournament brackets, standings, floor (arenas/rounds/games), event detail, in-event player lookup; Match Play Ratings (Glicko) | API on active tournaments + public Ratings CDN export — Wizard tools per ADR-0061 / ADR-0062 / ADR-0065; not RAG-indexed |
 | **Brackelope** | Alternative tournament platform with live data | API |
 | **Stern Army / Insider Connected** | Stern's official league rankings, machine-tied leaderboards, achievements | Investigate API surface |
 | **PAPA archive** | Historical tournament results | Mostly static, scrape once |
