@@ -136,6 +136,7 @@ public sealed class SearchCorpusToolTests
     [InlineData("manual", "Manual")]
     [InlineData("service_bulletin", "ServiceBulletin")]
     [InlineData("metadata_card", "MetadataCard")]
+    [InlineData("play_tip", "PlayTip")]
     [InlineData("MANUAL", "Manual")]
     [InlineData("SERVICE_BULLETIN", "ServiceBulletin")]
     [InlineData("Manual", "Manual")]
