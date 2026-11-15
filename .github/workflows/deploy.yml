@@ -315,10 +315,10 @@ jobs:
           - image: pinwiz-rag-indexer
             dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
             app_name_var: RAGINDEXER_APP_NAME
-          # CLI image — feeds all 22 ACA *Jobs* (scraper / linker / OPDB sync
+          # CLI image — feeds all 23 ACA *Jobs* (scraper / linker / OPDB sync
           # cron jobs), NOT an ACA *App*. This leg is build + push only; the
           # `deploy-jobs` job below then triggers an `az stack sub create` with
-          # the new :{sha} CLI tag, which repoints all 22 jobs atomically via
+          # the new :{sha} CLI tag, which repoints all 23 jobs atomically via
           # Bicep (every job uses the `cliImageTag` parameter). Using the stack
           # is the only path that satisfies the Deployment Stacks LOCKED
           # INVARIANT (CLAUDE.md #16, DLV-02) — `az containerapp job update` is
@@ -391,7 +391,7 @@ jobs:
             --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Run a Deployment Stack update with the freshly built CLI SHA so all 22 ACA
+  # Run a Deployment Stack update with the freshly built CLI SHA so all 23 ACA
   # Jobs are repointed in one IaC-governed, idempotent operation. This closes
   # the gap where `pinwiz-cli` images merged to main but jobs ran a 26-day-old
   # build until an operator manually re-ran Deploy-SharedResources.ps1 (#859).
@@ -657,7 +657,7 @@ jobs:
             --deny-settings-mode none \
             --yes
 
-      # A green stack run is not evidence the 22 jobs actually moved. #859 exists
+      # A green stack run is not evidence the 23 jobs actually moved. #859 exists
       # precisely because images stayed stale while everything reported success, so
       # this asserts the acceptance criterion rather than assuming it: every
       # pinwiz-job-* container must now reference the SHA just built. Without it,
