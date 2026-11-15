@@ -53,6 +53,15 @@ public sealed class OpdbOptions
         "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json";
 
     /// <summary>
+    /// Absolute URL of the Match Play OPDB V2 export. Used only to copy
+    /// design credits and the primary backglass onto machines already
+    /// mapped from <see cref="ExportUrl"/>. Empty skips that pass.
+    /// A configured URL that fails still fails the sync.
+    /// </summary>
+    public string V2ExportUrl { get; set; } =
+        "https://mp-data.sfo3.cdn.digitaloceanspaces.com/opdb-v2.json";
+
+    /// <summary>
     /// Bearer token for Match Play API requests. Not sent on CDN export
     /// fetches (public). Empty is allowed for export-only sync runs.
     /// </summary>
