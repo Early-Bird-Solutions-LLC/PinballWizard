@@ -1481,6 +1481,88 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Contains("floor", citation.Title, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ── getIfpaPlayer / searchIfpaPlayers (ADR-0067) — typed + JSON arms ──
+
+    [Fact]
+    public void Extract_IfpaPlayerProfileDto_AsTyped_ProducesCitation()
+    {
+        var dto = SampleIfpaPlayerProfileDto();
+        var response = BuildAgentResponseWithToolResult("getIfpaPlayer", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://www.ifpapinball.com/player.php?p=4", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.IfpaWppr, citation.SourceType);
+        Assert.Contains("Josh Sharpe", citation.Title, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);
+    }
+
+    [Fact]
+    public void Extract_IfpaPlayerProfileDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        var dto = SampleIfpaPlayerProfileDto();
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getIfpaPlayer", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://www.ifpapinball.com/player.php?p=4", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.IfpaWppr, citation.SourceType);
+    }
+
+    [Fact]
+    public void Extract_IfpaPlayerSearchResultDto_AsTyped_ProducesCitation()
+    {
+        var dto = new IfpaPlayerSearchResultDto(
+            Query: "Sharpe",
+            Country: "US",
+            State: "IL",
+            PublicUrl: "https://www.ifpapinball.com/player.php?p=4",
+            Attribution: "IFPA — https://www.ifpapinball.com/player.php?p=4",
+            Players:
+            [
+                new IfpaPlayerSearchHitDto(
+                    4, "Josh", "Sharpe", "Chicago", "IL", "United States", "US",
+                    10, 1234.56,
+                    "https://www.ifpapinball.com/player.php?p=4",
+                    "IFPA — https://www.ifpapinball.com/player.php?p=4"),
+            ]);
+        var response = BuildAgentResponseWithToolResult("searchIfpaPlayers", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal(CitationSourceType.IfpaWppr, citation.SourceType);
+        Assert.Contains("search", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_IfpaPlayerProfileDto_NotInSourceIndex()
+    {
+        var dto = SampleIfpaPlayerProfileDto();
+        var response = BuildAgentResponseWithToolResult("getIfpaPlayer", dto);
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        Assert.Single(citations);
+        Assert.Empty(sourceIndex);
+    }
+
+    private static IfpaPlayerProfileDto SampleIfpaPlayerProfileDto() =>
+        new(
+            PlayerId: 4,
+            FirstName: "Josh",
+            LastName: "Sharpe",
+            Initials: "JLS",
+            City: "Chicago",
+            StateProv: "IL",
+            CountryName: "United States",
+            CountryCode: "US",
+            IfpaRegistered: true,
+            PublicUrl: "https://www.ifpapinball.com/player.php?p=4",
+            Attribution: "IFPA — https://www.ifpapinball.com/player.php?p=4",
+            Main: new IfpaWpprStandingDto("MAIN", 10, 11, 1710.11, 1500, 15, 2311, 151, 40),
+            Women: null);
+
     private static MarketValueDto SampleMarketValueDto(string opdbId) =>
         new(MachineTitle: "Medieval Madness",
             MedianPrice: 5500m,
