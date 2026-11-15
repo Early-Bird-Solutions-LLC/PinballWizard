@@ -2,6 +2,7 @@
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Channels;
 using Azure;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -450,48 +451,38 @@ public sealed class AiRouter : IAiRouter
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
         var wizardModel = ResolveAgentModel(AgentName.Wizard);
 
-        // ── Live stream: aggregate then yield ─────────────────────────
-        // C# forbids yield inside a try/catch body (CS1626). The solution:
-        // AggregateStreamAsync collects all AgentResponseUpdates into
-        // (messages, streamChunks, 429Refusal?) without yielding — pure async
-        // aggregation with no iterator machinery. After it returns we yield
-        // the buffered chunks in a yield-safe context.
-        //
-        // streamChunks is ordered: ToolCallStarted / ToolCallCompleted /
-        // CitationArrived chunks are interleaved with TextDelta chunks in
-        // arrival order. This lets the client render progress breadcrumbs
-        // (tool calls, citations) as they are produced rather than waiting
-        // for the Final chunk.
-        //
-        // Trade-off: the first TextDelta reaches the client only after the
-        // full stream completes rather than as each token arrives. In the
-        // Wave 1 baseline the client saw a single TextDelta anyway (the stub
-        // called AnswerAsync then wrapped the whole text). Wave 2 PR-S2/S3
-        // preserves per-update granularity (multiple TextDelta / ToolCall /
-        // Citation events) while respecting the language constraint; true
-        // "token-by-token" delivery without buffering requires the streaming
-        // infrastructure to surface below the try/catch boundary, which would
-        // require a structural change to AggregateStreamAsync. Logged in
-        // DL-0003 for Wave 3 review.
+        // ── Live stream via Channel (#781) ─────────────────────────────
+        // C# forbids yield inside try/catch (CS1626). AggregateStreamAsync
+        // runs with try/catch and writes AnswerChunks to a Channel as the
+        // Foundry stream produces them; this iterator yields from the
+        // Channel (no try/catch). ToolCall*/TextDelta reach the SSE client
+        // during the agent run — not only after it completes. Final still
+        // waits for post-stream guardrails below.
         //
         // AgentResponseExtensions.ToAgentResponseAsync was not present in
         // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); it is available from
         // 1.5.0+. AggregateStreamAsync handles reconstruction inline to
         // preserve text-coalescing and streaming semantics (see comment above).
-        var (accumulatedMessages, streamChunks, refusalFromException) =
-            await AggregateStreamAsync(
-                    wizardAgent,
-                    question,
-                    trimmedHistory is null ? null : BuildConversationMessages(question, trimmedHistory),
-                    promptVersion,
-                    cancellationToken)
-                .ConfigureAwait(false);
+        var liveChunks = Channel.CreateUnbounded<AnswerChunk>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = true,
+            });
 
-        // Yield the buffered chunks (TextDelta, ToolCallStarted, ToolCallCompleted,
-        // CitationArrived) — safe to yield here because we are outside any
-        // try/catch block. Record first_token_ms on the first TextDelta.
+        var aggregateTask = AggregateStreamAsync(
+            wizardAgent,
+            question,
+            trimmedHistory is null ? null : BuildConversationMessages(question, trimmedHistory),
+            promptVersion,
+            liveChunks.Writer,
+            cancellationToken);
+
+        // Yield live chunks outside try/catch. Record first_token_ms on the
+        // first TextDelta — now wall-clock first visible token, not end-of-run.
         var firstTokenRecorded = false;
-        foreach (var chunk in streamChunks)
+        await foreach (var chunk in liveChunks.Reader.ReadAllAsync(cancellationToken)
+            .ConfigureAwait(false))
         {
             if (!firstTokenRecorded && chunk is AnswerChunk.TextDelta)
             {
@@ -504,6 +495,9 @@ public sealed class AiRouter : IAiRouter
 
             yield return chunk;
         }
+
+        var (accumulatedMessages, refusalFromException) =
+            await aggregateTask.ConfigureAwait(false);
 
         // ── 429 path: emit Refusal + Final, no cache write ────────────
         if (refusalFromException is not null)
@@ -569,11 +563,10 @@ public sealed class AiRouter : IAiRouter
         }
     }
 
-    // Aggregates a RunStreamingAsync call into (messages, streamChunks, 429Refusal?).
-    // Separated from AnswerStreamingAsync because C# forbids yield inside a
-    // try/catch body (CS1626). This method is a pure async aggregator — no
-    // iterator machinery — which lets the caller yield the buffered chunks
-    // in a safe context.
+    // Aggregates a RunStreamingAsync call into (messages, 429Refusal?) while
+    // writing AnswerChunks to chunkWriter as they arrive (#781). Separated
+    // from AnswerStreamingAsync because C# forbids yield inside try/catch
+    // (CS1626) — the Channel is the bridge.
     //
     // Returns:
     //   messages     — ChatMessages reconstructed from the stream, with
@@ -581,14 +574,11 @@ public sealed class AiRouter : IAiRouter
     //                  ChatMessage per run (see text-coalescing note below).
     //                  FunctionResultContent entries are preserved verbatim
     //                  so the citation extractor can iterate them.
-    //   streamChunks — AnswerChunk events in arrival order: TextDelta (per
-    //                  non-empty text update), ToolCallStarted (per first
-    //                  FunctionCallContent sighting), ToolCallCompleted (per
-    //                  FunctionResultContent), CitationArrived (per citation
-    //                  extracted from searchCorpus results). Caller yields
-    //                  these after AggregateStreamAsync returns.
     //   refusal      — Non-null only when a 429 was caught; caller emits
     //                  Refusal + Final and skips the guardrail pipeline.
+    //
+    // Completes chunkWriter in finally (or with the exception on non-429
+    // failures) so the caller's ReadAllAsync terminates.
     //
     // WHY text coalescing matters (bug AB#259):
     //   AgentResponse.Text (Microsoft.Agents.AI 1.4.0) concatenates the text
@@ -611,33 +601,29 @@ public sealed class AiRouter : IAiRouter
     //   becomes a single ChatMessage, and AgentResponse.Text has at most one
     //   separator between the text run and any subsequent non-text content.
     //
-    //   TextDelta chunk emission is UNCHANGED — the live token-by-token stream
-    //   to the browser still fires per update; only the reconstructed message
+    //   TextDelta chunk emission writes to chunkWriter per update — the live
+    //   token-by-token stream to the browser; only the reconstructed message
     //   granularity changes. Tool-call dedup, citation extraction, and the 429
     //   catch are all unaffected.
     //
-    // Wave 2 PR-S3 adds ToolCall/Citation chunk emission and interleaves them
-    // with TextDelta chunks in streamChunks. The deduplication set (seenCallIds)
-    // prevents double-emission when multiple updates carry the same call ID
-    // (e.g., function-call bookkeeping updates that repeat the call ID across
-    // multiple streaming frames).
+    // Wave 2 PR-S3 ToolCall/Citation chunks are interleaved with TextDelta on
+    // the Channel in arrival order. The deduplication set (seenCallIds)
+    // prevents double-emission when multiple updates carry the same call ID.
     //
-    // See DL-0003: true per-token delivery (no buffering) requires surfacing
-    // the stream below the try/catch boundary — deferred to Wave 3.
     // conversationMessages: non-null only for multi-turn asks — the full
     // prior-turn ChatMessage list with the current question appended (built
     // by BuildConversationMessages). Null selects the single-string overload
     // so single-shot behavior is byte-for-byte unchanged.
-    private async Task<(List<ChatMessage> messages, List<AnswerChunk> streamChunks, WizardAnswer? refusal)>
+    private async Task<(List<ChatMessage> messages, WizardAnswer? refusal)>
         AggregateStreamAsync(
             AIAgent wizardAgent,
             string question,
             IReadOnlyList<ChatMessage>? conversationMessages,
             string promptVersion,
+            ChannelWriter<AnswerChunk> chunkWriter,
             CancellationToken cancellationToken)
     {
         var messages = new List<ChatMessage>();
-        var streamChunks = new List<AnswerChunk>();
         WizardAnswer? refusal = null;
 
         // Per-call-ID deduplication for ToolCallStarted / ToolCallCompleted.
@@ -726,17 +712,17 @@ public sealed class AiRouter : IAiRouter
                             if (!string.IsNullOrEmpty(call.CallId)
                                 && seenCallIds.Add(call.CallId))
                             {
-                                streamChunks.Add(new AnswerChunk.ToolCallStarted(
+                                await chunkWriter.WriteAsync(new AnswerChunk.ToolCallStarted(
                                     ToolName: call.Name ?? string.Empty,
-                                    ToolCallId: call.CallId));
+                                    ToolCallId: call.CallId), cancellationToken).ConfigureAwait(false);
                             }
                             else if (string.IsNullOrEmpty(call.CallId))
                             {
                                 // No call ID: emit ToolCallStarted without dedup
                                 // (cannot correlate to a Completed event).
-                                streamChunks.Add(new AnswerChunk.ToolCallStarted(
+                                await chunkWriter.WriteAsync(new AnswerChunk.ToolCallStarted(
                                     ToolName: call.Name ?? string.Empty,
-                                    ToolCallId: null));
+                                    ToolCallId: null), cancellationToken).ConfigureAwait(false);
                             }
                         }
                         else if (content is FunctionResultContent result)
@@ -748,19 +734,19 @@ public sealed class AiRouter : IAiRouter
                                 && completedCallIds.Add(result.CallId))
                             {
                                 var succeeded = !IsToolCallError(result.Result);
-                                streamChunks.Add(new AnswerChunk.ToolCallCompleted(
+                                await chunkWriter.WriteAsync(new AnswerChunk.ToolCallCompleted(
                                     ToolName: ResolveToolName(result.CallId, result.Result),
                                     ToolCallId: result.CallId,
-                                    Succeeded: succeeded));
+                                    Succeeded: succeeded), cancellationToken).ConfigureAwait(false);
                             }
                             else if (string.IsNullOrEmpty(result.CallId))
                             {
                                 // No call ID: emit ToolCallCompleted without dedup.
                                 var succeeded = !IsToolCallError(result.Result);
-                                streamChunks.Add(new AnswerChunk.ToolCallCompleted(
+                                await chunkWriter.WriteAsync(new AnswerChunk.ToolCallCompleted(
                                     ToolName: ResolveToolName(result.CallId, result.Result),
                                     ToolCallId: null,
-                                    Succeeded: succeeded));
+                                    Succeeded: succeeded), cancellationToken).ConfigureAwait(false);
                             }
 
                             // CitationArrived emission: extract citations from
@@ -783,7 +769,7 @@ public sealed class AiRouter : IAiRouter
                                     .ExtractFromMessages([singleMsg]);
                                 foreach (var citation in optimisticCitations)
                                 {
-                                    streamChunks.Add(new AnswerChunk.CitationArrived(citation));
+                                    await chunkWriter.WriteAsync(new AnswerChunk.CitationArrived(citation), cancellationToken).ConfigureAwait(false);
                                 }
                             }
                         }
@@ -864,7 +850,7 @@ public sealed class AiRouter : IAiRouter
                         : stripped;
 
                     if (!string.IsNullOrEmpty(visible))
-                        streamChunks.Add(new AnswerChunk.TextDelta(visible));
+                        await chunkWriter.WriteAsync(new AnswerChunk.TextDelta(visible), cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -879,7 +865,7 @@ public sealed class AiRouter : IAiRouter
             {
                 var flushedCarry = InlineCitationReconciler.StripCiteTokens(citeCarry);
                 if (!string.IsNullOrEmpty(flushedCarry))
-                    streamChunks.Add(new AnswerChunk.TextDelta(flushedCarry));
+                    await chunkWriter.WriteAsync(new AnswerChunk.TextDelta(flushedCarry), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
@@ -924,10 +910,16 @@ public sealed class AiRouter : IAiRouter
                 ex,
                 "AiRouter failed invoking Wizard agent (streaming) for normalized question (PromptVersion={PromptVersion}).",
                 promptVersion);
+            chunkWriter.TryComplete(ex);
             throw;
         }
+        finally
+        {
+            // Idempotent if already completed with an exception above.
+            chunkWriter.TryComplete();
+        }
 
-        return (messages, streamChunks, refusal);
+        return (messages, refusal);
     }
 
     // Returns true when the tool-call result indicates an error condition.
