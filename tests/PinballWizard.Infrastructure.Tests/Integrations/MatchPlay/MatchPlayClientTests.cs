@@ -103,10 +103,10 @@ public sealed class MatchPlayClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetTournamentGamesAsync_ParsesDataArray()
+    public async Task GetTournamentGamesAsync_UsesGamesApiWithTournamentsFilter()
     {
         _handler.Map(
-            "https://api.matchplay.events/api/tournaments/42/games?limit=50&status=started",
+            "https://api.matchplay.events/api/games?tournaments=42&page=1&status=started",
             """
             {"data":[{"gameId":9,"roundId":1,"tournamentId":42,"arenaId":3,"status":"started","bye":false,"playerIds":[7,8],"arena":{"arenaId":3,"name":"Godzilla","opdbId":"G33YF"}}]}
             """);
@@ -116,6 +116,26 @@ public sealed class MatchPlayClientTests : IDisposable
         Assert.Single(games);
         Assert.Equal(9, games[0].GameId);
         Assert.Equal("Godzilla", games[0].Arena!.Name);
+    }
+
+    [Fact]
+    public async Task GetTournamentGamesAsync_PagesUntilShortPage()
+    {
+        var page1 = string.Join(",", Enumerable.Range(1, 25).Select(i =>
+            $"{{\"gameId\":{i},\"tournamentId\":42,\"status\":\"started\",\"playerIds\":[1]}}"));
+        _handler.Map(
+            "https://api.matchplay.events/api/games?tournaments=42&page=1&status=started",
+            $"{{\"data\":[{page1}]}}");
+        _handler.Map(
+            "https://api.matchplay.events/api/games?tournaments=42&page=2&status=started",
+            """
+            {"data":[{"gameId":26,"tournamentId":42,"status":"started","playerIds":[1]}]}
+            """);
+
+        var games = await _client.GetTournamentGamesAsync(42, status: "started");
+
+        Assert.Equal(26, games.Count);
+        Assert.Equal(26, games[^1].GameId);
     }
 
     [Fact]

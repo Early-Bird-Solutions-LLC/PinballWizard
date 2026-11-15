@@ -123,41 +123,66 @@ public sealed class MatchPlayClient : IMatchPlayClient
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tournamentId);
 
-        var qs = new StringBuilder();
-        if (!string.IsNullOrWhiteSpace(status))
+        // Multi-player games live at GET /api/games with a tournaments filter
+        // (Match Play handbook Games API). The nested
+        // /api/tournaments/{id}/games route is not the documented list surface
+        // and can 404 — treating that as "empty floor" would lie to the Wizard.
+        // Pagination uses `page` (not `limit`; limit is for single-player games).
+        var results = new List<MatchPlayGameWireDto>();
+        const int maxPages = 3;
+        for (var page = 1; page <= maxPages; page++)
         {
-            qs.Append("&status=").Append(Uri.EscapeDataString(status.Trim()));
+            var qs = new StringBuilder();
+            qs.Append("tournaments=").Append(tournamentId);
+            qs.Append("&page=").Append(page);
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                qs.Append("&status=").Append(Uri.EscapeDataString(status.Trim()));
+            }
+
+            if (playerId is > 0)
+            {
+                qs.Append("&player=").Append(playerId.Value);
+            }
+
+            if (arenaId is > 0)
+            {
+                qs.Append("&arena=").Append(arenaId.Value);
+            }
+
+            if (roundId is > 0)
+            {
+                qs.Append("&round=").Append(roundId.Value);
+            }
+
+            var url = $"api/games?{qs}";
+            using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                break;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content
+                .ReadFromJsonAsync<MatchPlayListEnvelopeDto<MatchPlayGameWireDto>>(
+                    JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+
+            var pageRows = body?.Data ?? [];
+            if (pageRows.Count == 0)
+            {
+                break;
+            }
+
+            results.AddRange(pageRows);
+            // Handbook default page size is 25 — fewer than that means last page.
+            if (pageRows.Count < 25)
+            {
+                break;
+            }
         }
 
-        if (playerId is > 0)
-        {
-            qs.Append("&player=").Append(playerId.Value);
-        }
-
-        if (arenaId is > 0)
-        {
-            qs.Append("&arena=").Append(arenaId.Value);
-        }
-
-        if (roundId is > 0)
-        {
-            qs.Append("&round=").Append(roundId.Value);
-        }
-
-        // Prefer tournament-scoped games endpoint (includes result data).
-        var url = $"api/tournaments/{tournamentId}/games?limit=50{qs}";
-        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            return [];
-        }
-
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content
-            .ReadFromJsonAsync<MatchPlayListEnvelopeDto<MatchPlayGameWireDto>>(JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
-
-        return body?.Data ?? [];
+        return results;
     }
 
     private static string BuildTournamentUrl(int tournamentId, MatchPlayTournamentInclude include)
