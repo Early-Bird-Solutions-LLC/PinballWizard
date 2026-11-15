@@ -26,7 +26,7 @@ Before starting H1, verify all of the following. If any check fails, fix it firs
 | Logged into the personal Earlybird tenant | `az account show --query "{tid:tenantId,sid:id,user:user.name}" -o jsonc` | `tid=9793cd0f-2b27-4757-9986-1f7f1e35864a`, `sid=b1f33f17-74a9-4ecc-b46c-c4f31776b840` (pinwiz.ai). The Bicep deploy script will hard-fail otherwise (ADR-0010 guard). |
 | Bicep CLI present | `az bicep version` | Auto-installed by `az`; reinstall via `az bicep install` if missing |
 | PowerShell 7+ shell (NOT Git-Bash) | `$PSVersionTable.PSVersion` | ≥ 7.0. See § Known gotchas — Git-Bash mangles Cosmos resource ID env vars (CLAUDE.md § Locked invariants #6). |
-| `dotnet` SDK floor | `dotnet --version` | Matches `global.json` floor (currently 10.0.200) |
+| `dotnet` SDK floor | `dotnet --version` | Matches `global.json` floor (currently 10.0.404) |
 | Build green | `dotnet build PinballWizard.slnx -p:TreatWarningsAsErrors=true` | 0 warnings, 0 errors |
 | Tests green | `dotnet test PinballWizard.slnx` | All passing |
 | Identity check | `git log -1 --format='%an <%ae>'` | Personal noreply only — never the work email (CLAUDE.md § Locked invariants #5) |
