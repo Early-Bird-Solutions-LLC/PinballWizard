@@ -11,12 +11,12 @@ namespace PinballWizard.Infrastructure.Scraping.Spooky;
 /// <summary>
 /// Spooky Pinball support-page scraper. Discovers per-game PDF documents
 /// (rule sheets, manuals, coil/switch charts, board-layout diagrams) from
-/// Spooky's game-support sub-pages and hub page via the WordPress REST API
-/// and direct HTML fetch.
+/// Spooky's game-support sub-pages and hub page via the WordPress REST API.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two complementary discovery paths run on every scrape:
+/// Two complementary discovery paths run on every scrape — both WP REST
+/// (machine-consumer metadata first; no HTML fetch of <c>/game-support/</c>):
 /// </para>
 /// <list type="number">
 ///   <item><description>
@@ -25,16 +25,22 @@ namespace PinballWizard.Infrastructure.Scraping.Spooky;
 ///     WP REST API. Covers Halloween, Ultraman, and any future WP sub-pages.
 ///   </description></item>
 ///   <item><description>
-///     <b>Hub page direct path</b>: fetches <see cref="SpookyOptions.GameSupportHubPath"/>
-///     as raw HTML and extracts PDF links from it. Covers Rick and Morty, ACNC,
+///     <b>Hub page WP REST path</b>: fetches the hub page itself by id
+///     (<c>/wp-json/wp/v2/pages/{GameSupportParentPageId}</c>) and extracts PDF
+///     links from <c>content.rendered</c>. Covers Rick and Morty, ACNC,
 ///     Scooby-Doo, Texas Chainsaw Massacre, Looney Tunes, Evil Dead, Beetlejuice,
-///     and future titles that Spooky now embeds directly on the hub page rather
-///     than creating new WP child pages (pattern observed 2026-07).
+///     and future titles that Spooky embeds directly on the hub page rather
+///     than creating new WP child pages (pattern observed 2026-07). Avoids the
+///     public HTML <c>/game-support/</c> route, which Cloudflare challenges
+///     from datacenter IPs (HTTP 403 <c>cf-mitigated: challenge</c>).
 ///   </description></item>
 /// </list>
 /// <para>
 /// Both paths use <see cref="PoliteScraperBase"/> for all HTTP; deduplication
-/// is handled by the Cosmos upsert (same PDF URL → same DocumentId).
+/// is handled by the Cosmos upsert (same PDF URL → same DocumentId). A
+/// <see cref="PolitenessException"/> (including
+/// <see cref="PolitenessViolation.BotChallenge"/>) always propagates — never
+/// masked as an empty/partial success.
 /// </para>
 /// </remarks>
 public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
@@ -116,18 +122,18 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
             }
         }
 
-        // --- Path 2: Hub page direct HTML fetch ---
-        // Spooky now embeds PDF links for newer titles directly on the hub page
-        // rather than creating WP child pages (observed 2026-07). This pass
-        // catches Rick & Morty, ACNC, Scooby-Doo, Texas Chainsaw, Looney Tunes,
-        // Evil Dead, Beetlejuice, and any future titles added the same way.
+        // --- Path 2: Hub page via WP REST (never HTML /game-support/) ---
+        // Spooky embeds PDF links for newer titles directly on the hub page
+        // rather than creating WP child pages (observed 2026-07). Fetching the
+        // page by id through WP REST keeps discovery on the machine-consumer
+        // path and sidesteps Cloudflare challenges on the public HTML route.
         if (cancellationToken.IsCancellationRequested) yield break;
 
-        var hubUrl = new Uri(new Uri(_options.BaseUrl), _options.GameSupportHubPath);
+        string hubDiscoveryUrl;
         List<DiscoveredLink> hubLinks;
         try
         {
-            hubLinks = await ScrapeHubPageAsync(hubUrl, cancellationToken).ConfigureAwait(false);
+            (hubDiscoveryUrl, hubLinks) = await ScrapeHubPageAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (PolitenessException)
         {
@@ -140,14 +146,15 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
         catch (Exception ex)
         {
             Logger.LogError(ex,
-                "Spooky support-page: hub-page HTML fetch failed ({Url}); hub-page PDFs skipped for this run.",
-                hubUrl);
+                "Spooky support-page: hub-page WP REST fetch failed (page id={ParentId}); hub-page PDFs skipped for this run.",
+                _options.GameSupportParentPageId);
+            hubDiscoveryUrl = new Uri(new Uri(_options.BaseUrl), _options.GameSupportHubPath).ToString();
             hubLinks = [];
         }
 
         Logger.LogInformation(
             "Spooky support-page: {Count} PDF link(s) found on hub page {Url}",
-            hubLinks.Count, hubUrl);
+            hubLinks.Count, hubDiscoveryUrl);
 
         foreach (var link in hubLinks)
         {
@@ -156,7 +163,7 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
             {
                 Link = link,
                 SourceType = SourceType.SpookyPinballSupportPage,
-                DiscoveryUrl = hubUrl.ToString(),
+                DiscoveryUrl = hubDiscoveryUrl,
                 DiscoveryContext = "Spooky Pinball Game Support Hub",
             };
         }
@@ -180,17 +187,31 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
     }
 
     /// <summary>
-    /// Fetches the Game Support hub page as raw HTML and extracts PDF links
-    /// directly from it. Spooky's newer-title manuals (2022+) are embedded
-    /// directly on the hub rather than on WP child pages.
-    /// The game slug is inferred from the PDF filename using
-    /// <see cref="SpookySupportPageExtractor.DeriveSlugFromFilename"/>.
+    /// Fetches the Game Support hub page via WP REST by page id and extracts
+    /// PDF links from <c>content.rendered</c>. Never hits the public HTML
+    /// <see cref="SpookyOptions.GameSupportHubPath"/> route.
     /// </summary>
-    private async Task<List<DiscoveredLink>> ScrapeHubPageAsync(Uri hubUrl, CancellationToken cancellationToken)
+    private async Task<(string DiscoveryUrl, List<DiscoveredLink> Links)> ScrapeHubPageAsync(
+        CancellationToken cancellationToken)
     {
-        Logger.LogInformation("Spooky support-page: fetching hub-page HTML {Url}", hubUrl);
-        var html = await GetStringPolitelyAsync(_httpClient, hubUrl, cancellationToken).ConfigureAwait(false);
-        return SpookySupportPageExtractor.ExtractHubPagePdfLinks(html, hubUrl.ToString());
+        var url = BuildHubPageUrl();
+        Logger.LogInformation("Spooky support-page: reading hub page via WP REST {Url}", url);
+
+        var body = await GetStringPolitelyAsync(_httpClient, url, cancellationToken).ConfigureAwait(false);
+        var page = SpookyWpPagesClient.ParsePageJson(body);
+        if (page is null)
+        {
+            throw new InvalidOperationException(
+                $"Spooky hub page id {_options.GameSupportParentPageId} returned an empty or unparseable WP REST body from {url}. " +
+                "Failing closed rather than inventing hub content.");
+        }
+
+        var discoveryUrl = !string.IsNullOrWhiteSpace(page.Link)
+            ? page.Link
+            : new Uri(new Uri(_options.BaseUrl), _options.GameSupportHubPath).ToString();
+
+        var links = SpookySupportPageExtractor.ExtractHubPagePdfLinks(page.Content.Rendered, discoveryUrl);
+        return (discoveryUrl, links);
     }
 
     private List<DiscoveredLink> TryExtractLinks(SpookyPageRaw page)
@@ -222,6 +243,14 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
         const string fields = "id,slug,link,parent,modified,title,content";
         var path = _options.PagesEndpointPath
             + $"?parent={_options.GameSupportParentPageId}&per_page={_options.PageSize}&_fields={fields}";
+        return new Uri(new Uri(_options.BaseUrl), path);
+    }
+
+    private Uri BuildHubPageUrl()
+    {
+        const string fields = "id,slug,link,parent,modified,title,content";
+        var path = _options.PagesEndpointPath.TrimEnd('/')
+            + $"/{_options.GameSupportParentPageId}?_fields={fields}";
         return new Uri(new Uri(_options.BaseUrl), path);
     }
 }

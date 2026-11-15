@@ -173,12 +173,12 @@ public static partial class SpookySupportPageExtractor
     }
 
     /// <summary>
-    /// Extracts PDF links from the Game Support hub page's raw HTML.
-    /// Used for Spooky's newer-title (2022+) pattern where manuals are
-    /// linked directly on the hub rather than on WP child pages.
-    /// Game slug is derived from the PDF filename.
+    /// Extracts PDF links from the Game Support hub page's rendered content
+    /// (WP REST <c>content.rendered</c>). Used for Spooky's newer-title
+    /// (2022+) pattern where manuals are linked directly on the hub rather
+    /// than on WP child pages. Game slug is derived from the PDF filename.
     /// </summary>
-    /// <param name="html">Raw HTML of the /game-support/ hub page.</param>
+    /// <param name="html">Rendered HTML of the hub page (from WP REST).</param>
     /// <param name="hubPageUrl">Hub page URL used as the DiscoveryContext.</param>
     public static List<DiscoveredLink> ExtractHubPagePdfLinks(string html, string hubPageUrl)
     {
@@ -242,19 +242,27 @@ public static partial class SpookySupportPageExtractor
     /// "ACNC-Manual" → "acnc"
     /// "Halloween-and-Ultraman-Manual" → "halloween"
     /// "Beetlejuice-Manual_05162026" → "beetlejuice"
+    /// "Beetlejuice-Manual_26JUL2026" → "beetlejuice"
     /// </example>
     public static string DeriveSlugFromFilename(string? filename)
     {
         if (string.IsNullOrWhiteSpace(filename)) return "unknown";
 
-        // Strip date stamps like "_04262025" at the end.
-        var clean = Regex.Replace(filename, @"_\d{6,8}$", string.Empty, RegexOptions.CultureInvariant);
+        // Strip date stamps like "_04262025" or "_26JUL2026" at the end
+        // (Spooky hub filenames use both numeric and day-month-year forms).
+        var clean = Regex.Replace(
+            filename,
+            @"_(?:\d{6,8}|\d{1,2}[A-Za-z]{3}\d{4})$",
+            string.Empty,
+            RegexOptions.CultureInvariant);
 
-        // Strip common manual-related suffixes (case-insensitive).
+        // Strip common document-type suffixes (case-insensitive). Includes
+        // hub-page rule sheets ("-Rules" / "-Rule") so game slug stays clean.
         string[] suffixes =
         [
             "-Maintenance-Manual", "-Game-Manual", "-Manual",
-            "-Update-Process", "-Switch-Positions", "-Coil-Chart", "-Board-Layout",
+            "-Update-Process", "-Switch-Positions", "-Switch-Chart",
+            "-Coil-Chart", "-Board-Layout", "-Rules", "-Rule",
         ];
         foreach (var suffix in suffixes)
         {

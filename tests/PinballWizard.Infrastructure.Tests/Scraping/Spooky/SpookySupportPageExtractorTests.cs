@@ -333,4 +333,39 @@ public sealed class SpookySupportPageExtractorTests
         Assert.ThrowsAny<ArgumentException>(() => SpookySupportPageExtractor.DeriveGameSlug("  "));
         Assert.ThrowsAny<ArgumentException>(() => SpookySupportPageExtractor.DeriveGameSlug(string.Empty));
     }
+
+    // ── DeriveSlugFromFilename / ExtractHubPagePdfLinks ──────────────────────
+
+    [Theory]
+    [InlineData("ACNC-Manual", "acnc")]
+    [InlineData("Halloween-and-Ultraman-Manual", "halloween")] // shared title → first game
+    [InlineData("Rick-and-Morty-Manual", "rick")] // "-and-" split is intentional (same helper)
+    [InlineData("Beetlejuice-Manual_05162026", "beetlejuice")]
+    [InlineData("Beetlejuice-Manual_26JUL2026", "beetlejuice")]
+    [InlineData("Beetlejuice-Rules", "beetlejuice")]
+    [InlineData("The-Evil-Dead-Game-Manual_04262025", "the-evil-dead")]
+    public void DeriveSlugFromFilename_StripsManualAndDateSuffixes(string filename, string expected)
+    {
+        Assert.Equal(expected, SpookySupportPageExtractor.DeriveSlugFromFilename(filename));
+    }
+
+    [Fact]
+    public void ExtractHubPagePdfLinks_AnchorPdfs_DeriveSlugFromFilename()
+    {
+        // Mirrors WP REST content.rendered for the Game Support hub (id 476):
+        // real <a href> anchors with absolute spookypinball.com upload URLs.
+        const string html = """
+            <a href="https://www.spookypinball.com/wp-content/uploads/2026/08/Beetlejuice-Manual_26JUL2026.pdf">Manual</a>
+            <a href="https://www.spookypinball.com/wp-content/uploads/2026/08/Beetlejuice-Rules.pdf">Rules</a>
+            """;
+
+        var links = SpookySupportPageExtractor.ExtractHubPagePdfLinks(
+            html, "https://www.spookypinball.com/game-support/");
+
+        Assert.Equal(2, links.Count);
+        Assert.All(links, l => Assert.Equal("Spooky Pinball Game Support Hub", l.DiscoveryContext));
+        Assert.All(links, l => Assert.Equal("beetlejuice", l.GameSlug));
+        Assert.Contains(links, l => l.LinkText == "Manual");
+        Assert.Contains(links, l => l.LinkText == "Rules");
+    }
 }

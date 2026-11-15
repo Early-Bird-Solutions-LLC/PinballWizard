@@ -68,18 +68,21 @@ public sealed class SpookyOptions
     /// As of 2026-07, Spooky has migrated newer game manuals (Rick and Morty,
     /// ACNC, Scooby-Doo, Texas Chainsaw Massacre, Looney Tunes, Evil Dead,
     /// Beetlejuice) to PDF links embedded directly on the hub page rather than
-    /// creating new WP child pages. Both discovery paths run on every scrape:
-    /// WP REST child-page discovery (this ID) + direct hub-page HTML fetch
-    /// (see <see cref="GameSupportHubPath"/>).
+    /// creating new WP child pages. Both discovery paths run on every scrape
+    /// via WP REST only: child pages of this ID, plus the hub page itself
+    /// fetched as <c>/wp-json/wp/v2/pages/{id}</c>. The public HTML path
+    /// <see cref="GameSupportHubPath"/> is provenance-only — never fetched —
+    /// because Cloudflare challenges that HTML route from datacenter IPs.
     /// </remarks>
     [Range(1, int.MaxValue)]
     public int GameSupportParentPageId { get; set; } = 476;
 
     /// <summary>
-    /// Relative path of the Game Support hub page. Fetched directly on every
-    /// scrape run to discover PDF links embedded on the hub page itself —
-    /// Spooky's current pattern for newer-title manuals (2022+). Complements
-    /// the WP REST child-page discovery driven by <see cref="GameSupportParentPageId"/>.
+    /// Relative path of the Game Support hub page. Used only as a fallback
+    /// DiscoveryUrl when the WP REST hub page object omits <c>link</c>.
+    /// Hub PDF discovery fetches the page by <see cref="GameSupportParentPageId"/>
+    /// via WP REST — never this HTML path — so Cloudflare challenges on
+    /// <c>/game-support/</c> cannot take the scraper down or force a DOM fallback.
     /// </summary>
     public string GameSupportHubPath { get; set; } = "/game-support/";
 }

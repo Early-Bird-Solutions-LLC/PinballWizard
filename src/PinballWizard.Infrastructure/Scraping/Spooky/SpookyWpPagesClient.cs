@@ -107,6 +107,27 @@ public sealed class SpookyWpPagesClient : PoliteScraperBase
     }
 
     /// <summary>
+    /// Parses a WP REST single-page response body
+    /// (<c>/wp-json/wp/v2/pages/{id}</c>). Returns <c>null</c> when the
+    /// body is empty or not a page object — callers must treat null as
+    /// failure rather than inventing hub content.
+    /// </summary>
+    public static SpookyPageRaw? ParsePageJson(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<SpookyPageRaw>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Returns the subset of <paramref name="pages"/> whose content
     /// contains at least one S3 URL at <paramref name="s3Host"/> AND
     /// whose S3 URLs share one or two distinct first-path-segment slugs

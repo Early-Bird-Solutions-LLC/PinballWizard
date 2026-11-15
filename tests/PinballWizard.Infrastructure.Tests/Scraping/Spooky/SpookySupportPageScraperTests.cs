@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
@@ -13,16 +14,18 @@ namespace PinballWizard.Infrastructure.Tests.Scraping.Spooky;
 /// <summary>
 /// Scraper-pipeline integration tests for <see cref="SpookySupportPageScraper"/>.
 /// Exercises the full <see cref="ISourceScraper.ScrapeAsync"/> flow (WP REST
-/// child-page discovery → per-page PDF extraction → yield) against a fake
-/// <see cref="IPolitenessGate"/> and a queueing
+/// child-page discovery → per-page PDF extraction → hub WP REST → yield)
+/// against a fake <see cref="IPolitenessGate"/> and a queueing
 /// <see cref="HttpMessageHandler"/>. Pins behaviour the unit-test surface
 /// cannot reach: provenance-field propagation, per-page failure isolation,
-/// firmware-only page skipping, and polite-scraping invariants.
+/// firmware-only page skipping, polite-scraping invariants, and BotChallenge
+/// fail-closed (no HTML <c>/game-support/</c> fallback).
 /// </summary>
 /// <remarks>
-/// Fixtures derived from the 2026-06-25 recon of Spooky's Game Support hub.
-/// The WP REST endpoint used is:
-///   /wp-json/wp/v2/pages?parent=476&amp;per_page=100&amp;_fields=id,slug,link,parent,modified,title,content
+/// Fixtures derived from the 2026-06-25 recon of Spooky's Game Support hub
+/// and the 2026-11-15 Cloudflare 403 audit. The WP REST endpoints used are:
+///   /wp-json/wp/v2/pages?parent=476&amp;per_page=100&amp;_fields=…
+///   /wp-json/wp/v2/pages/476?_fields=…
 /// </remarks>
 public sealed class SpookySupportPageScraperTests
 {
@@ -54,7 +57,7 @@ public sealed class SpookySupportPageScraperTests
 
         var (scraper, gate, handler) = BuildScraper(h => h
             .MapJson(BuildSupportPagesUrl(), supportPagesJson)
-            .MapHtml($"{BaseUrl}/game-support/", "<html><body>no hub PDFs</body></html>"));
+            .MapJson(BuildHubPageUrl(), BuildEmptyHubPageJson()));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -88,13 +91,18 @@ public sealed class SpookySupportPageScraperTests
         Assert.Contains(items, i => i.Link!.LinkText == "Board Layout");
 
         // Politeness invariants: every fetched URL passed through the gate.
+        // Child-page list + hub page by id — never the public HTML hub path.
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.DoesNotContain(handler.Requests, r =>
+            r.AbsolutePath.Equals("/game-support/", StringComparison.OrdinalIgnoreCase)
+            && !r.AbsolutePath.Contains("wp-json", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(handler.Requests.Count, gate.Acquired.Count);
         Assert.Equal(handler.Requests.Count, gate.Reported.Count);
         Assert.Equal(handler.Requests.Count, gate.LeasesDisposed);
-        Assert.All(gate.Reported, r => Assert.Equal(System.Net.HttpStatusCode.OK, r.Status));
+        Assert.All(gate.Reported, r => Assert.Equal(HttpStatusCode.OK, r.Status));
     }
 
-    // ── Hub-page direct discovery (Path 2) ───────────────────────────────────
+    // ── Hub-page WP REST discovery (Path 2) ──────────────────────────────────
 
     [Fact]
     public async Task ScrapeAsync_HubPageWithPdfs_YieldsLinksWithHubPageProvenance()
@@ -102,15 +110,12 @@ public sealed class SpookySupportPageScraperTests
         // No WP child pages — only the hub page itself carries PDFs, matching
         // Spooky's 2026-07 pattern for newer titles (Beetlejuice, Rick and
         // Morty, etc. — see SpookySupportPageScraper's Path 2 doc comment).
-        var hubHtml = """
-            <html><body>
-            <a href="/wp-content/uploads/2026/07/Beetlejuice-Manual.pdf">Owner's Manual</a>
-            </body></html>
-            """;
+        var hubJson = BuildHubPageJson(
+            """<a href="/wp-content/uploads/2026/07/Beetlejuice-Manual.pdf">Owner's Manual</a>""");
 
         var (scraper, gate, handler) = BuildScraper(h => h
             .MapJson(BuildSupportPagesUrl(), "[]")
-            .MapHtml($"{BaseUrl}/game-support/", hubHtml));
+            .MapJson(BuildHubPageUrl(), hubJson));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -130,9 +135,12 @@ public sealed class SpookySupportPageScraperTests
         Assert.Equal("beetlejuice", item.Link!.GameSlug);
         Assert.Equal("Owner's Manual", item.Link!.LinkText);
 
-        // Politeness invariants: WP-REST discovery (empty) + hub-page fetch,
-        // both succeed, so every request is reported.
+        // Politeness invariants: WP-REST children (empty) + hub page by id.
+        // Must not fetch the public HTML /game-support/ route.
         Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains(handler.Requests, r => r.AbsoluteUri.StartsWith(BuildHubPageUrl(), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(handler.Requests, r =>
+            string.Equals(r.AbsoluteUri, $"{BaseUrl}/game-support/", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(handler.Requests.Count, gate.Acquired.Count);
         Assert.Equal(handler.Requests.Count, gate.Reported.Count);
         Assert.Equal(handler.Requests.Count, gate.LeasesDisposed);
@@ -141,11 +149,11 @@ public sealed class SpookySupportPageScraperTests
     [Fact]
     public async Task ScrapeAsync_HubPageFetchFails_NonFatal_ChildPagePdfsStillYielded()
     {
-        // The hub-page fetch (Path 2) is deliberately left unmapped in this
+        // The hub-page WP REST fetch (Path 2) is deliberately left unmapped in this
         // fixture, so QueueingHttpMessageHandler throws UnexpectedRequestException
         // when the scraper attempts it. Per SpookySupportPageScraper.ScrapeAsync's
-        // Path 2 catch block, this is non-fatal: the run continues and the
-        // Path 1 (WP child-page) results still yield in full.
+        // Path 2 catch block, this is non-fatal for non-PolitenessException:
+        // the run continues and the Path 1 (WP child-page) results still yield.
         var supportPagesJson = $$"""
             [
               {
@@ -162,7 +170,7 @@ public sealed class SpookySupportPageScraperTests
             ]
             """;
 
-        // Deliberately no .MapHtml for the hub page — simulates a hub-page
+        // Deliberately no MapJson for the hub page — simulates a hub-page
         // fetch failure (network error, 5xx, etc. all surface the same way
         // through PoliteScraperBase: an exception out of GetStringPolitelyAsync).
         var (scraper, _, _) = BuildScraper(h => h
@@ -174,6 +182,86 @@ public sealed class SpookySupportPageScraperTests
         Assert.Single(items);
         Assert.Equal($"{BaseUrl}/game-support/hwn-um-manual/", items[0].DiscoveryUrl);
         Assert.Equal("Spooky Pinball Support Page", items[0].DiscoveryContext);
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_HubPageBotChallenge_PropagatesWithoutHtmlFallback()
+    {
+        // Weekly ACA job failure mode (2026-11-15): Cloudflare 403 with
+        // cf-mitigated: challenge. Path 2 must fail closed — PolitenessException
+        // BotChallenge propagates, and the scraper must NOT fall back to HTML
+        // /game-support/ or mask the challenge as an empty hub yield.
+        var supportPagesJson = $$"""
+            [
+              {
+                "id": 1456,
+                "slug": "hwn-um-manual",
+                "link": "{{BaseUrl}}/game-support/hwn-um-manual/",
+                "parent": {{GameSupportParentId}},
+                "modified": "2023-09-15T12:00:00",
+                "title": { "rendered": "HWN/UM Manual" },
+                "content": {
+                  "rendered": "<a href=\"/wp-content/uploads/2023/09/rules.pdf\">Rules</a>"
+                }
+              }
+            ]
+            """;
+
+        var (scraper, gate, handler) = BuildScraper(h => h
+            .MapJson(BuildSupportPagesUrl(), supportPagesJson)
+            .Map(BuildHubPageUrl(), _ =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("<title>Just a moment...</title>"),
+                };
+                response.Headers.TryAddWithoutValidation("cf-mitigated", "challenge");
+                return response;
+            }));
+
+        var ex = await Assert.ThrowsAsync<PolitenessException>(async () =>
+        {
+            await foreach (var _ in scraper.ScrapeAsync(CancellationToken.None))
+            {
+                // enumeration drives Path 1 then Path 2
+            }
+        });
+
+        Assert.Equal(PolitenessViolation.BotChallenge, ex.Violation);
+        Assert.Contains("cf-mitigated", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(handler.Requests, r =>
+            string.Equals(r.AbsoluteUri, $"{BaseUrl}/game-support/", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(gate.Acquired.Count, gate.LeasesDisposed);
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_ChildDiscoveryBotChallenge_PropagatesUp()
+    {
+        // Path 1 BotChallenge must also fail closed — not yield-break as empty.
+        var (scraper, gate, handler) = BuildScraper(h => h
+            .Map(BuildSupportPagesUrl(), _ =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("<title>Just a moment...</title>"),
+                };
+                response.Headers.TryAddWithoutValidation("cf-mitigated", "challenge");
+                return response;
+            }));
+
+        var ex = await Assert.ThrowsAsync<PolitenessException>(async () =>
+        {
+            await foreach (var _ in scraper.ScrapeAsync(CancellationToken.None))
+            {
+                // never reached
+            }
+        });
+
+        Assert.Equal(PolitenessViolation.BotChallenge, ex.Violation);
+        Assert.Single(handler.Requests);
+        Assert.DoesNotContain(handler.Requests, r =>
+            string.Equals(r.AbsoluteUri, $"{BaseUrl}/game-support/", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(gate.Acquired.Count, gate.LeasesDisposed);
     }
 
     [Fact]
@@ -210,7 +298,7 @@ public sealed class SpookySupportPageScraperTests
 
         var (scraper, gate, _) = BuildScraper(h => h
             .MapJson(BuildSupportPagesUrl(), supportPagesJson)
-            .MapHtml($"{BaseUrl}/game-support/", "<html><body></body></html>"));
+            .MapJson(BuildHubPageUrl(), BuildEmptyHubPageJson()));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -230,7 +318,7 @@ public sealed class SpookySupportPageScraperTests
         // This is the graceful-empty case; no error, no items.
         var (scraper, gate, _) = BuildScraper(h => h
             .MapJson(BuildSupportPagesUrl(), "[]")
-            .MapHtml($"{BaseUrl}/game-support/", "<html><body></body></html>"));
+            .MapJson(BuildHubPageUrl(), BuildEmptyHubPageJson()));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -248,7 +336,7 @@ public sealed class SpookySupportPageScraperTests
         // outer try/catch.
         var (scraper, _, _) = BuildScraper(h => h
             .Map(BuildSupportPagesUrl(),
-                _ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)));
+                _ => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -303,7 +391,7 @@ public sealed class SpookySupportPageScraperTests
 
         var (scraper, _, _) = BuildScraper(h => h
             .MapJson(BuildSupportPagesUrl(), supportPagesJson)
-            .MapHtml($"{BaseUrl}/game-support/", "<html><body></body></html>"));
+            .MapJson(BuildHubPageUrl(), BuildEmptyHubPageJson()));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -336,6 +424,34 @@ public sealed class SpookySupportPageScraperTests
         // so QueueingHttpMessageHandler resolves the mapped response.
         const string fields = "id,slug,link,parent,modified,title,content";
         return $"{BaseUrl}{PagesEndpoint}?parent={GameSupportParentId}&per_page=100&_fields={fields}";
+    }
+
+    private static string BuildHubPageUrl()
+    {
+        // Must match SpookySupportPageScraper.BuildHubPageUrl byte-for-byte.
+        const string fields = "id,slug,link,parent,modified,title,content";
+        return $"{BaseUrl}{PagesEndpoint}/{GameSupportParentId}?_fields={fields}";
+    }
+
+    private static string BuildEmptyHubPageJson() =>
+        BuildHubPageJson("<p>no hub PDFs</p>");
+
+    private static string BuildHubPageJson(string contentRendered)
+    {
+        var escaped = contentRendered
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+        return $$"""
+            {
+              "id": {{GameSupportParentId}},
+              "slug": "game-support",
+              "link": "{{BaseUrl}}/game-support/",
+              "parent": 0,
+              "modified": "2026-10-30T13:15:30",
+              "title": { "rendered": "Game Support" },
+              "content": { "rendered": "{{escaped}}" }
+            }
+            """;
     }
 
     private static async Task<List<ScrapedItem>> ScrapeAllAsync(SpookySupportPageScraper scraper)
