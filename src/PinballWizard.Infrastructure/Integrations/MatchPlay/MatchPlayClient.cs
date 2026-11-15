@@ -129,10 +129,11 @@ public sealed class MatchPlayClient : IMatchPlayClient
         // and can 404 — treating that as "empty floor" would lie to the Wizard.
         // Pagination uses `page` (not `limit`; limit is for single-player games).
         var results = new List<MatchPlayGameWireDto>();
+        var qs = new StringBuilder();
         const int maxPages = 3;
         for (var page = 1; page <= maxPages; page++)
         {
-            var qs = new StringBuilder();
+            qs.Clear();
             qs.Append("tournaments=").Append(tournamentId);
             qs.Append("&page=").Append(page);
             if (!string.IsNullOrWhiteSpace(status))
