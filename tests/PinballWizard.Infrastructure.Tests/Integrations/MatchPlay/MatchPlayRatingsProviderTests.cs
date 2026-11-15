@@ -21,9 +21,9 @@ public sealed class MatchPlayRatingsProviderTests
     [Fact]
     public async Task Search_ByNameFragment_OrdersByRatingDescending()
     {
-        var provider = NewProvider(SampleCsv);
+        using var harness = NewProvider(SampleCsv);
 
-        var hits = await provider.SearchAsync("Ada");
+        var hits = await harness.Provider.SearchAsync("Ada");
 
         Assert.Equal(2, hits.Count);
         Assert.Equal("Ada Extra", hits[0].Name);
@@ -33,10 +33,10 @@ public sealed class MatchPlayRatingsProviderTests
     [Fact]
     public async Task Search_ByUserId_AndIfpaId()
     {
-        var provider = NewProvider(SampleCsv);
+        using var harness = NewProvider(SampleCsv);
 
-        var byUser = await provider.SearchAsync("101");
-        var byIfpa = await provider.SearchAsync("42");
+        var byUser = await harness.Provider.SearchAsync("101");
+        var byIfpa = await harness.Provider.SearchAsync("42");
 
         Assert.Single(byUser);
         Assert.Equal("Ada Lovelace", byUser[0].Name);
@@ -47,9 +47,9 @@ public sealed class MatchPlayRatingsProviderTests
     [Fact]
     public async Task Compare_ResolvesBothSides()
     {
-        var provider = NewProvider(SampleCsv);
+        using var harness = NewProvider(SampleCsv);
 
-        var (left, right) = await provider.CompareAsync("Ada Lovelace", "Bob");
+        var (left, right) = await harness.Provider.CompareAsync("Ada Lovelace", "Bob");
 
         Assert.Equal("Ada Lovelace", left!.Name);
         Assert.Equal("Bob Builder", right!.Name);
@@ -62,42 +62,70 @@ public sealed class MatchPlayRatingsProviderTests
             "Name,User ID,IFPA ID,Rating,RD,Lower Bound,Last Rating Period,Rating class\n" +
             "Ada,101,42,1500.0,45.2,1400.0,2026-11-14,5\n" +
             "Ada Extra,303,99,1900.0,40.0,1820.0,2026-11-14,2\n";
-        var provider = NewProvider(csv);
+        using var harness = NewProvider(csv);
 
         // Contains("Ada") hits both; without exact preference the higher rating wins.
-        var best = await provider.GetBestMatchAsync("Ada");
+        var best = await harness.Provider.GetBestMatchAsync("Ada");
 
         Assert.Equal("Ada", best!.Name);
         Assert.Equal(101, best.UserId);
     }
 
     [Fact]
+    public async Task GetBestMatch_ExactName_NotLimitedToTopContainsHits()
+    {
+        // Six higher-rated "Ada*" substring hits would fill SearchAsync(limit:5)
+        // and hide exact "Ada" if GetBestMatch only scanned that window.
+        var lines = new List<string>
+        {
+            "Name,User ID,IFPA ID,Rating,RD,Lower Bound,Last Rating Period,Rating class",
+            "Ada,1,1,1000.0,50.0,900.0,2026-11-14,9",
+        };
+        for (var i = 0; i < 6; i++)
+        {
+            var rating = 2000 + i;
+            lines.Add($"Ada Extra{i},{10 + i},{100 + i},{rating}.0,40.0,{rating - 80}.0,2026-11-14,1");
+        }
+
+        using var harness = NewProvider(string.Join('\n', lines));
+
+        var best = await harness.Provider.GetBestMatchAsync("Ada");
+
+        Assert.Equal("Ada", best!.Name);
+        Assert.Equal(1, best.UserId);
+    }
+
+    [Fact]
     public async Task EnsureIndex_CachesUntilTtl_SingleDownload()
     {
-        var handler = new CountingHandler(SampleCsv);
-        var provider = NewProvider(SampleCsv, handler);
+        using var harness = NewProvider(SampleCsv);
 
-        _ = await provider.SearchAsync("Ada");
-        _ = await provider.SearchAsync("Bob");
+        _ = await harness.Provider.SearchAsync("Ada");
+        _ = await harness.Provider.SearchAsync("Bob");
 
-        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal(1, harness.Handler.RequestCount);
     }
 
     [Fact]
     public async Task Download_HttpFailure_Propagates()
     {
-        var handler = new CountingHandler(SampleCsv, statusCode: System.Net.HttpStatusCode.NotFound);
-        var provider = NewProvider(SampleCsv, handler);
+        using var harness = NewProvider(
+            SampleCsv,
+            statusCode: System.Net.HttpStatusCode.NotFound);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => provider.SearchAsync("Ada"));
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => harness.Provider.SearchAsync("Ada"));
     }
 
-    private static MatchPlayRatingsProvider NewProvider(string csv, CountingHandler? handler = null)
+    private static ProviderHarness NewProvider(
+        string csv,
+        System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK)
     {
-        handler ??= new CountingHandler(csv);
+        var handler = new CountingHandler(csv, statusCode);
+        var client = new HttpClient(handler);
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient("MatchPlayRatingsCdn").Returns(new HttpClient(handler));
-        return new MatchPlayRatingsProvider(
+        factory.CreateClient("MatchPlayRatingsCdn").Returns(client);
+        var provider = new MatchPlayRatingsProvider(
             factory,
             Options.Create(new MatchPlayOptions
             {
@@ -105,6 +133,31 @@ public sealed class MatchPlayRatingsProviderTests
                 RatingsCacheHours = 12,
             }),
             NullLogger<MatchPlayRatingsProvider>.Instance);
+        return new ProviderHarness(provider, client, handler);
+    }
+
+    private sealed class ProviderHarness : IDisposable
+    {
+        public MatchPlayRatingsProvider Provider { get; }
+        public CountingHandler Handler { get; }
+        private readonly HttpClient _client;
+
+        public ProviderHarness(
+            MatchPlayRatingsProvider provider,
+            HttpClient client,
+            CountingHandler handler)
+        {
+            Provider = provider;
+            _client = client;
+            Handler = handler;
+        }
+
+        public void Dispose()
+        {
+            Provider.Dispose();
+            _client.Dispose();
+            Handler.Dispose();
+        }
     }
 
     private sealed class CountingHandler : HttpMessageHandler

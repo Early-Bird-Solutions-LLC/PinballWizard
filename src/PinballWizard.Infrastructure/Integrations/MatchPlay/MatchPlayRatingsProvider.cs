@@ -83,16 +83,20 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
         string query,
         CancellationToken cancellationToken = default)
     {
-        var hits = await SearchAsync(query, limit: 5, cancellationToken).ConfigureAwait(false);
-        if (hits.Count == 0)
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        var needle = query.Trim();
+        var index = await EnsureIndexAsync(cancellationToken).ConfigureAwait(false);
+
+        // Exact name over the full index — not limited to SearchAsync's top-N
+        // contains window (short queries like "Ada" otherwise lose the exact
+        // row among higher-rated "Adam"/"Ada Extra"/… hits).
+        if (index.ByExactName.TryGetValue(needle, out var exact))
         {
-            return null;
+            return exact;
         }
 
-        // Prefer exact name match (case-insensitive), else highest rating among contains hits.
-        var exact = hits.FirstOrDefault(h =>
-            h.Name.Equals(query.Trim(), StringComparison.OrdinalIgnoreCase));
-        return exact ?? hits[0];
+        var hits = await SearchAsync(needle, limit: 5, cancellationToken).ConfigureAwait(false);
+        return hits.Count == 0 ? null : hits[0];
     }
 
     public async Task<(MatchPlayRatingRow? Left, MatchPlayRatingRow? Right)> CompareAsync(
@@ -130,6 +134,8 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
             var rows = MatchPlayRatingsCsvParser.Parse(csv);
             var byUser = new Dictionary<int, MatchPlayRatingRow>(rows.Count);
             var byIfpa = new Dictionary<int, MatchPlayRatingRow>();
+            var byExactName = new Dictionary<string, MatchPlayRatingRow>(
+                rows.Count, StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
             {
                 byUser[row.UserId] = row;
@@ -137,10 +143,17 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
                 {
                     byIfpa[row.IfpaId.Value] = row;
                 }
+
+                // Duplicate exact names: keep the higher rating.
+                if (!byExactName.TryGetValue(row.Name, out var existing)
+                    || row.Rating > existing.Rating)
+                {
+                    byExactName[row.Name] = row;
+                }
             }
 
             var ttl = TimeSpan.FromHours(Math.Max(1, _options.RatingsCacheHours));
-            var index = new RatingsIndex(rows, byUser, byIfpa, DateTimeOffset.UtcNow.Add(ttl));
+            var index = new RatingsIndex(rows, byUser, byIfpa, byExactName, DateTimeOffset.UtcNow.Add(ttl));
             _index = index;
             _logger.LogInformation(
                 "MatchPlayRatings: indexed {Count} row(s) from {Url}; cache TTL {TtlHours}h",
@@ -185,5 +198,6 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
         IReadOnlyList<MatchPlayRatingRow> Rows,
         Dictionary<int, MatchPlayRatingRow> ByUserId,
         Dictionary<int, MatchPlayRatingRow> ByIfpaId,
+        Dictionary<string, MatchPlayRatingRow> ByExactName,
         DateTimeOffset ExpiresAtUtc);
 }
