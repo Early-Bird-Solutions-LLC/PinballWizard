@@ -58,7 +58,7 @@ The canonical case: **Pinside is one of several marketplaces, not THE marketplac
 
 #### Coverage transparency — be honest about what we have
 
-The Wizard should be openly honest about what data it has vs. what it doesn't. We currently scrape 8 active manufacturers (Stern, Jersey Jack, American Pinball, Spooky, Pinball Brothers, Barrels of Fun, Multimorphic, Chicago Gaming) and sync OPDB. We also index Match Play's PinTips play-tip export weekly (`pinwiz-job-pintips`, `--sync-pintips`). We do *not* have first-party data on Pinside, IPDB, IFPA, Match Play tournaments, Pinball Map, PinballPrices, eBay, etc. — those are link-only destinations.
+The Wizard should be openly honest about what data it has vs. what it doesn't. We currently scrape 8 active manufacturers (Stern, Jersey Jack, American Pinball, Spooky, Pinball Brothers, Barrels of Fun, Multimorphic, Chicago Gaming) and sync OPDB. We also index Match Play's PinTips play-tip export weekly (`pinwiz-job-pintips`, `--sync-pintips`). Live query-time tools cover Match Play tournaments (ADR-0061 / ADR-0062) and IFPA WPPR player profiles (ADR-0067). We do *not* have first-party data on Pinside, IPDB, Pinball Map, PinballPrices, eBay, etc. — those remain link-only destinations.
 
 **Why this is part of the appearance-of-favoritism principle:** silently failing to answer questions outside our coverage, or pretending coverage is broader than it is, both implicitly favor the manufacturers and machines we *do* cover. A user asking about a 1985 Bally machine deserves an honest "we don't have direct sources for pre-2010 Bally machines, but here's where to look" — not a refusal that pretends Bally doesn't exist or one that subtly steers them toward an in-scope alternative.
 
@@ -111,7 +111,7 @@ For machines from defunct manufacturers (Williams, Bally, Gottlieb, Data East, S
 | TiltForums | `tiltforums.com` | Competitive-play / tech / repair focused. **Forum plurality**, niche but legitimate. | Linking-to encouraged. |
 | Pinball Map | `pinballmap.com` | Where machines are physically located on routes. | API access available; out of Phase 4 scope but Phase 5+ planned. |
 | Match Play Events | `matchplay.events` | Tournament platform. Live event listings + results. | API available; live tournament search + standings are queried at answer time by the Wizard tools `searchMatchPlayTournaments` / `getMatchPlayTournamentStandings` (ADR-0061) — not RAG-indexed. The PinTips play-tip export is indexed as `PlayTip` documents by the weekly `pinwiz-job-pintips` job (`--sync-pintips`, Sunday 17:00 UTC). |
-| IFPA | `ifpapinball.com` | International Flipper Pinball Association — player rankings, sanctioned event results, world rankings. | API available; future ingestion source. |
+| IFPA | `ifpapinball.com` | International Flipper Pinball Association — player rankings, sanctioned event results, world rankings. | Live Wizard tools (ADR-0067); not RAG-indexed. |
 
 ### Where pinball commerce / discussion happens but we can't deep-link
 

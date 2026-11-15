@@ -272,12 +272,20 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        // IFPA WPPR live-tool typed arms (ADR-0067) — Citations only
+        // (public IFPA player URL), not sourceIndex.
+        if (TryAddIfpaTypedCitation(result, byUrl, citations))
+        {
+            return;
+        }
+
         // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
         // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
         // array; MachineGroundingDto has a top-level "OpdbId" string;
         // MarketValueDto has a top-level "AttributionUrl" string;
         // KineticistGuideLinksDto has FullTutorialLink / GameRulesLink /
-        // PinballPrimerUrl; MatchPlayTournamentStandingsDto has Standings + PublicUrl.
+        // PinballPrimerUrl; MatchPlayTournamentStandingsDto has Standings + PublicUrl;
+        // IfpaPlayerProfileDto has PlayerId + PublicUrl + Attribution.
         if (result is JsonElement element)
         {
             ExtractFromJsonElement(element, functionCallId, byUrl, citations, sourceIndex);
@@ -402,6 +410,43 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     return;
                 }
             }
+            else if (TryGetPropertyIgnoreCase(element, "PublicUrl", out _)
+                && TryGetPropertyIgnoreCase(element, "Attribution", out _)
+                && !TryGetPropertyIgnoreCase(element, "TournamentId", out _))
+            {
+                // IFPA WPPR live-tool DTOs (ADR-0067): PublicUrl + Attribution
+                // without TournamentId (avoids Match Play collision).
+                // Citations only, NOT sourceIndex.
+                if (TryGetPropertyIgnoreCase(element, "PlayerId", out _)
+                    && TryGetPropertyIgnoreCase(element, "Main", out _)
+                    && TryDeserialize<IfpaPlayerProfileDto>(element, functionCallId, _logger) is { } profile)
+                {
+                    AddIfpaCitation(
+                        profile.PublicUrl,
+                        $"{profile.FirstName} {profile.LastName}".Trim(),
+                        profile.PlayerId,
+                        "profile",
+                        byUrl,
+                        citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Players", out _)
+                    && TryGetPropertyIgnoreCase(element, "Query", out _)
+                    && TryDeserialize<IfpaPlayerSearchResultDto>(element, functionCallId, _logger) is { } search
+                    && search.Players.Count > 0)
+                {
+                    var first = search.Players[0];
+                    AddIfpaCitation(
+                        search.PublicUrl,
+                        $"{first.FirstName} {first.LastName}".Trim(),
+                        first.PlayerId,
+                        "search",
+                        byUrl,
+                        citations);
+                    return;
+                }
+            }
         }
 
         // Non-object or unrecognized shape — serialize to string and apply
@@ -515,6 +560,56 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             MachineId: null,
             DocumentChunkId: null,
             SourceType: CitationSourceType.MatchPlayTournament));
+        return true;
+    }
+
+    private static bool TryAddIfpaTypedCitation(
+        object result,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations) =>
+        result switch
+        {
+            IfpaPlayerProfileDto p => AddIfpaCitation(
+                p.PublicUrl,
+                $"{p.FirstName} {p.LastName}".Trim(),
+                p.PlayerId,
+                "profile",
+                byUrl,
+                citations),
+            IfpaPlayerSearchResultDto s when s.Players.Count > 0 => AddIfpaCitation(
+                s.PublicUrl,
+                $"{s.Players[0].FirstName} {s.Players[0].LastName}".Trim(),
+                s.Players[0].PlayerId,
+                "search",
+                byUrl,
+                citations),
+            _ => false,
+        };
+
+    // ADR-0067: IFPA WPPR live tools → one Citation linking the public IFPA
+    // player page. Citations only — not sourceIndex.
+    private static bool AddIfpaCitation(
+        string publicUrl,
+        string? name,
+        int playerId,
+        string kind,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations)
+    {
+        if (string.IsNullOrWhiteSpace(publicUrl))
+        {
+            return false;
+        }
+
+        var display = string.IsNullOrWhiteSpace(name)
+            ? $"Player {playerId}"
+            : name;
+        AddOrUpgrade(byUrl, citations, new Citation(
+            Title: $"IFPA {kind} · {display}",
+            SourceUrl: publicUrl,
+            MachineId: null,
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.IfpaWppr));
         return true;
     }
 
