@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.OpsTriage;
@@ -10,6 +11,7 @@ namespace PinballWizard.Api.Endpoints;
 /// <summary>
 /// Azure Monitor action-group webhook ingress for Ops Triage (ADR-0064).
 /// Auth: shared secret query <c>code</c> compared to <see cref="OpsTriageOptions.WebhookSecret"/>.
+/// Admin reads go through Blazor + <c>ITriageRunRepository</c> (no anonymous HTTP list/get).
 /// </summary>
 public static class OpsTriageWebhookEndpoint
 {
@@ -19,16 +21,6 @@ public static class OpsTriageWebhookEndpoint
 
         endpoints.MapPost("/api/ops/alerts/webhook", HandleAsync)
             .WithName("OpsTriageWebhook")
-            .WithTags("OpsTriage")
-            .AllowAnonymous();
-
-        endpoints.MapGet("/api/ops/triage", ListAsync)
-            .WithName("OpsTriageList")
-            .WithTags("OpsTriage")
-            .AllowAnonymous();
-
-        endpoints.MapGet("/api/ops/triage/{id}", GetAsync)
-            .WithName("OpsTriageGet")
             .WithTags("OpsTriage")
             .AllowAnonymous();
 
@@ -61,10 +53,22 @@ public static class OpsTriageWebhookEndpoint
             return Results.Unauthorized();
         }
 
+        // Bound untrusted Monitor payloads (adversary review / AGENT-08).
+        const int maxBodyBytes = 256 * 1024;
+        if (request.ContentLength is > maxBodyBytes)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
         string raw;
         using (var reader = new StreamReader(request.Body, Encoding.UTF8))
         {
             raw = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (raw.Length > maxBodyBytes)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         }
 
         if (string.IsNullOrWhiteSpace(raw))
@@ -77,10 +81,28 @@ public static class OpsTriageWebhookEndpoint
         {
             run = AlertWebhookParser.Parse(raw, DateTimeOffset.UtcNow);
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
             logger.LogWarning(ex, "Failed to parse Azure Monitor alert payload.");
             return Results.BadRequest(new { error = "Unrecognized alert payload." });
+        }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "Failed to parse Azure Monitor alert payload.");
+            return Results.BadRequest(new { error = "Unrecognized alert payload." });
+        }
+
+        var existing = await runs.GetAsync(run.Id, run.AlertDay, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            // Idempotent: Monitor retries must not clobber Completed/Failed or re-enqueue.
+            logger.LogInformation(
+                "Ops triage run {TriageRunId} already exists status={Status} — accepting without re-queue.",
+                existing.Id,
+                existing.Status);
+            return Results.Accepted(
+                $"/admin/ops-triage/{existing.Id}?day={Uri.EscapeDataString(existing.AlertDay)}",
+                new { id = existing.Id, alertDay = existing.AlertDay, status = existing.Status.ToString(), deduped = true });
         }
 
         await runs.UpsertAsync(run, cancellationToken).ConfigureAwait(false);
@@ -93,72 +115,9 @@ public static class OpsTriageWebhookEndpoint
             run.JobName);
 
         return Results.Accepted(
-            $"/api/ops/triage/{run.Id}?day={Uri.EscapeDataString(run.AlertDay)}",
-            new { id = run.Id, alertDay = run.AlertDay, status = run.Status.ToString() });
+            $"/admin/ops-triage/{run.Id}?day={Uri.EscapeDataString(run.AlertDay)}",
+            new { id = run.Id, alertDay = run.AlertDay, status = run.Status.ToString(), deduped = false });
     }
-
-    private static async Task<IResult> ListAsync(
-        ITriageRunRepository? runs,
-        [FromQuery] int take = 50,
-        CancellationToken cancellationToken = default)
-    {
-        if (runs is null)
-        {
-            return Results.Json(
-                new { error = "Triage runs require Cosmos persistence." },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-
-        take = Math.Clamp(take, 1, 200);
-        var items = await runs.ListRecentAsync(take, cancellationToken).ConfigureAwait(false);
-        return Results.Ok(items.Select(ToDto));
-    }
-
-    private static async Task<IResult> GetAsync(
-        string id,
-        [FromQuery] string day,
-        ITriageRunRepository? runs,
-        CancellationToken cancellationToken)
-    {
-        if (runs is null)
-        {
-            return Results.Json(
-                new { error = "Triage runs require Cosmos persistence." },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-
-        if (string.IsNullOrWhiteSpace(day))
-        {
-            return Results.BadRequest(new { error = "Query parameter 'day' (yyyy-MM-dd) is required." });
-        }
-
-        var run = await runs.GetAsync(id, day, cancellationToken).ConfigureAwait(false);
-        return run is null ? Results.NotFound() : Results.Ok(ToDto(run));
-    }
-
-    private static object ToDto(TriageRun run) => new
-    {
-        run.Id,
-        run.AlertDay,
-        run.AlertRuleName,
-        run.JobName,
-        run.Severity,
-        run.AlertSummary,
-        status = run.Status.ToString(),
-        run.DiagnosisSummary,
-        run.LikelyCause,
-        run.Evidence,
-        run.RemediationReasonable,
-        run.RemediationPlanJson,
-        run.SkipRemediationReason,
-        run.NotificationStatus,
-        run.RemediationWorkflowRunUrl,
-        run.PullRequestUrl,
-        run.ErrorMessage,
-        run.CreatedAtUtc,
-        run.DiagnosedAtUtc,
-        run.CompletedAtUtc,
-    };
 
     private static bool FixedTimeEquals(string expected, string actual)
     {

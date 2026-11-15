@@ -158,9 +158,11 @@
     ];
 
     private bool _loading = true;
+    private bool _authResolved;
     private bool _isAdmin;
     private bool _serviceUnavailable;
     private bool _loadFailed;
+    private string? _loadedRouteKey;
     private List<TriageRun> _runs = [];
     private TriageRun? _selected;
 
@@ -168,12 +170,13 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender)
+        if (!firstRender || _authResolved)
         {
             return;
         }
 
         _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
+        _authResolved = true;
         if (!_isAdmin)
         {
             _loading = false;
@@ -189,19 +192,50 @@
             return;
         }
 
+        await LoadForRouteAsync().ConfigureAwait(true);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Interactive Server reuses this component across list↔detail navigations;
+        // firstRender alone never reloads — refresh when RunId/Day change (Bugbot).
+        if (!_authResolved || !_isAdmin || Runs is null)
+        {
+            return;
+        }
+
+        await LoadForRouteAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadForRouteAsync()
+    {
+        var routeKey = $"{RunId}|{Day}";
+        if (string.Equals(routeKey, _loadedRouteKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _loading = true;
+        _loadFailed = false;
+        await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+
         try
         {
             if (!string.IsNullOrWhiteSpace(RunId) && !string.IsNullOrWhiteSpace(Day))
             {
-                _selected = await Runs.GetAsync(RunId, Day, CancellationToken.None).ConfigureAwait(true);
+                _selected = await Runs!.GetAsync(RunId, Day, CancellationToken.None).ConfigureAwait(true);
             }
             else
             {
-                _runs = (await Runs.ListRecentAsync(100, CancellationToken.None).ConfigureAwait(true)).ToList();
+                _selected = null;
+                _runs = (await Runs!.ListRecentAsync(100, CancellationToken.None).ConfigureAwait(true)).ToList();
             }
+
+            _loadedRouteKey = routeKey;
         }
         catch (Exception ex)
         {
+            // Cosmos / network faults must not crash the Interactive Server circuit.
             Logger.LogError(ex, "Failed to load ops triage runs.");
             _loadFailed = true;
         }
@@ -214,6 +248,7 @@
 
     private void HandleRowClick(DataGridRowClickEventArgs<TriageRun> args)
     {
+        _selected = args.Item;
         Navigation.NavigateTo($"/admin/ops-triage/{args.Item.Id}?day={Uri.EscapeDataString(args.Item.AlertDay)}");
     }
 

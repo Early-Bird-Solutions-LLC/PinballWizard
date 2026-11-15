@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 
 namespace PinballWizard.Application.OpsTriage;
 
@@ -32,20 +33,20 @@ public static class AlertWebhookParser
             && condition.TryGetProperty("allOf", out var allOf)
             && allOf.ValueKind == JsonValueKind.Array)
         {
-            foreach (var clause in allOf.EnumerateArray())
+            // Last matching JobName(_s) wins (same as prior nested-continue behavior).
+            foreach (var clause in allOf.EnumerateArray()
+                         .Where(c => c.TryGetProperty("dimensions", out var dims)
+                                     && dims.ValueKind == JsonValueKind.Array))
             {
-                if (clause.TryGetProperty("dimensions", out var dims)
-                    && dims.ValueKind == JsonValueKind.Array)
+                foreach (var dim in clause.GetProperty("dimensions").EnumerateArray()
+                             .Where(d =>
+                             {
+                                 var name = ReadString(d, "name");
+                                 return string.Equals(name, "JobName_s", StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals(name, "JobName", StringComparison.OrdinalIgnoreCase);
+                             }))
                 {
-                    foreach (var dim in dims.EnumerateArray())
-                    {
-                        var name = ReadString(dim, "name");
-                        if (string.Equals(name, "JobName_s", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(name, "JobName", StringComparison.OrdinalIgnoreCase))
-                        {
-                            jobName = ReadString(dim, "value");
-                        }
-                    }
+                    jobName = ReadString(dim, "value");
                 }
             }
         }

@@ -92,3 +92,4 @@ run state inside the Api/Web stack for showcase traceability.
 - Alert rule: `pinwiz-alert-aca-job-failure` in `infra/modules/shared.bicep`
 - Dead-man's-switch gap remains [#856](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/856)
 - PR feedback triage (ADR-0041) is unrelated — review bots, not runtime alerts
+- Lifecycle closure (outcomes / eval / KB) is required by [ADR-0066](0066-agent-lifecycle-kit.md) before claiming a self-improving ops agent; diagnose+act may ship with `enableOpsTriage=false` meanwhile

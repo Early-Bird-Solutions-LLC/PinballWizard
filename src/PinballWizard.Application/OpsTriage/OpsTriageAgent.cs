@@ -8,8 +8,12 @@ namespace PinballWizard.Application.OpsTriage;
 
 public sealed class OpsTriageAgent : IOpsTriageAgent
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    // OpsTriage.md requires snake_case JSON (likely_cause, remediation_reasonable).
+    // JsonSerializerDefaults.Web is camelCase and does not bridge underscores even
+    // with PropertyNameCaseInsensitive — bind with SnakeCaseLower (ADR-0064).
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
@@ -34,13 +38,26 @@ public sealed class OpsTriageAgent : IOpsTriageAgent
 
         var response = await agent.RunAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false);
         var text = response.Text ?? string.Empty;
-        var json = ExtractJson(text);
-
-        if (string.IsNullOrWhiteSpace(json))
+        try
+        {
+            return ParseDiagnosisJson(text);
+        }
+        catch (InvalidOperationException ex)
         {
             _logger.LogWarning(
-                "OpsTriage agent returned non-JSON diagnosis: {Response}",
+                ex,
+                "OpsTriage agent returned unusable diagnosis: {Response}",
                 LogSanitizer.ForLog(text));
+            throw;
+        }
+    }
+
+    /// <summary>Parses OpsTriage.md snake_case JSON. Internal for unit tests.</summary>
+    internal static OpsTriageDiagnosis ParseDiagnosisJson(string text)
+    {
+        var json = ExtractJson(text);
+        if (string.IsNullOrWhiteSpace(json))
+        {
             throw new InvalidOperationException("OpsTriage agent returned non-JSON diagnosis.");
         }
 

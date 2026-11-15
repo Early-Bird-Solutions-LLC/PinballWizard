@@ -185,7 +185,7 @@ app.MapMachineSuggestEndpoint();
 // AI-driven grid search: GET /api/search/grid?q={query}&context={context}
 app.MapGridSearchEndpoint();
 
-// Ops Triage webhook + admin read APIs (ADR-0064)
+// Ops Triage webhook (ADR-0064); admin reads via Web + ITriageRunRepository
 app.MapOpsTriageWebhookEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);
