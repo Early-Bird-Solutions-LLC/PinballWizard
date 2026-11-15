@@ -36,4 +36,19 @@ public sealed class MatchPlayOptions
     // than once every 15 seconds while a tournament is in progress.
     [Range(15, 600)]
     public int StandingsMinIntervalSeconds { get; set; } = 15;
+
+    // Match Play Ratings CDN export (ADR-0063). Public object — no bearer.
+    // Handbook: fetch ratings from the CDN, not the API bulk surface.
+    [Url]
+    public string RatingsExportUrl { get; set; } =
+        "https://mp-ratings.sfo3.cdn.digitaloceanspaces.com/latest-ratings.csv";
+
+    // How long a process caches the parsed ratings index after a CDN fetch.
+    // Export refreshes daily; 12h balances freshness vs. 8MB download cost.
+    [Range(1, 168)]
+    public int RatingsCacheHours { get; set; } = 12;
+
+    // HTTP timeout for the ratings CSV download (larger than JSON tournament calls).
+    [Range(30, 600)]
+    public int RatingsHttpTimeoutSeconds { get; set; } = 120;
 }

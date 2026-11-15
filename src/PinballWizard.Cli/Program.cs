@@ -2213,12 +2213,16 @@ static IHost CreateHost(string[] args)
         builder.Services.AddKineticistIntegration(builder.Configuration);
     }
 
-    // Match Play Events live-tournament tools (ADR-0061). Token: MatchPlay:ApiToken
-    // or Opdb:ApiToken fallback. Absent = tools return null.
+    // Match Play Events: tournament API (ADR-0061/0062) needs bearer; Ratings CDN
+    // (ADR-0063) is public and registers without a token.
     if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKey])
         || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
     {
         builder.Services.AddMatchPlayIntegration(builder.Configuration);
+    }
+    else
+    {
+        builder.Services.AddMatchPlayRatings(builder.Configuration);
     }
 
     // Azure AI Foundry integration — gated on AiFoundry:ProjectEndpoint

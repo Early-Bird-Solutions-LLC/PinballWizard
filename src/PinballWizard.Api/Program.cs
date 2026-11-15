@@ -108,13 +108,16 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey
     builder.Services.AddKineticistIntegration(builder.Configuration);
 }
 
-// Match Play Events live-tournament tools — gated on MatchPlay:ApiToken or
-// Opdb:ApiToken fallback (ADR-0061). Absent token = provider not registered;
-// MatchPlayTournamentTool returns null (honest unavailable).
+// Match Play Events: tournament API tools need a bearer (ADR-0061/0062);
+// Ratings CDN is public and registers even without a token (ADR-0063).
 if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKey])
     || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
 {
     builder.Services.AddMatchPlayIntegration(builder.Configuration);
+}
+else
+{
+    builder.Services.AddMatchPlayRatings(builder.Configuration);
 }
 
 // ── Cosmos persistence ─────────────────────────────────────────────────────

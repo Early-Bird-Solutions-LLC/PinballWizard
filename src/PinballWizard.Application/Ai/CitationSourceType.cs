@@ -18,4 +18,5 @@ public enum CitationSourceType
     CuratedLink = 3,     // Kineticist Tier B guide deep-link (and future curated refs)
     MarketValue = 4,    // Silverball Labs live-pricing result (ADR-0045)
     MatchPlayTournament = 5, // Match Play Events live standings (ADR-0061)
+    MatchPlayRating = 6,     // Match Play Ratings CDN (ADR-0063)
 }

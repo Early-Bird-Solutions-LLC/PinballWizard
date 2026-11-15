@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Tournaments;
 using PinballWizard.Core.Configuration;
@@ -72,7 +73,52 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMatchPlayClient>(sp => sp.GetRequiredService<MatchPlayClient>());
         services.AddSingleton<IMatchPlayTournamentProvider, MatchPlayTournamentProvider>();
 
+        // Ratings CDN is public — still register here so a single MatchPlay
+        // options bind covers both tournament API + ratings export URL.
+        AddMatchPlayRatingsCore(services, configuration);
+
         return services;
+    }
+
+    // Match Play Ratings CDN (ADR-0063) — no bearer required. Safe to call
+    // even when tournament API token is absent.
+    public static IServiceCollection AddMatchPlayRatings(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        AddMatchPlayRatingsCore(services, configuration);
+        return services;
+    }
+
+    private static void AddMatchPlayRatingsCore(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services
+            .AddOptions<MatchPlayOptions>()
+            .Bind(configuration.GetSection(MatchPlayOptions.SectionName));
+
+        services.AddHttpClient("MatchPlayRatingsCdn", (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<MatchPlayOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(30, options.RatingsHttpTimeoutSeconds));
+            if (sp.GetService<IOptions<PolitenessOptions>>()?.Value?.UserAgent is { Length: > 0 } ua)
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(ua);
+            }
+            else
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                    "PinballWizard/1.0 (+https://pinwiz.ai)");
+            }
+        });
+
+        // Prefer AddMatchPlayIntegration (folds ratings in) OR AddMatchPlayRatings
+        // alone — not both. TryAdd covers the provider; named HttpClient is not
+        // idempotent if both entry points run.
+        services.TryAddSingleton<IMatchPlayRatingsProvider, MatchPlayRatingsProvider>();
     }
 
     // Shared gate helper so Api / Web / Cli do not drift on the fallback key.

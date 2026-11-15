@@ -272,6 +272,19 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        // Match Play Ratings CDN (ADR-0063) — Citations only.
+        if (result is MatchPlayRatingsSearchDto ratingsSearch)
+        {
+            AddMatchPlayRatingCitation(ratingsSearch.AttributionUrl, byUrl, citations);
+            return;
+        }
+
+        if (result is MatchPlayRatingsCompareDto ratingsCompare)
+        {
+            AddMatchPlayRatingCitation(ratingsCompare.AttributionUrl, byUrl, citations);
+            return;
+        }
+
         // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
         // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
         // array; MachineGroundingDto has a top-level "OpdbId" string;
@@ -303,9 +316,27 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
+            // Match Play Ratings CDN (ADR-0063) before Hits/AttributionUrl arms —
+            // search payloads also carry Hits (corpus probe) and AttributionUrl
+            // (market-value probe).
+            if (TryGetPropertyIgnoreCase(element, "AttributionUrl", out _)
+                && TryGetPropertyIgnoreCase(element, "ExportUrl", out _))
+            {
+                if (TryDeserialize<MatchPlayRatingsSearchDto>(element, functionCallId, _logger) is { } searchDto)
+                {
+                    AddMatchPlayRatingCitation(searchDto.AttributionUrl, byUrl, citations);
+                    return;
+                }
+
+                if (TryDeserialize<MatchPlayRatingsCompareDto>(element, functionCallId, _logger) is { } compareDto)
+                {
+                    AddMatchPlayRatingCitation(compareDto.AttributionUrl, byUrl, citations);
+                    return;
+                }
+            }
             // SearchCorpusResult shape: { "hits": [ ... ] } at runtime
             // (camelCase); "Hits" accepted for typed-test parity.
-            if (TryGetPropertyIgnoreCase(element, "Hits", out var hitsElement)
+            else if (TryGetPropertyIgnoreCase(element, "Hits", out var hitsElement)
                 && hitsElement.ValueKind == JsonValueKind.Array)
             {
                 if (TryDeserialize<SearchCorpusResult>(element, functionCallId, _logger) is { } corpusResult)
@@ -490,6 +521,25 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 p.PublicUrl, p.Name, p.TournamentId, "players", byUrl, citations),
             _ => false,
         };
+
+    private static bool AddMatchPlayRatingCitation(
+        string attributionUrl,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations)
+    {
+        if (string.IsNullOrWhiteSpace(attributionUrl))
+        {
+            return false;
+        }
+
+        AddOrUpgrade(byUrl, citations, new Citation(
+            Title: "Match Play Ratings",
+            SourceUrl: attributionUrl,
+            MachineId: null,
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.MatchPlayRating));
+        return true;
+    }
 
     // ADR-0061 / ADR-0062: Match Play live tools → one Citation linking the
     // public Match Play tournament page. Citations only — not sourceIndex.

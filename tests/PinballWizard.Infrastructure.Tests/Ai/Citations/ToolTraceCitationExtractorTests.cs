@@ -1464,6 +1464,84 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Contains("floor", citation.Title, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ── searchMatchPlayRatings / compareMatchPlayRatings (ADR-0063) ─────
+
+    [Fact]
+    public void Extract_MatchPlayRatingsSearchDto_AsTyped_ProducesCitation()
+    {
+        var dto = SampleMatchPlayRatingsSearchDto();
+        var response = BuildAgentResponseWithToolResult("searchMatchPlayRatings", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(
+            "https://docs.matchplay.events/additional-features/match-play-ratings",
+            citation.SourceUrl);
+        Assert.Equal(CitationSourceType.MatchPlayRating, citation.SourceType);
+        Assert.Equal("Match Play Ratings", citation.Title);
+        Assert.Null(citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);
+    }
+
+    [Fact]
+    public void Extract_MatchPlayRatingsCompareDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        var dto = SampleMatchPlayRatingsCompareDto();
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("compareMatchPlayRatings", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MatchPlayRating, citation.SourceType);
+        Assert.Contains("match-play-ratings", citation.SourceUrl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Extract_MatchPlayRatingsSearchDto_AsJsonElement_NotMisroutedToMarketValue()
+    {
+        // Regression: AttributionUrl alone used to match MarketValue before ExportUrl.
+        var dto = SampleMatchPlayRatingsSearchDto();
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("searchMatchPlayRatings", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal(CitationSourceType.MatchPlayRating, citation.SourceType);
+        Assert.DoesNotContain("Silverball", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_MatchPlayRatingsSearchDto_NotInSourceIndex()
+    {
+        var dto = SampleMatchPlayRatingsSearchDto();
+        var response = BuildAgentResponseWithToolResult("searchMatchPlayRatings", dto);
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        Assert.Single(citations);
+        Assert.Empty(sourceIndex);
+    }
+
+    private static MatchPlayRatingsSearchDto SampleMatchPlayRatingsSearchDto() =>
+        new(
+            Query: "Ada",
+            AttributionUrl: "https://docs.matchplay.events/additional-features/match-play-ratings",
+            ExportUrl: "https://mp-ratings.sfo3.cdn.digitaloceanspaces.com/latest-ratings.csv",
+            Attribution: "Match Play Ratings — https://docs.matchplay.events/additional-features/match-play-ratings",
+            Hits:
+            [
+                new MatchPlayRatingHitDto("Ada Lovelace", 101, 42, 1850.5, 45.2, 1760.1, "2026-11-14", 3),
+            ]);
+
+    private static MatchPlayRatingsCompareDto SampleMatchPlayRatingsCompareDto() =>
+        new(
+            LeftQuery: "Ada",
+            RightQuery: "Bob",
+            AttributionUrl: "https://docs.matchplay.events/additional-features/match-play-ratings",
+            ExportUrl: "https://mp-ratings.sfo3.cdn.digitaloceanspaces.com/latest-ratings.csv",
+            Attribution: "Match Play Ratings — https://docs.matchplay.events/additional-features/match-play-ratings",
+            Left: new MatchPlayRatingHitDto("Ada", 101, 42, 1850.5, 45.2, 1760.1, "2026-11-14", 3),
+            Right: new MatchPlayRatingHitDto("Bob", 202, 7, 1600.0, 50.0, 1500.0, "2026-11-14", 5));
+
     private static MarketValueDto SampleMarketValueDto(string opdbId) =>
         new(MachineTitle: "Medieval Madness",
             MedianPrice: 5500m,
