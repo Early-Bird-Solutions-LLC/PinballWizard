@@ -30,6 +30,20 @@ public static class AnswerCitedSubjectFilter
         @"^Market value\s*·\s*(?<subject>.+)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    // ADR-0043 curated Kineticist titles are "Label · {machine}" — subject
+    // is the right-hand machine name, not the full phrase.
+    private static readonly Regex CuratedGuideMiddleDot = new(
+        @"^(?:Kineticist tutorial|Game rules|Pinball primer)\s*·\s*(?<subject>.+)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    // OPDB edition qualifiers (Pro / Premium / LE / …). Answers almost always
+    // name the game without the edition; matching the full "Godzilla (Pro)"
+    // string would drop every Pro/Premium corpus hit for a plain "Godzilla"
+    // answer. Strip for subject matching only — the citation Title is unchanged.
+    private static readonly Regex EditionSuffix = new(
+        @"\s*\((?:Pro|Premium|LE|Limited\s+Edition|Standard|Home|CE|SE|Deluxe|Special\s+Edition)\)\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     // OPDB / Match Play titles without a human machine name — keep (fail
     // open). Filtering requires an extractable subject.
     private static readonly Regex OpdbRecordTitle = new(
@@ -110,6 +124,12 @@ public static class AnswerCitedSubjectFilter
             return NormalizeSubject(PageRangeSuffix.Replace(trimmed, string.Empty));
         }
 
+        var curated = CuratedGuideMiddleDot.Match(trimmed);
+        if (curated.Success)
+        {
+            return NormalizeSubject(curated.Groups["subject"].Value);
+        }
+
         var dash = EmDashSubject.Match(trimmed);
         if (dash.Success)
         {
@@ -127,7 +147,7 @@ public static class AnswerCitedSubjectFilter
 
     private static string? NormalizeSubject(string raw)
     {
-        var subject = raw.Trim();
+        var subject = EditionSuffix.Replace(raw.Trim(), string.Empty).Trim();
         if (subject.Length < 2)
         {
             return null;

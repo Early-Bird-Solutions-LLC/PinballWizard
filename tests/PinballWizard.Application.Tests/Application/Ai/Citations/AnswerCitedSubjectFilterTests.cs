@@ -105,6 +105,47 @@ public sealed class AnswerCitedSubjectFilterTests
     }
 
     [Fact]
+    public void Filter_KeepsKineticistGuideLinksWhenMachineNamed()
+    {
+        // Bugbot: curated titles are "Label · {machine}" — subject is the
+        // machine on the right, not the full phrase.
+        var answer = "For Godzilla rules, start with the Kineticist tutorial.";
+        var citations = new[]
+        {
+            Cite("Kineticist tutorial · Godzilla", "https://kineticist.com/godzilla", CitationSourceType.CuratedLink),
+            Cite("Game rules · Godzilla", "https://kineticist.com/godzilla/rules", CitationSourceType.CuratedLink),
+            Cite("Pinball primer · Godzilla", "https://kineticist.com/primer", CitationSourceType.CuratedLink),
+            Cite("Kineticist tutorial · The Jetsons", "https://kineticist.com/jetsons", CitationSourceType.CuratedLink),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(3, result.Kept.Count);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.Contains("Jetsons", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsEditionQualifiedTitleWhenAnswerNamesBaseGame()
+    {
+        // Bugbot: "Godzilla (Pro)" must match answer prose that just says
+        // "Godzilla" — editions are retrieval variants, not distinct subjects.
+        var answer = "On Godzilla, flippers persist through multiball.";
+        var citations = new[]
+        {
+            Cite("Godzilla (Pro) — Rules", "https://example.com/godzilla-pro.pdf"),
+            Cite("Godzilla (Premium) (p. 4–6)", "https://example.com/godzilla-prem.pdf"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(2, result.Kept.Count);
+        Assert.Equal(0, result.DroppedCount);
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Pro) — Rules"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Premium) (p. 4–6)"));
+    }
+
+    [Fact]
     public void Filter_EmptyInput_IsNoOp()
     {
         var empty = Array.Empty<Citation>();
@@ -113,10 +154,14 @@ public sealed class AnswerCitedSubjectFilterTests
         Assert.Equal(0, result.DroppedCount);
     }
 
-    private static Citation Cite(string title, string url, bool inherited = false)
+    private static Citation Cite(
+        string title,
+        string url,
+        CitationSourceType sourceType = CitationSourceType.MachineRecord,
+        bool inherited = false)
         => new(
             Title: title,
             SourceUrl: url,
-            SourceType: CitationSourceType.MachineRecord,
+            SourceType: sourceType,
             Inherited: inherited);
 }
