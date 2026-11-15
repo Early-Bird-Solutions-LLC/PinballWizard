@@ -173,11 +173,17 @@ jobs:
           # path (run_stack=true) on every push — the same misfire as the bug this
           # step exists to fix.
           GH_LIST_ERR=$(mktemp)
+          # Include conclusion: --status=completed covers success, failure, *and*
+          # cancelled. Cancelled runs often never schedule deploy-jobs (job absent
+          # from the jobs array), which used to fire a false "renamed?" warning and
+          # burn the 50-run budget walking noise. Filter to overall conclusion=
+          # success before the job-level walk; deploy-jobs=skipped on a green run
+          # is still a non-baseline (handled below).
           if ! GH_RUNS=$(gh run list \
                 --workflow=deploy.yml \
                 --branch=main \
                 --status=completed \
-                --json databaseId,headSha \
+                --json databaseId,headSha,conclusion \
                 --limit=50 2>"$GH_LIST_ERR"); then
             echo "::warning::gh run list failed — cannot determine last-deployed SHA (#910)."
             echo "::warning::Stderr: $(cat "$GH_LIST_ERR")"
@@ -215,8 +221,10 @@ jobs:
             # (conclusion=""), not "skipped". The loop then exhausts all 50 runs,
             # BASE_SHA stays empty, and every push takes the bootstrap path
             # (run_stack=true) — which risks the 715-123420 RTFP throttle documented
-            # at lines 108-116 above. An empty conclusion here means either a rename
-            # or an unexpectedly old run structure; warn once so it surfaces.
+            # at lines 108-116 above. An empty conclusion on an overall-*success*
+            # run means either a rename or an unexpectedly old run structure; warn
+            # once so it surfaces. (Cancelled runs are excluded above — they must
+            # not trigger this rename alarm.)
             deploy_conclusion=$(printf '%s' "$JOBS_JSON" | jq -r \
               '.jobs[] | select(.name == "Repoint ACA jobs via deployment stack") | .conclusion // empty')
             if [ "$deploy_conclusion" = "success" ]; then
@@ -225,12 +233,12 @@ jobs:
               break
             elif [ -z "$deploy_conclusion" ] && [ "$_job_missing_warned" = "0" ]; then
               echo "::warning::deploy-jobs job ('Repoint ACA jobs via deployment stack') not found in"
-              echo "::warning::run #$run_id. If it was renamed, this lookup will always exhaust all runs"
+              echo "::warning::successful run #$run_id. If it was renamed, this lookup will always exhaust all runs"
               echo "::warning::and fall back to run_stack=true (RTFP risk — see lines 108-116)."
               _job_missing_warned=1
             fi
           done < <(printf '%s' "$GH_RUNS" | \
-                   jq -r '.[] | [(.databaseId | tostring), .headSha] | @tsv')
+                   jq -r '.[] | select(.conclusion == "success") | [(.databaseId | tostring), .headSha] | @tsv')
 
           if [ "$_gh_view_fails" -gt 0 ]; then
             echo "::warning::$_gh_view_fails gh run view call(s) failed (token scope, API 5xx, or rate limit)."
