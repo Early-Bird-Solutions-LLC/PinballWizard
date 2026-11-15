@@ -14,15 +14,17 @@
  * question is always submitted verbatim so ?q= equals the question asked.
  *
  * Submit paths (ADR-0049 Phase 3):
- *   1. Free-text Enter / adornment click → QuestionSubmitted fires with the raw
- *      typed text; the parent (Index.razor) routes to /wizard?q={text}.
- *   2. Suggestion selected AND the title starts with the typed text (a genuine
- *      name query) → Nav.NavigateTo("/wizard?q={suggestion.Title}").
- *   3. Suggestion auto-selected while typing a question (MudAutocomplete
- *      auto-highlights + Enter selects) → the raw question is submitted via
- *      path 1, NOT the machine title.  This prevents the question from being
- *      silently replaced by a machine name (observed live: "…godzilla" → Mars
- *      God of War).
+ *   1. Free-text Enter / adornment click (no suggestion selected) →
+ *      QuestionSubmitted fires with the raw typed text; the parent
+ *      (Index.razor) routes to /wizard?q={text}.
+ *   2. Suggestion selected AND the title starts with / contains the typed text
+ *      as a name query → Nav.NavigateTo("/wizard?q={suggestion.Title}&machineId={OpdbId}").
+ *   3. Suggestion selected while typing a question (MudAutocomplete
+ *      auto-highlights + Enter selects, or click) → navigate with the RAW
+ *      question in ?q= AND machineId={OpdbId}.  ?q= must equal the text the
+ *      user asked (never replace with the machine title — observed live:
+ *      "…godzilla" → Mars God of War), but the selected machine must still
+ *      bind (#782) so the Wizard does not re-ask which edition was meant.
  *
  * Autocomplete degradation (ADR-0049 § Fault-tolerance):
  *   If IMachineSuggestClient returns an empty list (endpoint down, non-200,
@@ -188,21 +190,19 @@
         // match from firing on a question that merely mentions the machine:
         // `typed` is the ENTIRE input, so a full sentence is never a contiguous
         // interior substring of a short title.  A natural-language question thus
-        // always falls through to the free-text submit below.
+        // keeps `typed` as ?q= (never the machine title) while still binding
+        // machineId from the selected suggestion (#782).
         var typed = (QuestionText ?? string.Empty).Trim();
         var isMachineNameQuery = typed.Length > 0
             && (suggestion.Title.StartsWith(typed, StringComparison.OrdinalIgnoreCase)
                 || suggestion.Title.Contains(" " + typed, StringComparison.OrdinalIgnoreCase));
 
-        if (isMachineNameQuery)
-        {
-            Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(suggestion.Title)}");
-            return;
-        }
-
-        // Question intent — submit the literal typed text through the same
-        // free-text path as Enter/adornment so ?q= equals the question asked.
-        await QuestionSubmitted.InvokeAsync(typed).ConfigureAwait(false);
+        // Always bind machineId when the user picked a suggestion (#782).
+        // Name-query jumps use the title as ?q=; question intent keeps the
+        // literal typed text so ?q= equals what the user asked.
+        var q = isMachineNameQuery ? suggestion.Title : typed;
+        Nav.NavigateTo(
+            $"/wizard?q={Uri.EscapeDataString(q)}&machineId={Uri.EscapeDataString(suggestion.OpdbId)}");
     }
 
     // Sync raw text back to the parent binding and keep QuestionText current
