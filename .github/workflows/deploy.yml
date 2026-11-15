@@ -616,12 +616,13 @@ jobs:
             if grep -q "715-123420" "$VALIDATE_OUT"; then
               echo "::error::THROTTLE, NOT A FAILURE: Azure returned 715-123420"
               echo "::error::(CognitiveServices RTFP). The platform stack still includes Foundry."
-              echo "::error::Complete ADR-0060 migration + set WORKLOAD_JOBS_STACK_ENABLED=true"
-              echo "::error::so image repoints stop preflighting CognitiveServices (#966)."
+              echo "::error::Unset WORKLOAD_JOBS_STACK_ENABLED (or set true) to use the"
+              echo "::error::workload jobs stack — image repoints must not Foundry-preflight (#966)."
+              echo "::error::WORKLOAD=false is Foundry/shared emergency only; it does not repoint jobs."
               echo "::error::"
               echo "::error::WAIT — do NOT retry. Retrying extends the block."
-              echo "::error::The container images ARE built and pushed to ACR; only the ACA job"
-              echo "::error::repoint is deferred."
+              echo "::error::The container images ARE built and pushed to ACR; only the platform"
+              echo "::error::stack apply is deferred."
               exit 1
             fi
 
@@ -634,9 +635,14 @@ jobs:
           fi
           echo "Platform stack validation passed — proceeding to the live run."
 
-      - name: Run platform stack (interim — repoints jobs via pinwiz-shared-dev)
+      # Platform path is an emergency Foundry/shared-stack hatch only.
+      # Post-cutover, manageAcaJobs=false — this run does NOT repoint ACA jobs
+      # (#1018 Bugbot). Job image updates require the workload path (default).
+      - name: Run platform stack (emergency — Foundry/shared only; no job repoint)
         if: ${{ steps.stackpath.outputs.mode == 'platform' }}
         run: |
+          echo "Platform mode: updating pinwiz-shared-dev only."
+          echo "ACA jobs stay on pinwiz-jobs-dev (manageAcaJobs=false) — unset WORKLOAD_JOBS_STACK_ENABLED or set true to repoint images."
           az stack sub create \
             --name "pinwiz-shared-dev" \
             --location eastus2 \
@@ -657,7 +663,9 @@ jobs:
       # pinwiz-job-* container must now reference the SHA just built. Without it,
       # deploy-jobs proves only that the ARM call returned 200 — the same
       # green-but-unverified shape the issue is about.
+      # Workload path only — platform mode cannot move jobs after manageAcaJobs=false.
       - name: Verify all ACA jobs now run the built image
+        if: ${{ steps.stackpath.outputs.mode == 'workload' }}
         run: |
           EXPECTED="${{ vars.ACR_LOGIN_SERVER }}/pinwiz-cli:${{ github.sha }}"
           RG="${{ vars.ACA_RESOURCE_GROUP }}"
