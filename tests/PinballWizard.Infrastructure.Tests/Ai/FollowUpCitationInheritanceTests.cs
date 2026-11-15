@@ -19,6 +19,10 @@ public sealed class FollowUpCitationInheritanceTests
     [InlineData("How many balls in multiball?")]
     [InlineData("What about the wizard mode?")]
     [InlineData("Does it have a multiball?")]
+    // Whole-phrase boundary (#780 Bugbot): substring Contains would treat
+    // "recommended" / "games likely" as new-intent and skip inheritance.
+    [InlineData("Is this recommended for beginners?")]
+    [InlineData("Is this games likely to appeal to me?")]
     public void ShouldInherit_ClarifyingFollowUps_ReturnsTrue(string followUp)
     {
         Assert.True(FollowUpCitationInheritance.ShouldInherit(followUp, [Prior]));

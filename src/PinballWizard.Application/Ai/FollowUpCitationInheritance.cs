@@ -68,9 +68,13 @@ public static class FollowUpCitationInheritance
                 (char[]?)null,
                 StringSplitOptions.RemoveEmptyEntries));
 
+        // Space-pad so phrase Contains is whole-token, not substring of a
+        // longer word (#780 Bugbot Medium): "recommend" must not match
+        // "recommended"; "games like" must not match "games likely".
+        var padded = $" {normalized} ";
         foreach (var phrase in NewIntentPhrases)
         {
-            if (normalized.Contains(phrase, StringComparison.Ordinal))
+            if (padded.Contains($" {phrase} ", StringComparison.Ordinal))
             {
                 return false;
             }
