@@ -17,4 +17,5 @@ public enum CitationSourceType
     CorpusChunk = 2,     // manual / bulletin / curated doc chunk via searchCorpus
     CuratedLink = 3,     // Kineticist Tier B guide deep-link (and future curated refs)
     MarketValue = 4,    // Silverball Labs live-pricing result (ADR-0045)
+    MatchPlayTournament = 5, // Match Play Events live standings (ADR-0061)
 }

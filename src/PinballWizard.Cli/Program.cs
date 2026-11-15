@@ -31,6 +31,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
+using PinballWizard.Infrastructure.Integrations.MatchPlay;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinTips;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
@@ -2198,6 +2199,14 @@ static IHost CreateHost(string[] args)
     if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey]))
     {
         builder.Services.AddKineticistIntegration(builder.Configuration);
+    }
+
+    // Match Play Events live-tournament tools (ADR-0061). Token: MatchPlay:ApiToken
+    // or Opdb:ApiToken fallback. Absent = tools return null.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKey])
+        || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
+    {
+        builder.Services.AddMatchPlayIntegration(builder.Configuration);
     }
 
     // Azure AI Foundry integration — gated on AiFoundry:ProjectEndpoint

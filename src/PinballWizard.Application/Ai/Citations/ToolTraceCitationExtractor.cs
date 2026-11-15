@@ -265,12 +265,20 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        // getMatchPlayTournamentStandings typed arm (ADR-0061). Live standings
+        // — Citations only (public Match Play URL), not sourceIndex.
+        if (result is MatchPlayTournamentStandingsDto mpDto)
+        {
+            AddCitationFromMatchPlayStandingsDto(mpDto, byUrl, citations);
+            return;
+        }
+
         // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
         // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
         // array; MachineGroundingDto has a top-level "OpdbId" string;
         // MarketValueDto has a top-level "AttributionUrl" string;
         // KineticistGuideLinksDto has FullTutorialLink / GameRulesLink /
-        // PinballPrimerUrl.
+        // PinballPrimerUrl; MatchPlayTournamentStandingsDto has Standings + PublicUrl.
         if (result is JsonElement element)
         {
             ExtractFromJsonElement(element, functionCallId, byUrl, citations, sourceIndex);
@@ -344,6 +352,17 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     return;
                 }
             }
+            else if (TryGetPropertyIgnoreCase(element, "Standings", out _)
+                && TryGetPropertyIgnoreCase(element, "PublicUrl", out _))
+            {
+                // MatchPlayTournamentStandingsDto (ADR-0061): standings[] + publicUrl.
+                // getMatchPlayTournamentStandings → Citations only, NOT sourceIndex.
+                if (TryDeserialize<MatchPlayTournamentStandingsDto>(element, functionCallId, _logger) is { } mpDto)
+                {
+                    AddCitationFromMatchPlayStandingsDto(mpDto, byUrl, citations);
+                    return;
+                }
+            }
         }
 
         // Non-object or unrecognized shape — serialize to string and apply
@@ -412,6 +431,29 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             MachineId: null,
             DocumentChunkId: null,
             SourceType: CitationSourceType.MarketValue));
+    }
+
+    // ADR-0061: getMatchPlayTournamentStandings → one Citation linking the
+    // public Match Play tournament page. Citations only — not sourceIndex.
+    private static void AddCitationFromMatchPlayStandingsDto(
+        MatchPlayTournamentStandingsDto dto,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PublicUrl))
+        {
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(dto.Name)
+            ? $"Tournament {dto.TournamentId}"
+            : dto.Name;
+        AddOrUpgrade(byUrl, citations, new Citation(
+            Title: $"Match Play standings · {name}",
+            SourceUrl: dto.PublicUrl,
+            MachineId: null,
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.MatchPlayTournament));
     }
 
     // ADR-0043 Tier B: getKineticistGuideLinks → one CuratedLink citation per
