@@ -352,11 +352,20 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         var input = cut.Find("[data-testid='exec-log-search'] input");
         await cut.InvokeAsync(() => input.Input("info"));
 
+        // DebounceInterval=400ms; under CI load WaitForAssertion can time out
+        // before OnDebounceIntervalElapsed fires (check-count=1 flake). Wait for
+        // the search query itself, then assert the truncated banner.
+        await cut.WaitForAssertionAsync(() =>
+        {
+            _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), "info", Arg.Any<CancellationToken>());
+        }, TimeSpan.FromSeconds(10));
+
         await cut.WaitForAssertionAsync(() =>
         {
             var banner = cut.Find("[data-testid='exec-log-truncated']");
             Assert.Contains("refine your search", banner.TextContent, StringComparison.Ordinal);
-        }, TimeSpan.FromSeconds(3));
+        }, TimeSpan.FromSeconds(5));
     }
 
     // Fix 5c (Load-more ceiling): reaching 10,000 lines in a unit test would require 9 sequential
