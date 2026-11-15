@@ -31,6 +31,7 @@ using PinballWizard.Infrastructure.Integrations.Kineticist;
 using PinballWizard.Infrastructure.Integrations.MatchPlay;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Landing;
+using PinballWizard.Infrastructure.OpsTriage;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
 
@@ -90,6 +91,14 @@ var foundryWired = !string.IsNullOrWhiteSpace(foundryEndpoint);
 if (foundryWired)
 {
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
+}
+
+// Ops Triage (ADR-0063) — Foundry diagnosis + alert webhook. Gated on Foundry
+// because IOpsTriageAgent requires IFoundryAgentFactory. Cosmos registration
+// (ITriageRunRepository) comes from AddHostCosmosPersistence below.
+if (foundryWired)
+{
+    builder.Services.AddOpsTriage(builder.Configuration);
 }
 
 // Silverball Labs live-pricing integration — gated on API key presence (ADR-0045).
@@ -175,6 +184,9 @@ app.MapMachineSuggestEndpoint();
 
 // AI-driven grid search: GET /api/search/grid?q={query}&context={context}
 app.MapGridSearchEndpoint();
+
+// Ops Triage webhook + admin read APIs (ADR-0063)
+app.MapOpsTriageWebhookEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);
 

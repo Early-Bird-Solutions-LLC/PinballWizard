@@ -59,9 +59,11 @@ namespace PinballWizard.Application.Ai;
 // the Wizard-injected <kineticist_guides> block (mirror Valuation.md's
 // <market_value> pattern) so thin-corpus Rules answers deep-link instead of
 // OPDB-only refusing.
+// Bumped to "v11.2026.11" (ADR-0063): adds OpsTriage.md — Foundry ops
+// diagnosis agent for Azure Monitor alert enrichment + gated remediation.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v10.2026.11.1";
+    public const string CurrentPromptVersion = "v11.2026.11";
 
     private readonly Dictionary<string, string> _prompts;
 

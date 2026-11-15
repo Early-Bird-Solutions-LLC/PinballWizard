@@ -1,0 +1,228 @@
+@page "/admin/ops-triage"
+@page "/admin/ops-triage/{RunId}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.OpsTriage
+@using PinballWizard.Web.Components.Shared
+@using PinballWizard.Web.Security
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@inherits AdminPageBase
+
+@* AdminOpsTriage — /admin/ops-triage Foundry Ops Triage runs (ADR-0063).
+ * Admin-only visibility (not public-read): non-admins see a sign-in prompt.
+ * Reads ITriageRunRepository (Cosmos ops_triage_runs).
+ *@
+
+@inject IServiceProvider ServiceProvider
+@inject AdminActionGuard Guard
+@inject ILogger<AdminOpsTriage> Logger
+@inject NavigationManager Navigation
+
+<PageTitle>Ops Triage — PinballWizard Admin</PageTitle>
+
+<AppPageShell Title="Ops Triage"
+              Subtitle="Foundry agent diagnoses Monitor alerts, enriches the operator email, and opens fix PRs when a local repro is reasonable."
+              Breadcrumbs="@_breadcrumbs">
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading ops triage runs" />
+    }
+    else if (!_isAdmin)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="ops-triage-admin-only">
+            Ops Triage is admin-only.
+            <MudLink Href="@AdminSignIn.Href("/admin/ops-triage")">Sign in</MudLink>
+            as an admin to view alert diagnoses and remediation status.
+        </MudAlert>
+    }
+    else if (_serviceUnavailable)
+    {
+        <MudAlert Severity="Severity.Normal" Class="mb-4" data-testid="ops-triage-unavailable">
+            Triage runs require Cosmos persistence (<code>ops_triage_runs</code>).
+        </MudAlert>
+    }
+    else if (_loadFailed)
+    {
+        <AppErrorAlert data-testid="ops-triage-load-failed">
+            Ops triage runs could not be loaded. Check Cosmos connectivity.
+        </AppErrorAlert>
+    }
+    else if (!string.IsNullOrWhiteSpace(RunId) && _selected is not null)
+    {
+        <MudButton Variant="Variant.Text"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Class="mb-3"
+                   Href="/admin/ops-triage">Back to list</MudButton>
+
+        <div class="mon-panel" data-testid="ops-triage-detail">
+            <div class="mon-panel__header">
+                <span class="mon-panel__title">@(_selected.DiagnosisSummary ?? _selected.AlertSummary)</span>
+                <AppStatusChip Color="@StatusColor(_selected.Status)">@_selected.Status</AppStatusChip>
+            </div>
+            <MudStack Spacing="2" Class="pa-2">
+                <MudText Typo="Typo.body2"><strong>Rule:</strong> @_selected.AlertRuleName</MudText>
+                @if (_selected.JobName is not null)
+                {
+                    <MudText Typo="Typo.body2"><strong>Job:</strong> @_selected.JobName</MudText>
+                }
+                <MudText Typo="Typo.body2"><strong>Likely cause:</strong> @_selected.LikelyCause</MudText>
+                @if (_selected.Evidence.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2">Evidence</MudText>
+                    <AppBulletList>
+                        @foreach (var e in _selected.Evidence)
+                        {
+                            <AppBulletItem>@e</AppBulletItem>
+                        }
+                    </AppBulletList>
+                }
+                <MudText Typo="Typo.body2"><strong>Notification:</strong> @(_selected.NotificationStatus ?? "—")</MudText>
+                <MudText Typo="Typo.body2"><strong>Remediation:</strong>
+                    @if (_selected.RemediationWorkflowRunUrl is not null)
+                    {
+                        <MudLink Href="@_selected.RemediationWorkflowRunUrl" Target="_blank">workflow</MudLink>
+                    }
+                    else
+                    {
+                        @(_selected.SkipRemediationReason ?? "—")
+                    }
+                </MudText>
+                @if (_selected.PullRequestUrl is not null)
+                {
+                    <MudText Typo="Typo.body2">
+                        <strong>PR:</strong>
+                        <MudLink Href="@_selected.PullRequestUrl" Target="_blank">@_selected.PullRequestUrl</MudLink>
+                    </MudText>
+                }
+                @if (_selected.ErrorMessage is not null)
+                {
+                    <MudAlert Severity="Severity.Error">@_selected.ErrorMessage</MudAlert>
+                }
+            </MudStack>
+        </div>
+    }
+    else
+    {
+        <AppDataGrid T="TriageRun" Items="@_runs"
+                     SearchContext="admin-ops-triage"
+                     RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<TriageRun>>(this, HandleRowClick))"
+                     data-testid="ops-triage-grid">
+            <Columns>
+                <TemplateColumn Title="When (UTC)">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@context.Item.CreatedAtUtc.UtcDateTime.ToString("u")</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="r => r.AlertRuleName" Title="Alert rule" />
+                <PropertyColumn Property="r => r.JobName" Title="Job" />
+                <TemplateColumn Title="Status">
+                    <CellTemplate>
+                        <AppStatusChip Color="@StatusColor(context.Item.Status)">@context.Item.Status</AppStatusChip>
+                    </CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="r => r.DiagnosisSummary" Title="Diagnosis" />
+            </Columns>
+        </AppDataGrid>
+
+        @if (_runs.Count == 0)
+        {
+            <AppEmptyState Heading="No ops triage runs yet."
+                           data-testid="ops-triage-empty">
+                <DetailContent>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Runs appear when Azure Monitor posts to
+                        <code>/api/ops/alerts/webhook</code> and
+                        <code>OpsTriage:Enabled</code> is true.
+                    </MudText>
+                </DetailContent>
+            </AppEmptyState>
+        }
+    }
+
+</AppPageShell>
+
+@code {
+    [Parameter] public string? RunId { get; set; }
+    [SupplyParameterFromQuery(Name = "day")] public string? Day { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Ops Triage", href: "/admin/ops-triage", icon: Icons.Material.Filled.SupportAgent),
+    ];
+
+    private bool _loading = true;
+    private bool _isAdmin;
+    private bool _serviceUnavailable;
+    private bool _loadFailed;
+    private List<TriageRun> _runs = [];
+    private TriageRun? _selected;
+
+    private ITriageRunRepository? Runs => ServiceProvider.GetService<ITriageRunRepository>();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
+        if (!_isAdmin)
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+            return;
+        }
+
+        if (Runs is null)
+        {
+            _serviceUnavailable = true;
+            _loading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+            return;
+        }
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(RunId) && !string.IsNullOrWhiteSpace(Day))
+            {
+                _selected = await Runs.GetAsync(RunId, Day, CancellationToken.None).ConfigureAwait(true);
+            }
+            else
+            {
+                _runs = (await Runs.ListRecentAsync(100, CancellationToken.None).ConfigureAwait(true)).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load ops triage runs.");
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+        }
+    }
+
+    private void HandleRowClick(DataGridRowClickEventArgs<TriageRun> args)
+    {
+        Navigation.NavigateTo($"/admin/ops-triage/{args.Item.Id}?day={Uri.EscapeDataString(args.Item.AlertDay)}");
+    }
+
+    private static Color StatusColor(TriageRunStatus status) => status switch
+    {
+        TriageRunStatus.Completed => Color.Success,
+        TriageRunStatus.Failed => Color.Error,
+        TriageRunStatus.Diagnosing or TriageRunStatus.Notifying or TriageRunStatus.Remediating => Color.Info,
+        TriageRunStatus.Skipped => Color.Warning,
+        _ => Color.Default,
+    };
+}

@@ -73,6 +73,7 @@ negative) it carries.
 | [0060](0060-split-platform-workload-deployment-stacks.md) | Split platform / workload deployment stacks for ACA job image repoint | Accepted |
 | [0061](0061-matchplay-live-tournament-tools.md) | Match Play Events live-tournament tools (search + standings; not RAG) | Accepted |
 | [0062](0062-matchplay-live-event-floor-tools.md) | Match Play live event-floor Wizard tools (detail / arenas / rounds+games / player lookup) | Accepted |
+| [0063](0063-ops-triage-foundry-agent.md) | Ops Triage Foundry agent — alert enrichment + gated CI remediation (amends 0051) | Accepted |
 
 ## Conventions
 

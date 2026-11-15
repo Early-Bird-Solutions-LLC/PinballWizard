@@ -223,6 +223,14 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<CosmosAgentPromptOverrideRepository>>());
         });
 
+        // Ops Triage runs (ADR-0063) — admin portal + webhook processor.
+        services.AddSingleton<PinballWizard.Application.OpsTriage.ITriageRunRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "ops_triage_runs");
+            return new CosmosTriageRunRepository(container,
+                sp.GetRequiredService<ILogger<CosmosTriageRunRepository>>());
+        });
+
         // Registered HERE (not in the Application Ai extensions) on
         // purpose: IRuntimeSettings requires the repository above, which
         // only exists on Cosmos-wired hosts. Hosts without Cosmos resolve
