@@ -28,6 +28,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 {
     private readonly StubHandler _handler = new();
     private readonly HttpClient _httpClient;
+    private readonly OpdbOptions _opdbOptions;
     private readonly OpdbClient _client;
     private readonly IMachineRepository _repository = Substitute.For<IMachineRepository>();
     private readonly IIngestionSourceRepository _ingestionSources = Substitute.For<IIngestionSourceRepository>();
@@ -50,16 +51,17 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.matchplay.events/") };
 
-        var opdbOptions = Options.Create(new OpdbOptions
+        _opdbOptions = new OpdbOptions
         {
             BaseUrl = "https://api.matchplay.events/",
             ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json",
+            V2ExportUrl = "",
             ApiToken = "test-token",
             ExportCachePath = "",      // Cache disabled — tests pin sync semantics, not cache.
             GroupTitleCachePath = "",  // Group-title disk cache disabled for same reason.
-        });
+        };
 
-        _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);
+        _client = new OpdbClient(_httpClient, gate, politenessOptions, Options.Create(_opdbOptions), NullLogger<OpdbClient>.Instance);
 
         // Phase (g) of SyncAsync issues a single full-catalog cross-partition scan in apply mode.
         // Default to an empty stream so pre-existing tests (which don't set up stale copies)
@@ -96,6 +98,47 @@ public sealed class OpdbSyncServiceTests : IDisposable
         Assert.Equal(0, result.Skipped);
 
         await _repository.Received(2).UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_V2Enrichment_SetsDesignersAndBackglassOnInsert()
+    {
+        _opdbOptions.V2ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/opdb-v2.json";
+        _handler.SetResponseFor("/latest-opdb.json", ExportEnvelope(
+            [MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")]));
+        _handler.SetResponseFor("/opdb-v2.json", """
+            {
+              "entries": [
+                {
+                  "opdbId": "GRBN-MQR4P",
+                  "entryType": "machine",
+                  "people": [
+                    {"name": "Tom Kopera", "role": "mechanics", "index": 2},
+                    {"name": "George Gomez", "role": "design", "index": 0}
+                  ],
+                  "images": [
+                    {"primary": false, "type": "playfield", "urls": {"large": "https://img.opdb.org/playfield.jpg"}},
+                    {"primary": true, "type": "backglass", "urls": {"medium": "https://img.opdb.org/bg-medium.jpg", "large": "https://img.opdb.org/bg-large.jpg"}}
+                  ]
+                },
+                {"opdbId": "OTHER", "entryType": "alias", "people": [{"name": "Ignored", "role": "design", "index": 0}]}
+              ]
+            }
+            """);
+
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Inserted);
+        await _repository.Received(1).UpsertAsync(
+            Arg.Is<Machine>(m =>
+                m.Id == "GRBN-MQR4P"
+                && m.Designers.Count == 1
+                && m.Designers[0] == "George Gomez"
+                && m.ImageUrl == "https://img.opdb.org/bg-large.jpg"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

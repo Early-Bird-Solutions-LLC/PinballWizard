@@ -58,6 +58,13 @@ public sealed class Machine : IEntity
     [JsonPropertyName("designers")]
     public List<string> Designers { get; set; } = [];
 
+    /// <summary>
+    /// Primary backglass image from the Match Play OPDB V2 export.
+    /// Absent on machines the export does not illustrate.
+    /// </summary>
+    [JsonPropertyName("imageUrl")]
+    public string? ImageUrl { get; set; }
+
     /// <summary>Theme tags from OPDB.</summary>
     [JsonPropertyName("themes")]
     public List<string> Themes { get; set; } = [];
