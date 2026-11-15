@@ -50,8 +50,11 @@ public static class AnswerCitedSubjectFilter
         @"^OPDB record\s+\S+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    // ADR-0061 / ADR-0062 live tools emit "Match Play {standings|detail|arenas|
+    // floor|players} · {event}". Fail-open the whole family — these are
+    // tournament names, not machine subjects.
     private static readonly Regex MatchPlayTitle = new(
-        @"^Match Play standings\s*·",
+        @"^Match Play\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public static FilterResult Filter(string answerText, IReadOnlyList<Citation> citations)

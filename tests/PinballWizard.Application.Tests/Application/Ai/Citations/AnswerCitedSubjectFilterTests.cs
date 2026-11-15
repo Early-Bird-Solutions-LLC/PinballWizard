@@ -102,6 +102,29 @@ public sealed class AnswerCitedSubjectFilterTests
                 "Market value · Medieval Madness — Silverball Labs / PinballPrices.com"));
         Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("OPDB record GRBE-MJL05"));
         Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play standings · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play detail · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play arenas · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play floor · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play players · Alice"));
+    }
+
+    [Fact]
+    public void Filter_KeepsMatchPlayLiveToolCitationsWithoutEventNameInAnswer()
+    {
+        // Bugbot: ADR-0062 titles are "Match Play detail|arenas|floor|players · …"
+        // — must fail-open like standings, or a tournament-only answer trips
+        // NoCitation.
+        var citations = new[]
+        {
+            Cite("Match Play detail · Pinburgh 2026", "https://matchplay.events/t/1"),
+            Cite("Match Play floor · Pinburgh 2026", "https://matchplay.events/t/1/floor"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(
+            "Top seed is on arena 3 in the current round.", citations);
+
+        Assert.Equal(2, result.Kept.Count);
+        Assert.Equal(0, result.DroppedCount);
     }
 
     [Fact]
