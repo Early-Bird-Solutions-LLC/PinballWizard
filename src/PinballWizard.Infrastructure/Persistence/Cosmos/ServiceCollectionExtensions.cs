@@ -223,7 +223,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<CosmosAgentPromptOverrideRepository>>());
         });
 
-        // Ops Triage runs (ADR-0063) — admin portal + webhook processor.
+        // Ops Triage runs (ADR-0064) — admin portal + webhook processor.
         services.AddSingleton<PinballWizard.Application.OpsTriage.ITriageRunRepository>(sp =>
         {
             var container = ResolveContainer(sp, "ops_triage_runs");

@@ -11,7 +11,7 @@ namespace PinballWizard.Application.Ai;
 // instructions). GridSearch is a separate, admin-only agent (natural-
 // language-to-grid-filter translator for the admin data grids) — it is
 // registered the same way but is not part of that customer-facing
-// routing surface. OpsTriage (ADR-0063) is a standalone Foundry ops
+// routing surface. OpsTriage (ADR-0064) is a standalone Foundry ops
 // agent for alert diagnosis — also excluded from public Wizard routing.
 public static class AgentName
 {

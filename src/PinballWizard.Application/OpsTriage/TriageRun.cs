@@ -1,6 +1,6 @@
 namespace PinballWizard.Application.OpsTriage;
 
-/// <summary>Persisted ops-triage run (ADR-0063). Partitioned by alert day.</summary>
+/// <summary>Persisted ops-triage run (ADR-0064). Partitioned by alert day.</summary>
 public sealed class TriageRun
 {
     public required string Id { get; init; }

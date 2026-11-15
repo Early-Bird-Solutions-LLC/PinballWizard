@@ -8,7 +8,7 @@ using PinballWizard.Core.Configuration;
 namespace PinballWizard.Api.Endpoints;
 
 /// <summary>
-/// Azure Monitor action-group webhook ingress for Ops Triage (ADR-0063).
+/// Azure Monitor action-group webhook ingress for Ops Triage (ADR-0064).
 /// Auth: shared secret query <c>code</c> compared to <see cref="OpsTriageOptions.WebhookSecret"/>.
 /// </summary>
 public static class OpsTriageWebhookEndpoint

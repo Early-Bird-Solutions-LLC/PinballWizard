@@ -3,7 +3,7 @@ using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 
-/// <summary>Write-side POCO for <c>ops_triage_runs</c> (ADR-0063). PK <c>/alert_day</c>.</summary>
+/// <summary>Write-side POCO for <c>ops_triage_runs</c> (ADR-0064). PK <c>/alert_day</c>.</summary>
 internal sealed class TriageRunCosmosRecord : IEntity
 {
     [JsonPropertyName("id")]

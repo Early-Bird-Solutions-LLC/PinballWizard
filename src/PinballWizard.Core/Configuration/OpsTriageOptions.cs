@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PinballWizard.Core.Configuration;
 
-/// <summary>Configuration for the Ops Triage Foundry agent pipeline (ADR-0063).</summary>
+/// <summary>Configuration for the Ops Triage Foundry agent pipeline (ADR-0064).</summary>
 public sealed class OpsTriageOptions
 {
     public const string SectionName = "OpsTriage";

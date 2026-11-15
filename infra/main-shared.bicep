@@ -69,10 +69,10 @@ param wizardAliveUrl string = ''
 @description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). Leave empty to skip. Bound (SniEnabled) to the Cloudflare Origin CA cert from Key Vault — works with the Cloudflare proxy enabled (no DNS-only toggle needed). See ADR-0038.')
 param wizardCustomDomain string = ''
 
-@description('When non-empty, Azure Monitor posts alerts to the Foundry Ops Triage webhook (ADR-0063). Format: https://<api-host>/api/ops/alerts/webhook?code=<secret>. Empty = email-only.')
+@description('When non-empty, Azure Monitor posts alerts to the Foundry Ops Triage webhook (ADR-0064). Format: https://<api-host>/api/ops/alerts/webhook?code=<secret>. Empty = email-only.')
 param opsTriageWebhookUri string = ''
 
-@description('When true, Api mounts Ops Triage Key Vault secrets and enables the Foundry triage pipeline (ADR-0063). Leave false until OpsTriage-* secrets exist in Key Vault.')
+@description('When true, Api mounts Ops Triage Key Vault secrets and enables the Foundry triage pipeline (ADR-0064). Leave false until OpsTriage-* secrets exist in Key Vault.')
 param enableOpsTriage bool = false
 
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half). Empty default = Entra wiring off. See modules/shared.bicep azureAdClientId for the full contract; the client secret lives only in Key Vault.')

@@ -306,7 +306,7 @@ public sealed class CosmosOptions
                 ExcludedPaths = ["/*"],
             },
         },
-        // ops_triage_runs — Foundry Ops Triage pipeline (ADR-0063). Partition
+        // ops_triage_runs — Foundry Ops Triage pipeline (ADR-0064). Partition
         // /alert_day (yyyy-MM-dd) so admin "recent runs" is a short fan-out
         // over the last N days rather than a full cross-partition scan.
         // Selective index: status + created_at_utc for list filters; payload

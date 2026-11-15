@@ -1,6 +1,6 @@
 name: Ops Triage Remediate
 
-# CI-category remediation worker for the Foundry Ops Triage agent (ADR-0063).
+# CI-category remediation worker for the Foundry Ops Triage agent (ADR-0064).
 # Foundry does the diagnosis; this workflow owns git / failing test / fix / PR
 # (ADR-0051 mutation boundary). Humans merge the PR.
 #
@@ -71,7 +71,7 @@ jobs:
           # actor; allow github-actions for manual re-dispatch from the UI.
           allowed_bots: "github-actions"
           prompt: |
-            You are the PinballWizard Ops Triage remediation worker (ADR-0063 / ADR-0051 CI category).
+            You are the PinballWizard Ops Triage remediation worker (ADR-0064 / ADR-0051 CI category).
 
             Triage run: ${{ inputs.triage_run_id }} (day ${{ inputs.alert_day }})
             Alert rule: ${{ inputs.alert_rule }}

@@ -258,7 +258,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         }
 
         // Standalone agents (not connected to Wizard): GridSearch (admin NL
-        // filters) and OpsTriage (ADR-0063 alert diagnosis).
+        // filters) and OpsTriage (ADR-0064 alert diagnosis).
         string[] standaloneAgentNames = [AgentName.GridSearch, AgentName.OpsTriage];
         foreach (var name in standaloneAgentNames)
         {

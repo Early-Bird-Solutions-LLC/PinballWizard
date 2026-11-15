@@ -16,7 +16,7 @@ Ops Triage is the reference-app answer to “who watches the watchers?”:
 3. When reasonable, a **CI remediation workflow** opens a PR (failing test → fix → validate). Humans merge.
 4. **Admin → Ops Triage** shows every run (admin-only). Monitoring lists the job-failure alert and links here.
 
-See [ADR-0063](../adr/0063-ops-triage-foundry-agent.md).
+See [ADR-0064](../adr/0064-ops-triage-foundry-agent.md).
 
 ---
 

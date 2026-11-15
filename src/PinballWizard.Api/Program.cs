@@ -93,7 +93,7 @@ if (foundryWired)
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
 }
 
-// Ops Triage (ADR-0063) — Foundry diagnosis + alert webhook. Gated on Foundry
+// Ops Triage (ADR-0064) — Foundry diagnosis + alert webhook. Gated on Foundry
 // because IOpsTriageAgent requires IFoundryAgentFactory. Cosmos registration
 // (ITriageRunRepository) comes from AddHostCosmosPersistence below.
 if (foundryWired)
@@ -185,7 +185,7 @@ app.MapMachineSuggestEndpoint();
 // AI-driven grid search: GET /api/search/grid?q={query}&context={context}
 app.MapGridSearchEndpoint();
 
-// Ops Triage webhook + admin read APIs (ADR-0063)
+// Ops Triage webhook + admin read APIs (ADR-0064)
 app.MapOpsTriageWebhookEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);

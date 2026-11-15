@@ -1,4 +1,4 @@
-# 0063 — Ops Triage Foundry agent (alert enrichment + gated remediation)
+# 0064 — Ops Triage Foundry agent (alert enrichment + gated remediation)
 
 **Status:** Accepted  
 **Date:** 2026-11-15  
