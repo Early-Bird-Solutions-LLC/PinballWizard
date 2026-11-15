@@ -125,7 +125,7 @@ Note: Pinside and Dutch Pinball are already deferred indefinitely per their `Dis
 
 ## Step 6 — OPDB-specific handling (5 min)
 
-OPDB (`opdb.org/api/`) is an API source, not a web scraper. If OPDB returns 401 or 403:
+OPDB (Match Play CDN export `latest-opdb.json`; `opdb.org/api` retired 2026-10-01, ADR-0059) is an API source, not a web scraper. If OPDB returns 401 or 403:
 
 - 401 — API token likely expired or revoked. Run `05-secret-rotation.md` § Rotate OPDB API token.
 - 403 — Account may be suspended. Check https://opdb.org for status or contact the OPDB team.
