@@ -11,6 +11,8 @@ public static class OpdbV2EnrichmentParser
 {
     public const string DesignRole = "design";
 
+    private static readonly string[] BackglassSizePreference = ["large", "medium", "small"];
+
     // Parses opdb-v2.json. Only machine rows are kept; group and alias rows
     // are not copied onto a different id. A missing entries array is a wrong
     // document, not an empty catalog.
@@ -125,16 +127,9 @@ public static class OpdbV2EnrichmentParser
             return null;
         }
 
-        foreach (var size in new[] { "large", "medium", "small" })
-        {
-            var url = ReadString(urls, size);
-            if (!string.IsNullOrWhiteSpace(url))
-            {
-                return url;
-            }
-        }
-
-        return null;
+        return BackglassSizePreference
+            .Select(size => ReadString(urls, size))
+            .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url));
     }
 
     private static string? ReadString(JsonElement element, string name) =>
