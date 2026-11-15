@@ -48,8 +48,12 @@ and snake_case wire shape. Continuing to call opdb.org cannot succeed.
   the locked "fallbacks must not hide failures" invariant and would mask
   config drift.
 - **Adopt V2 `entries` envelope now:** Rejected for this fix — larger mapper
-  change (`entryType`, nested people/images). V1 preserves machines / aliases /
-  groups separation the sync already understands. Revisit when V1 is retired.
+  change (`entryType`, nested `people`/images). V1 preserves machines / aliases /
+  groups separation the sync already understands. V2 is the path that carries
+  designer credits (`people`); V1 machine rows have no `designers` / `people`
+  field. That gap already exists in production (every sampled machine has
+  empty `designers` — #611 / ADR-0049), so delaying V2 does not regress
+  findability. Revisit V2 when designers become in-scope or Match Play retires V1.
 - **Match Play entry API only (no CDN):** Rejected — Match Play docs require
   CDN for bulk OPDB; entry API is for single lookups.
 
@@ -58,6 +62,11 @@ and snake_case wire shape. Continuing to call opdb.org cannot succeed.
 - Weekly OPDB sync works again after image/deploy picks up this change.
 - Group-title resolution during sync is primarily in-process (export-seeded);
   ACA job wall-clock drops vs the old polite per-segment loop.
+- **`Machine.Designers` stays empty under V1.** Mapper already copies
+  `dto.Designers` when present; Match Play V1 simply never sends them.
+  Designer-based findability remains deferred per #611 / ADR-0049 until a
+  follow-up adopts V2 `people` (or another source). Do not treat empty
+  designers as a sync bug after this change.
 - Operators must rotate Match Play API tokens into `Opdb-ApiToken` if they
   rely on entry/changelog endpoints; export-only sync needs no token.
 - Docs / runbooks that still say `https://opdb.org/api/` need follow-up edits
@@ -69,4 +78,6 @@ and snake_case wire shape. Continuing to call opdb.org cannot succeed.
 - [Match Play data exports](https://docs.matchplay.events/data-exports)
 - Tilt Forums OPDB shutdown notice (2026-10-01)
 - ADR-0029 (version-aware OPDB ingestion / group titles)
+- ADR-0049 (findability — designer probes deferred while `designers` empty)
+- #611 (populate `designers` — enhancement; not a merge blocker for V1)
 - DL-0003 (original `/api/export` vs paginated `/api/machines` fix)

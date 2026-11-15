@@ -116,6 +116,7 @@ public sealed class OpdbClientTests : IDisposable
         {
             await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
             {
+                // Intentionally drain the async stream to trigger enumeration-time exception.
             }
         });
 
@@ -134,6 +135,7 @@ public sealed class OpdbClientTests : IDisposable
         {
             await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
             {
+                // Intentionally drain the async stream to trigger enumeration-time exception.
             }
         });
 
@@ -149,6 +151,7 @@ public sealed class OpdbClientTests : IDisposable
         {
             await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
             {
+                // Intentionally drain the async stream to trigger enumeration-time exception.
             }
         });
 
@@ -163,6 +166,7 @@ public sealed class OpdbClientTests : IDisposable
 
         await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
         {
+            // Drain stream so the CDN GET is recorded for the Authorization assertion.
         }
 
         var firstRequest = Assert.Single(_handler.Requests);
@@ -330,7 +334,8 @@ public sealed class OpdbClientTests : IDisposable
                 }
                 return Task.FromResult(response);
             }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
+            return Task.FromResult(notFound);
         }
     }
 }

@@ -246,7 +246,8 @@ public sealed class OpdbGroupTitleCacheTests : IDisposable
                 }
                 return Task.FromResult(resp);
             }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
+            return Task.FromResult(notFound);
         }
     }
 }

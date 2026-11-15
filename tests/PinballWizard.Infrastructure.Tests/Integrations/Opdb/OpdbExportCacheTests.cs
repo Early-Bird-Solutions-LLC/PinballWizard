@@ -269,7 +269,8 @@ public sealed class OpdbExportCacheTests : IDisposable
                     Content = new StringContent(entry.Body, Encoding.UTF8, "application/json"),
                 });
             }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
+            return Task.FromResult(notFound);
         }
     }
 }

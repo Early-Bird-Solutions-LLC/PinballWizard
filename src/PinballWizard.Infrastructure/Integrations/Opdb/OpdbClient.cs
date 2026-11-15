@@ -72,20 +72,14 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
 
         await SeedGroupTitlesFromExportAsync(envelope.MachineGroups, cancellationToken).ConfigureAwait(false);
 
-        foreach (var dto in envelope.Machines)
+        foreach (var dto in envelope.Machines.Where(static d => d is not null))
         {
-            if (dto is not null)
-            {
-                yield return dto;
-            }
+            yield return dto!;
         }
 
-        foreach (var dto in envelope.Aliases)
+        foreach (var dto in envelope.Aliases.Where(static d => d is not null))
         {
-            if (dto is not null)
-            {
-                yield return dto;
-            }
+            yield return dto!;
         }
     }
 
