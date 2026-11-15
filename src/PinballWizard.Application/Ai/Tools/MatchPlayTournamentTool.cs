@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net.Http;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Tournaments;
@@ -14,6 +16,10 @@ namespace PinballWizard.Application.Ai.Tools;
 //
 // CancellationToken defaults are load-bearing for AIFunctionFactory schemas
 // (same rationale as MarketValueTool / SearchCorpusTool).
+//
+// Fail closed on expected operational failures (HTTP / JSON / timeout /
+// InvalidOperation from mapping) — return null so the Wizard can degrade
+// honestly rather than aborting the turn. Caller cancellation still propagates.
 public sealed class MatchPlayTournamentTool
 {
     internal const string SearchToolTag = "searchMatchPlayTournaments";
@@ -73,17 +79,31 @@ public sealed class MatchPlayTournamentTool
                     h.PublicUrl))
                 .ToList();
         }
+        // TaskCanceledException : OperationCanceledException — catch timeout-like
+        // cancels before the rethrow arm so HttpClient timeouts fail closed.
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return FailSearch(ex, query);
+        }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
         {
-            PinballWizardTelemetry.AiToolErrors.Add(
-                1,
-                new KeyValuePair<string, object?>("tool", SearchToolTag));
-            _logger.LogWarning(ex, "MatchPlayTournamentTool: search failed query={Query}", query);
-            return null;
+            return FailSearch(ex, query);
+        }
+        catch (JsonException ex)
+        {
+            return FailSearch(ex, query);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return FailSearch(ex, query);
+        }
+        catch (IOException ex)
+        {
+            return FailSearch(ex, query);
         }
         finally
         {
@@ -146,20 +166,29 @@ public sealed class MatchPlayTournamentTool
                         s.IfpaId))
                     .ToList());
         }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return FailStandings(ex, tournamentId);
+        }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
         {
-            PinballWizardTelemetry.AiToolErrors.Add(
-                1,
-                new KeyValuePair<string, object?>("tool", StandingsToolTag));
-            _logger.LogWarning(
-                ex,
-                "MatchPlayTournamentTool: standings failed tournamentId={TournamentId}",
-                tournamentId);
-            return null;
+            return FailStandings(ex, tournamentId);
+        }
+        catch (JsonException ex)
+        {
+            return FailStandings(ex, tournamentId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return FailStandings(ex, tournamentId);
+        }
+        catch (IOException ex)
+        {
+            return FailStandings(ex, tournamentId);
         }
         finally
         {
@@ -168,5 +197,26 @@ public sealed class MatchPlayTournamentTool
                 stopwatch.Elapsed.TotalMilliseconds,
                 new KeyValuePair<string, object?>("tool", StandingsToolTag));
         }
+    }
+
+    private IReadOnlyList<MatchPlayTournamentHitDto>? FailSearch(Exception ex, string query)
+    {
+        PinballWizardTelemetry.AiToolErrors.Add(
+            1,
+            new KeyValuePair<string, object?>("tool", SearchToolTag));
+        _logger.LogWarning(ex, "MatchPlayTournamentTool: search failed query={Query}", query);
+        return null;
+    }
+
+    private MatchPlayTournamentStandingsDto? FailStandings(Exception ex, int tournamentId)
+    {
+        PinballWizardTelemetry.AiToolErrors.Add(
+            1,
+            new KeyValuePair<string, object?>("tool", StandingsToolTag));
+        _logger.LogWarning(
+            ex,
+            "MatchPlayTournamentTool: standings failed tournamentId={TournamentId}",
+            tournamentId);
+        return null;
     }
 }

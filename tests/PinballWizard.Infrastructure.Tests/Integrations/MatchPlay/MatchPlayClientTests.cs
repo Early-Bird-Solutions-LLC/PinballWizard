@@ -9,18 +9,23 @@ namespace PinballWizard.Infrastructure.Tests.Integrations.MatchPlay;
 public sealed class MatchPlayClientTests : IDisposable
 {
     private readonly RecordingHandler _handler = new();
+    private readonly HttpClient _http;
     private readonly MatchPlayClient _client;
 
     public MatchPlayClientTests()
     {
-        var http = new HttpClient(_handler)
+        _http = new HttpClient(_handler)
         {
             BaseAddress = new Uri("https://api.matchplay.events/"),
         };
-        _client = new MatchPlayClient(http, NullLogger<MatchPlayClient>.Instance);
+        _client = new MatchPlayClient(_http, NullLogger<MatchPlayClient>.Instance);
     }
 
-    public void Dispose() => _handler.Dispose();
+    public void Dispose()
+    {
+        _http.Dispose();
+        _handler.Dispose();
+    }
 
     [Fact]
     public async Task SearchTournamentsAsync_ParsesDataArray()
@@ -81,10 +86,14 @@ public sealed class MatchPlayClientTests : IDisposable
         Assert.Null(await _client.GetTournamentAsync(404, includePlayers: true));
     }
 
+    // Owns responses created for HttpClient so CodeQL sees Dispose on every
+    // HttpResponseMessage allocated by the handler (client using-dispose is
+    // not visible to the analyzer at the creation site).
     private sealed class RecordingHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, (HttpStatusCode Status, string Body)> _map =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<HttpResponseMessage> _created = [];
 
         public void Map(string url, string json) =>
             _map[url] = (HttpStatusCode.OK, json);
@@ -99,18 +108,37 @@ public sealed class MatchPlayClientTests : IDisposable
             var key = request.RequestUri!.ToString();
             if (!_map.TryGetValue(key, out var entry))
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+                return Task.FromResult(Track(new HttpResponseMessage(HttpStatusCode.NotFound)
                 {
                     Content = new StringContent("", Encoding.UTF8, "application/json"),
-                });
+                }));
             }
 
-            return Task.FromResult(new HttpResponseMessage(entry.Status)
+            return Task.FromResult(Track(new HttpResponseMessage(entry.Status)
             {
                 Content = new StringContent(entry.Body, Encoding.UTF8, "application/json"),
-            });
+            }));
         }
 
-        protected override void Dispose(bool disposing) => base.Dispose(disposing);
+        private HttpResponseMessage Track(HttpResponseMessage response)
+        {
+            _created.Add(response);
+            return response;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                foreach (var response in _created)
+                {
+                    response.Dispose();
+                }
+
+                _created.Clear();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }
