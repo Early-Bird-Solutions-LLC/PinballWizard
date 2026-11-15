@@ -168,8 +168,16 @@
 
     @* ── Follow-up composer AFTER the answer (#787) ────────────────────────
        Always in the DOM on terminal states — no "Ask a follow-up" reveal click.
-       Document order: question → answer → composer (never controls between). *@
-    @if (_state is AnswerState.Complete or AnswerState.Refusal or AnswerState.Error)
+       Document order: question → answer → composer (never controls between).
+
+       Error while `_errorRecoveryInFlight`: the stream failed and
+       FallbackToWholeResponseAsync is still running. Mounting the autofocus
+       composer here would let Enter → PrepareFollowUp cancel that CTS and
+       drop the recovery answer (#787 Bugbot Medium). Show the composer on
+       Error only after recovery finishes (success transitions away; hard
+       failure leaves Error with the composer for a fresh ask). *@
+    @if (_state is AnswerState.Complete or AnswerState.Refusal
+         || (_state == AnswerState.Error && !_errorRecoveryInFlight))
     {
         <MudStack Spacing="3" Class="mt-4" data-testid="follow-up-composer">
             @if (_thread.Count >= MaxClientTurns && _pendingTurn is not null)
@@ -281,6 +289,11 @@
     // Cancelled in Dispose() to abort in-flight streams on navigation-away.
     private CancellationTokenSource _cts = new();
 
+    // True between Error transition and FallbackToWholeResponseAsync completion.
+    // Keeps the autofocus follow-up composer unmounted so a premature submit
+    // cannot cancel the recovery CTS (#787 Bugbot Medium).
+    private bool _errorRecoveryInFlight;
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     protected override async Task OnParametersSetAsync()
@@ -318,6 +331,11 @@
     private async Task SubmitFromComposerAsync()
     {
         if (string.IsNullOrWhiteSpace(_question))
+            return;
+
+        // Defense in depth: composer is hidden while recovery runs, but do not
+        // cancel the fallback CTS if a stray submit still arrives (#787 Bugbot).
+        if (_state == AnswerState.Error && _errorRecoveryInFlight)
             return;
 
         if (_state is AnswerState.Complete or AnswerState.Refusal or AnswerState.Error)
@@ -478,6 +496,7 @@
             // marshal the Error transition + render onto the Dispatcher.
             await InvokeAsync(() =>
             {
+                _errorRecoveryInFlight = true;
                 TransitionTo(AnswerState.Error);
                 StateHasChanged();
             }).ConfigureAwait(false);
@@ -566,6 +585,16 @@
             // Leave in Error state — user sees the alert. Off-Dispatcher: marshal render.
             await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
+        finally
+        {
+            // Recovery finished (Complete/Streaming/Refusal, or hard Error). Safe
+            // to mount the follow-up composer without cancelling an in-flight CTS.
+            await InvokeAsync(() =>
+            {
+                _errorRecoveryInFlight = false;
+                StateHasChanged();
+            }).ConfigureAwait(false);
+        }
     }
 
     // ── Final chunk application (canonical truth) ─────────────────────────
@@ -636,6 +665,7 @@
         _refusalDetail = null;
         _retryAfterSeconds = null;
         _pendingTurn = null;
+        _errorRecoveryInFlight = false;
     }
 
     // "Ask a follow-up" after a terminal state: the completed turn (if the

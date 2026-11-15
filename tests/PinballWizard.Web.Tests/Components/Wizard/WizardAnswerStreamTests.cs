@@ -745,6 +745,65 @@ public sealed class WizardAnswerStreamTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task Error_recovery_hides_follow_up_composer_until_fallback_finishes()
+    {
+        // #787 Bugbot Medium: composer must not mount (AutoFocus) while
+        // FallbackToWholeResponseAsync still holds the turn CTS.
+        var releaseFallback = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callCount = 0;
+        var fallbackAnswer = BuildAnswer("Recovered answer");
+
+        var client = Substitute.For<IWizardStreamingClient>();
+        IAsyncEnumerable<AnswerChunk> Route()
+        {
+            callCount++;
+            return callCount == 1 ? ThrowingAsync() : DelayedFallbackAsync();
+        }
+
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Route());
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Route());
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
+            p.Add(c => c.Question, "force stream failure"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='stream-error-alert']"),
+            timeout: TimeSpan.FromSeconds(3));
+        Assert.Empty(cut.FindAll("[data-testid='follow-up-composer']"));
+
+        releaseFallback.SetResult();
+
+        cut.WaitForAssertion(
+            () => Assert.Contains("Recovered answer", cut.Markup, StringComparison.OrdinalIgnoreCase),
+            timeout: TimeSpan.FromSeconds(5));
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='follow-up-composer']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        async IAsyncEnumerable<AnswerChunk> DelayedFallbackAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await releaseFallback.Task.WaitAsync(ct);
+            yield return new AnswerChunk.Final(fallbackAnswer);
+        }
+
+        static async IAsyncEnumerable<AnswerChunk> ThrowingAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("Simulated stream failure");
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
+    [Fact]
     public async Task Complete_state_shows_follow_up_composer_without_reveal_click()
     {
         var answer = BuildAnswer("Done.", citations: [BuildCitation("Source")]);
