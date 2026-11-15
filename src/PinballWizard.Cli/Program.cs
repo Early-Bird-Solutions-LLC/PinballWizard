@@ -945,6 +945,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine("Rebuilding AI Search RAG index (DROP + recreate) — all chunks will be removed...");
         var rebuildResult = await bootstrapper.RecreateAsync(cancellationToken);
+        var rebuildIndexState = host.Services.GetService<PinballWizard.Application.Rag.Ingestion.IIndexState>();
+        if (rebuildIndexState is not null)
+        {
+            var cleared = await rebuildIndexState.ClearAllAsync(cancellationToken);
+            Console.WriteLine($"Cleared {cleared} rag_index_state row(s) so re-ingest does not skip wiped chunks.");
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                "Warning: rag_index_state was not cleared (IIndexState is not configured). " +
+                "A later sync may skip documents whose hash was recorded before this wipe.");
+        }
         Console.WriteLine(
             $"AI Search RAG index rebuilt: {rebuildResult.IndexName}. " +
             "Re-ingest now: --run-rag-backfill then --sync-metadata-cards.");
@@ -1524,6 +1536,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         var pinTipsRawDocs = host.Services.GetService<IRawDocumentRepository>();
+        var pinTipsIndexState = host.Services.GetService<PinballWizard.Application.Rag.Ingestion.IIndexState>();
         var pinTipsMachines = host.Services.GetService<IMachineRepository>();
         if (pinTipsMachines is null)
         {
@@ -1584,10 +1597,11 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 if (chunks.Count == 0) continue;
 
                 var contentHash = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.ContentHash(tip, exportUrl);
-                if (pinTipsRawDocs is not null)
+                if (pinTipsIndexState is not null)
                 {
-                    var stored = await pinTipsRawDocs.GetAsync(documentId, cancellationToken);
-                    if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(stored?.ContentHash, contentHash))
+                    var lastIndexed = await pinTipsIndexState.GetLastIndexedHashAsync(
+                        documentId, target.MachineId, cancellationToken);
+                    if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(lastIndexed, contentHash))
                     {
                         pinTipsSkippedUnchanged++;
                         continue;
@@ -1612,16 +1626,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     {
                         pinTipsRawFailed++;
                     }
-                    else if (pinTipsRawDocs is not null)
+
+                    if (pinTipsIndexState is not null)
                     {
                         try
                         {
-                            await pinTipsRawDocs.DenormalizeContentHashAsync(documentId, contentHash, cancellationToken);
+                            await pinTipsIndexState.RecordIndexedAsync(
+                                documentId, target.MachineId, contentHash, chunks.Count, 0, cancellationToken);
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            Console.Error.WriteLine($"  Warning: content-hash stamp failed for {documentId}: {ex.Message}");
-                            pinTipsRawFailed++;
+                            Console.Error.WriteLine(
+                                $"  Warning: index-state stamp failed for {documentId}: {ex.Message}. The next sync will re-embed it.");
                         }
                     }
                 }

@@ -90,6 +90,13 @@ internal sealed class InMemoryIndexState : IIndexState
         return Task.CompletedTask;
     }
 
+    public Task<int> ClearAllAsync(CancellationToken cancellationToken)
+    {
+        var count = _rows.Count;
+        _rows.Clear();
+        return Task.FromResult(count);
+    }
+
     public void SeedExistingHash(string documentId, string machineId, string hash) =>
         _rows[(documentId, machineId)] = new StateRow(hash, ChunkCount: 0, FailureCount: 0, SkipReason: null);
 

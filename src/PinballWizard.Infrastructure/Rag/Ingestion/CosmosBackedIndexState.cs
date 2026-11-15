@@ -155,4 +155,28 @@ public sealed class CosmosBackedIndexState : IIndexState
             "RAG index state: recorded skip document={DocumentId} machine={MachineId} reason={SkipReason}.",
             documentId, machineId, skipOutcome);
     }
+
+    public async Task<int> ClearAllAsync(CancellationToken cancellationToken)
+    {
+        var query = _container.GetItemQueryIterator<IndexStateDocument>(
+            new QueryDefinition("SELECT c.id, c.document_id FROM c"));
+        var deleted = 0;
+        while (query.HasMoreResults)
+        {
+            var page = await query.ReadNextAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var row in page)
+            {
+                await _container.DeleteItemAsync<IndexStateDocument>(
+                    row.Id,
+                    new PartitionKey(row.DocumentId),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                deleted++;
+            }
+        }
+
+        _logger.LogWarning(
+            "RAG index state cleared: {Count} row(s) removed so a rebuilt index is not skipped as already indexed.",
+            deleted);
+        return deleted;
+    }
 }

@@ -750,8 +750,10 @@ resource twipJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 // --sync-pintips reads the Match Play daily export and upserts one PlayTip
 // document per catalog machine the tip resolves to. The 2026-11-15 run indexed
 // 5542 documents from 3495 tips in about 71 minutes. Later runs skip a tip
-// whose stored content hash matches. The first run after that skip ships still
-// re-embeds, because the earlier documents have no hash. Weekly remains the
+// whose rag_index_state hash matches. --rebuild-rag-index clears that
+// ledger with the index, so a wipe is re-embedded instead of skipped.
+// The first run after this skip ships still re-embeds, because earlier
+// tips have no ledger row. Weekly remains the
 // cadence so a changed-tip week stays inside the cost cap.
 // 7200s: the TWIP job's 3600s timeout killed the first attempt at tip 3207.
 // Sunday 17:00 is after OPDB (03:00) and clear of the Stern refresh window.
