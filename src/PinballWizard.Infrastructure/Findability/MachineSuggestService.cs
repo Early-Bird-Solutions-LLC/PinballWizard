@@ -67,6 +67,15 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         if (nonWsCount < MinNonWhitespaceChars)
             return [];
 
+        // Strip question stopwords before hitting the index (#785). A full
+        // sentence like "whats a good strategy for transformers" otherwise
+        // BM25-matches Fore / No Good Gofers / Invasion Strategy on fluff.
+        var normalized = MachineSuggestQueryNormalizer.Normalize(query);
+        var queryTokens = normalized.Tokens;
+        var searchText = MachineSuggestQueryNormalizer.BuildSearchText(queryTokens);
+        if (searchText.Length == 0)
+            return [];
+
         // Index not configured → degrade honestly to empty (invariant #17).
         if (_index is null)
         {
@@ -85,8 +94,22 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         // no fabricated suggestions. Cancellation propagates normally.
         try
         {
-            var hits = await _index.SearchAsync(query, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
-            return CollapseEditions(hits, top);
+            var hits = await _index.SearchAsync(
+                searchText, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
+
+            // Title post-filter (#785):
+            // Prefer lexical TitleMatchesQuery hits when any exist (drops BM25
+            // noise from question fluff matching Fore / Gofers / …). When none
+            // overlap, keep the raw hits — synonym / title_phonetic resolutions
+            // (AFM → Attack from Mars) have no lexical title overlap and must
+            // survive both bare typing AND question wrappers
+            // ("whats a good strategy for afm") — #785 Bugbot High.
+            var lexical = hits
+                .Where(h => MachineSuggestQueryNormalizer.TitleMatchesQuery(h.Title, queryTokens))
+                .ToList();
+            IReadOnlyList<MachineSearchHit> forCollapse = lexical.Count > 0 ? lexical : hits;
+
+            return CollapseEditions(forCollapse, top);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
