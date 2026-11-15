@@ -56,6 +56,11 @@ public sealed class MatchPlayRatingsTool
         {
             throw;
         }
+        // Broad catch is intentional (Invariant #17 / OBS-01 sibling of
+        // MatchPlayTournamentTool.RunAsync): Wizard tools fail closed to null
+        // on any provider/mapping fault so the turn continues. Narrowing to
+        // HttpRequestException alone would let InvalidOperationException /
+        // ArgumentException escape and abort the answer.
         catch (Exception ex)
         {
             return FailSearch(ex, query);
@@ -107,6 +112,8 @@ public sealed class MatchPlayRatingsTool
         {
             throw;
         }
+        // See SearchMatchPlayRatingsAsync — fail-closed broad catch is the
+        // Wizard tool contract (matches MatchPlayTournamentTool.RunAsync).
         catch (Exception ex)
         {
             return FailCompare(ex, leftQuery, rightQuery);

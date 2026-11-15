@@ -160,10 +160,15 @@ public sealed class MatchPlayRatingsProviderTests
         }
     }
 
+    // Owns responses created for HttpClient so CodeQL sees Dispose on every
+    // HttpResponseMessage allocated by the handler (client using-dispose is
+    // not visible to the analyzer at the creation site). Same pattern as
+    // MatchPlayClientTests.RecordingHandler.
     private sealed class CountingHandler : HttpMessageHandler
     {
         private readonly string _body;
         private readonly System.Net.HttpStatusCode _status;
+        private readonly List<HttpResponseMessage> _created = [];
 
         public int RequestCount { get; private set; }
 
@@ -178,10 +183,27 @@ public sealed class MatchPlayRatingsProviderTests
             CancellationToken cancellationToken)
         {
             RequestCount++;
-            return Task.FromResult(new HttpResponseMessage(_status)
+            var response = new HttpResponseMessage(_status)
             {
                 Content = new StringContent(_body),
-            });
+            };
+            _created.Add(response);
+            return Task.FromResult(response);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                foreach (var response in _created)
+                {
+                    response.Dispose();
+                }
+
+                _created.Clear();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }
