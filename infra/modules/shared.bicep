@@ -227,6 +227,12 @@ param wizardAliveUrl string = ''
 @description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, the domain is bound (SniEnabled) to the Cloudflare Origin CA certificate sourced from Key Vault (cert name "cloudflare-origin-pinwiz"; imported by infra/scripts/Import-OriginCaCertToKeyVault.ps1). See ADR-0038. Leave empty to skip.')
 param wizardCustomDomain string = ''
 
+@description('When non-empty, Azure Monitor posts the common alert schema to the Foundry Ops Triage webhook (ADR-0064). Format: https://<api-host>/api/ops/alerts/webhook?code=<OpsTriage:WebhookSecret>. Empty keeps email-only action-group behavior.')
+param opsTriageWebhookUri string = ''
+
+@description('When true, Api ACA mounts Ops Triage Key Vault secrets (WebhookSecret / EmailConnectionString / GitHubToken) and sets OpsTriage__Enabled=true. Leave false until those three secrets exist in Key Vault — otherwise the Api revision fails secret resolution. See docs/runbooks/07-ops-triage.md.')
+param enableOpsTriage bool = false
+
 // -----------------------------------------------------------------------------
 // Naming
 // -----------------------------------------------------------------------------
@@ -1693,7 +1699,12 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
       //   az keyvault secret set --name silverball-api-key --value sbl_live_…
       //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
       // Kineticist key name matches the C2 CLI job secret (Kineticist-ApiKey).
-      secrets: [
+      // Ops Triage (ADR-0064) secrets — gated by enableOpsTriage so a merge
+      // does not brick the Api before KV secrets exist. Seed then flip true:
+      //   az keyvault secret set --name OpsTriage-WebhookSecret --value …
+      //   az keyvault secret set --name OpsTriage-EmailConnectionString --value …
+      //   az keyvault secret set --name OpsTriage-GitHubToken --value …
+      secrets: concat([
         {
           name: 'silverball-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
@@ -1704,7 +1715,23 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
-      ]
+      ], enableOpsTriage ? [
+        {
+          name: 'ops-triage-webhook-secret'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/OpsTriage-WebhookSecret'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          name: 'ops-triage-email-connection-string'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/OpsTriage-EmailConnectionString'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          name: 'ops-triage-github-token'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/OpsTriage-GitHubToken'
+          identity: acaIdentity.?id ?? ''
+        }
+      ] : [])
     }
     template: {
       containers: [
@@ -1715,7 +1742,7 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'ASPNETCORE_URLS'
               value: 'http://+:8080'
@@ -1795,7 +1822,34 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
               name: 'Kineticist__ApiKey'
               secretRef: 'kineticist-api-key'
             }
-          ]
+          ], enableOpsTriage ? [
+            // Ops Triage Foundry agent (ADR-0064) — showcase ops AI.
+            {
+              name: 'OpsTriage__Enabled'
+              value: 'true'
+            }
+            {
+              name: 'OpsTriage__AdminBaseUrl'
+              value: empty(wizardCustomDomain) ? '' : 'https://${wizardCustomDomain}'
+            }
+            {
+              // Diagnosis quality — same gpt-4-1 deployment as Repair (ADR-0015).
+              name: 'AiFoundry__AgentModels__OpsTriage'
+              value: 'gpt-4-1'
+            }
+            {
+              name: 'OpsTriage__WebhookSecret'
+              secretRef: 'ops-triage-webhook-secret'
+            }
+            {
+              name: 'OpsTriage__EmailConnectionString'
+              secretRef: 'ops-triage-email-connection-string'
+            }
+            {
+              name: 'OpsTriage__GitHubToken'
+              secretRef: 'ops-triage-github-token'
+            }
+          ] : [])
         }
       ]
       scale: {
@@ -1903,6 +1957,13 @@ resource opsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (deplo
         useCommonAlertSchema: true
       }
     ]
+    webhookReceivers: opsTriageWebhookUri != '' ? [
+      {
+        name: 'OpsTriageWebhook'
+        serviceUri: opsTriageWebhookUri
+        useCommonAlertSchema: true
+      }
+    ] : []
   }
 }
 

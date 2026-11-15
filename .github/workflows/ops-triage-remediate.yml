@@ -1,0 +1,103 @@
+name: Ops Triage Remediate
+
+# CI-category remediation worker for the Foundry Ops Triage agent (ADR-0064).
+# Foundry does the diagnosis; this workflow owns git / failing test / fix / PR
+# (ADR-0051 mutation boundary). Humans merge the PR.
+#
+# Triggered by workflow_dispatch from the Api (GitHubOpsTriageRemediationDispatcher)
+# or manually for replay. Auth: Anthropic WIF (ADR-0047), same as docs-agent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      triage_run_id:
+        description: TriageRun id
+        required: true
+      alert_day:
+        description: Alert day (yyyy-MM-dd)
+        required: true
+      alert_rule:
+        description: Azure Monitor alert rule name
+        required: true
+      job_name:
+        description: ACA job name when present
+        required: false
+        default: ''
+      diagnosis_summary:
+        description: Short diagnosis headline
+        required: true
+      likely_cause:
+        description: Likely root cause
+        required: true
+      failing_test_sketch:
+        description: Suggested failing test
+        required: false
+        default: ''
+      fix_sketch:
+        description: Suggested fix
+        required: false
+        default: ''
+      risk_notes:
+        description: Risk notes
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: ops-triage-remediate-${{ inputs.triage_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    name: Add failing test, fix, open PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run remediation agent
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1
+        with:
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          # workflow_dispatch from the Api uses a PAT / App token as a human-ish
+          # actor; allow github-actions for manual re-dispatch from the UI.
+          allowed_bots: "github-actions"
+          prompt: |
+            You are the PinballWizard Ops Triage remediation worker (ADR-0064 / ADR-0051 CI category).
+
+            Triage run: ${{ inputs.triage_run_id }} (day ${{ inputs.alert_day }})
+            Alert rule: ${{ inputs.alert_rule }}
+            Job: ${{ inputs.job_name }}
+            Diagnosis: ${{ inputs.diagnosis_summary }}
+            Likely cause: ${{ inputs.likely_cause }}
+            Failing test sketch: ${{ inputs.failing_test_sketch }}
+            Fix sketch: ${{ inputs.fix_sketch }}
+            Risk notes: ${{ inputs.risk_notes }}
+
+            Goal (only when a small, local repro is reasonable given the sketches):
+            1. Add a failing unit/integration test that reproduces the issue.
+            2. Implement the minimal fix.
+            3. Run the focused `dotnet test` filter that proves red→green.
+            4. Create branch `cursor/ops-triage-${{ inputs.triage_run_id }}`, commit as
+               Jim Keeley <94459922+jkeeley2073@users.noreply.github.com>, push, and open
+               a PR against main. Do NOT merge — humans merge.
+            5. Label the PR `claude-code` and reference the triage run id in the body.
+
+            If the sketches are empty, infra-only, third-party, or too risky:
+            open (or comment on) a GitHub issue labeled `ops-triage` summarizing why
+            remediation was skipped — do not invent a code change.
+
+            Constraints:
+            - No secrets in code or logs.
+            - Prefer existing test projects under tests/.
+            - Keep the PR focused; no drive-by refactors.
+            - Follow Clean Architecture and PinballWizard standards in CLAUDE.md.
+          claude_args: '--allowedTools "Bash,Edit,Write,Read,Grep,Glob"'

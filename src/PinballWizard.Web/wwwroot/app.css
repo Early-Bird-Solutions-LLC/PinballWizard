@@ -101,6 +101,23 @@
     margin-bottom: 0.35rem;
 }
 
+/* Engineering doc / ADR body (#790). Long unhyphenated inline <code>
+   tokens (e.g. getMatchPlayTournamentStandings after #1036) otherwise
+   widen document scrollWidth past a 320px viewport because inline code
+   defaults to an unbreakable run. Contain the measure and allow breaks. */
+.eng-doc-body,
+.eng-adr-body {
+    min-width: 0;
+    overflow-x: clip;
+    overflow-wrap: anywhere;
+}
+
+.eng-doc-body code,
+.eng-adr-body code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 /* Shared AppBulletList / AppBulletItem — native semantic <ul>/<li> (no
    interactive ARIA, unlike MudList). Mirrors the .eng-list spacing; the disc
    marker is the default <ul> list-style, indented by the left padding. */
