@@ -1,17 +1,6 @@
-/* Index page scoped styles. */
-
-.landing-page {
-    padding-top: 1.5rem;
-    padding-bottom: 3rem;
-    position: relative;
-    /* #788 b): contain stray child min-content so / never page-scrolls at 320.
-       Do NOT set max-width here — Class="landing-page" rides the MudContainer
-       that already applies MaxWidth.Large (~1280px); a scoped max-width:100%
-       would override that cap on wide viewports. */
-    min-width: 0;
-    overflow-x: clip;
-    box-sizing: border-box;
-}
+/* Index page scoped styles.
+   .landing-page itself lives in wwwroot/app.css — Class rides MudContainer,
+   which Blazor CSS isolation cannot attribute-scope. */
 
 .landing-page__status-row {
     display: flex;

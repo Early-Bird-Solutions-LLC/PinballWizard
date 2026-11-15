@@ -1,9 +1,12 @@
-/* #788 e): "New conversation" clipped ~10px at 320 — allow wrap + shrink. */
-.wizard-ask-composer__actions {
+/* #788 e): "New conversation" clipped ~10px at 320 — allow wrap + shrink.
+   ::deep: Class rides MudStack / MudButton roots, which never receive this
+   component's Blazor CSS-isolation attribute (same reason .admin-summary-card
+   lives in app.css). */
+::deep .wizard-ask-composer__actions {
     flex-wrap: wrap;
 }
 
-.wizard-ask-composer__new-conversation {
+::deep .wizard-ask-composer__new-conversation {
     white-space: normal;
     text-align: start;
     line-height: 1.25;
@@ -11,7 +14,7 @@
 }
 
 @media (max-width: 360px) {
-    .wizard-ask-composer__new-conversation {
+    ::deep .wizard-ask-composer__new-conversation {
         font-size: 0.875rem;
         padding-inline: 8px;
     }
