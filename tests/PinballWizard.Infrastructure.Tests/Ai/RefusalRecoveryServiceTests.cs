@@ -729,11 +729,42 @@ public sealed class RefusalRecoveryServiceTests
     }
 
     [Fact]
-    public async Task BuildMachineKnownNoDocsRecoveryAsync_WhenSubjectNotInOverlap_StillUsesKnownCopy()
+    public async Task BuildMachineKnownNoDocsRecoveryAsync_WhenSubjectNotInOverlap_ResolvesViaGroupSiblings()
     {
-        // Title lookup misses the subject id — still must not use generic
-        // "No indexed source" copy that implies the catalog entry is unknown.
+        // Multi-word CTA: token overlap misses the pinned id. Fall back to
+        // GetSiblingsByGroupIdAsync so KnownMachineWithoutIndexedDocs still
+        // fills (#784 Bugbot Medium).
+        const string MachineId = "G50L9-MDxXD";
+        var challenger = NewMachine(MachineId, "Attack from Mars", "stern");
+
         var repo = EmptyRepo();
+        repo.GetSiblingsByGroupIdAsync("G50L9", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(challenger));
+
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildMachineKnownNoDocsRecoveryAsync(
+            "tell me about Attack from Mars", MachineId, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.KnownMachineWithoutIndexedDocs);
+        Assert.Equal(MachineId, detail.KnownMachineWithoutIndexedDocs!.MachineId);
+        Assert.Equal("Attack from Mars", detail.KnownMachineWithoutIndexedDocs.Title);
+        Assert.Null(detail.RelatedMachines);
+        Assert.Contains("Attack from Mars", detail.MissingWhat, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "No indexed source could be linked",
+            detail.MissingWhat,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BuildMachineKnownNoDocsRecoveryAsync_WhenGroupLookupMisses_UsesGenericCopy()
+    {
+        var repo = EmptyRepo();
+        repo.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+
         var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
         var detail = await svc.BuildMachineKnownNoDocsRecoveryAsync(
@@ -741,7 +772,6 @@ public sealed class RefusalRecoveryServiceTests
 
         Assert.NotNull(detail);
         Assert.Null(detail!.KnownMachineWithoutIndexedDocs);
-        Assert.Null(detail.RelatedMachines);
         Assert.Equal(
             RefusalRecoveryService.MissingWhat_MachineKnownNoDocsGeneric,
             detail.MissingWhat);

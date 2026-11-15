@@ -1557,6 +1557,13 @@ public sealed class AiRouter : IAiRouter
     internal RefusalDetail BuildRefusalDetailForTest(RefusalCategory category, ConfidenceSignals? signals)
         => BuildRefusalDetail(category, signals, recovery: null);
 
+    // #784 Bugbot: recovery.KnownMachineWithoutIndexedDocs must survive merge.
+    internal RefusalDetail BuildRefusalDetailForTest(
+        RefusalCategory category,
+        ConfidenceSignals? signals,
+        RefusalDetail recovery)
+        => BuildRefusalDetail(category, signals, recovery);
+
     private RefusalDetail BuildRefusalDetail(
         RefusalCategory category,
         ConfidenceSignals? signals,
@@ -1586,7 +1593,10 @@ public sealed class AiRouter : IAiRouter
             RelatedMachines: recovery?.RelatedMachines,
             CommunityResources: recovery?.CommunityResources,
             MissingWhat: recovery?.MissingWhat,
-            SuggestedRephrase: recovery?.SuggestedRephrase);
+            SuggestedRephrase: recovery?.SuggestedRephrase,
+            // #784 Bugbot High: recovery fills KnownMachineWithoutIndexedDocs;
+            // dropping it here nulls the “This machine:” panel section.
+            KnownMachineWithoutIndexedDocs: recovery?.KnownMachineWithoutIndexedDocs);
     }
 
     private static string Normalize(string question)
