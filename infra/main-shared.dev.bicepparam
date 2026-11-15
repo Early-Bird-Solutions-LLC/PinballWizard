@@ -168,3 +168,10 @@ param deployCohereRerank = true
 // the trace is off again. It is high-volume and bills against the Log Analytics
 // 1 GB cap. Flip to true only for a bounded diagnosis, then back to false.
 param enableAzureSdkDiagnostics = false
+
+// ADR-0060 — after migrate-aca-jobs-to-workload-stack.md cutover (2026-11-15),
+// ACA jobs are owned by pinwiz-jobs-dev. Platform must NOT re-include them
+// (would fight the workload stack) and must keep manageAcaJobs=false so
+// deleteResources cannot delete the detached jobs. Flip back to true only
+// as a documented rollback that re-adopts jobs into the platform template.
+param manageAcaJobs = false
