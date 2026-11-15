@@ -33,6 +33,7 @@ using PinballWizard.Infrastructure.Credentials;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
+using PinballWizard.Infrastructure.Integrations.MatchPlay;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Jobs;
 using PinballWizard.Infrastructure.Monitoring;
@@ -341,6 +342,14 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[SilverballLabsOptions.ApiKe
 if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey]))
 {
     builder.Services.AddKineticistIntegration(builder.Configuration);
+}
+
+// Match Play Events live-tournament tools (ADR-0061). Token: MatchPlay:ApiToken
+// or Opdb:ApiToken fallback. Absent = tools return null.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKey])
+    || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
+{
+    builder.Services.AddMatchPlayIntegration(builder.Configuration);
 }
 
 // ── Cosmos persistence + catalog read ─────────────────────────────────────────
