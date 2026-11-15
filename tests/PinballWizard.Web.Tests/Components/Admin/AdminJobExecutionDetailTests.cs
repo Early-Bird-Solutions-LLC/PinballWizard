@@ -154,11 +154,19 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         var input = cut.Find("[data-testid='exec-log-search'] input");
         await cut.InvokeAsync(() => input.Input("Godzilla"));
 
-        // Debounced server re-query fires within a few hundred ms; budget is reset to 1000.
+        // MudTextField debounces 400ms before OnSearchAsync. WaitForAssertion
+        // only retries Xunit failures. NSubstitute's Received() throws
+        // ReceivedCallsException, which aborts the wait on the first check,
+        // before that debounce can fire.
         await cut.WaitForAssertionAsync(() =>
-            _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
-                Arg.Any<DateTimeOffset?>(), 1000, "Godzilla", Arg.Any<CancellationToken>()),
-            TimeSpan.FromSeconds(3));
+        {
+            var matched = _logs.ReceivedCalls().Any(call =>
+                call.GetMethodInfo().Name == nameof(IJobLogReader.GetExecutionLogsAsync)
+                && call.GetArguments() is { Length: > 5 } args
+                && args[5] is string term
+                && term == "Godzilla");
+            Assert.True(matched, "Expected a log query whose search term is Godzilla.");
+        }, TimeSpan.FromSeconds(3));
     }
 
     [Fact]
