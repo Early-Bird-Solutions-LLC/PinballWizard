@@ -1188,6 +1188,10 @@ public sealed class AiRouterStreamingTests
         refusalRecovery
             .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
             .Returns((RefusalDetail?)null);
+        refusalRecovery
+            .BuildMachineKnownNoDocsRecoveryAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((RefusalDetail?)null);
 
         var options = Options.Create(new AiFoundryOptions
         {

@@ -54,7 +54,8 @@
                 break;
 
             case RefusalCategory.NoCitation:
-                <NoCitationView RelatedMachines="Detail?.RelatedMachines" />
+                <NoCitationView RelatedMachines="Detail?.RelatedMachines"
+                               KnownMachineWithoutIndexedDocs="Detail?.KnownMachineWithoutIndexedDocs" />
                 break;
 
             case RefusalCategory.UpstreamThrottled:
