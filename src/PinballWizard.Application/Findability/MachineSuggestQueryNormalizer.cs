@@ -76,20 +76,12 @@ public static class MachineSuggestQueryNormalizer
             [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
             StringSplitOptions.RemoveEmptyEntries);
 
-        var afterStopwords = new List<string>(raw.Length);
-        var removedStopwords = false;
-        foreach (var tok in raw)
-        {
-            if (tok.Length <= 1)
-                continue;
-            if (StopWords.Contains(tok))
-            {
-                removedStopwords = true;
-                continue;
-            }
-
-            afterStopwords.Add(tok);
-        }
+        // Length-1 tokens never set removedStopwords (same as the prior loop:
+        // single-char tokens are skipped before the StopWords membership check).
+        var removedStopwords = raw.Any(static tok => tok.Length > 1 && StopWords.Contains(tok));
+        var afterStopwords = raw
+            .Where(static tok => tok.Length > 1 && !StopWords.Contains(tok))
+            .ToList();
 
         var removedIntent = false;
         var tokens = afterStopwords;
