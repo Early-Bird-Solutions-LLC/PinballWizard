@@ -1,18 +1,17 @@
 // Aspire AppHost for PinballWizard.
 //
-// Today this orchestrates only the local Cosmos preview emulator. As Phase 2
-// services land (Track D RAG processor, Blazor Web, Admin behind /admin) they
-// are added here with `.WithReference(cosmosDb).WaitFor(cosmosDb)` so they
-// pick up the connection string and start in dependency order.
+// Today this orchestrates the local Cosmos Linux vNext emulator (via
+// RunAsEmulator — the GA successor to the obsolete RunAsPreviewEmulator
+// API in Aspire 13.6.5). As Phase 2 services land (Track D RAG processor,
+// Blazor Web, Admin behind /admin) they are added here with
+// `.WithReference(cosmosDb).WaitFor(cosmosDb)` so they pick up the
+// connection string and start in dependency order.
 //
-// Local dev runs the preview emulator (no Azure auth required). When
-// the AppHost is published as a Bicep manifest for cloud deploy, Aspire
-// substitutes the real Cosmos account in its place.
+// Local dev runs the emulator (no Azure auth required). When the AppHost
+// is published as a Bicep manifest for cloud deploy, Aspire substitutes
+// the real Cosmos account in its place.
 //
-// Cosmos preview emulator caveats per Neighborli's working setup:
-//  - It is `[Experimental]` so the `ASPIRECOSMOSDB001` analyzer warning
-//    must be suppressed pragma-wise. Wide-suppression in csproj would
-//    hide future emulator API churn; keep the suppression scoped.
+// Cosmos emulator caveats (Neighborli pattern, still valid on 13.6.5):
 //  - It does not currently support `WaitFor` / `WithReference` against
 //    arbitrary downstream resources — dependency ordering must be
 //    handled at the application layer (CosmosBootstrapper.EnsureCreatedAsync
@@ -36,16 +35,14 @@ using Aspire.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-#pragma warning disable ASPIRECOSMOSDB001 // Cosmos preview emulator is experimental — see file-level remarks for why we accept it.
 var cosmos = builder.AddAzureCosmosDB("cosmos")
-    .RunAsPreviewEmulator(emulator =>
+    .RunAsEmulator(emulator =>
     {
         emulator.WithLifetime(ContainerLifetime.Persistent);
         emulator.WithDataVolume();
         emulator.WithDataExplorer();
         emulator.WithEnvironment("AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE", "true");
     });
-#pragma warning restore ASPIRECOSMOSDB001
 
 // Single shared database — `pinwiz`. Container creation is deferred to
 // the application layer (CosmosBootstrapper.EnsureCreatedAsync) so the
@@ -105,9 +102,9 @@ var api = builder.AddProject<Projects.PinballWizard_Api>("pinwiz-api")
 // env vars (services__pinwiz-api__http__0) that WizardStreamingClient
 // resolves via "https+http://pinwiz-api". See ADR-0026 § 1/2.
 //
-// NOTE: The Cosmos preview emulator comment at the top of this file
-// documents why WaitFor is not chained here — dependency ordering is
-// handled at the application layer (CosmosBootstrapper.EnsureCreatedAsync).
+// NOTE: The Cosmos emulator comment at the top of this file documents
+// why WaitFor is not chained here — dependency ordering is handled at
+// the application layer (CosmosBootstrapper.EnsureCreatedAsync).
 var web = builder.AddProject<Projects.PinballWizard_Web>("pinwiz-web")
     .WithReference(cosmos)
     .WithReference(api)

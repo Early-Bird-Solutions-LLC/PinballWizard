@@ -137,26 +137,15 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
             {
                 using var jsonDoc = JsonDocument.Parse(script.TextContent);
                 var root = jsonDoc.RootElement;
-                if (!root.TryGetProperty("@type", out var typeEl)
-                    || typeEl.GetString() != "Article")
+                // Only Object roots with @type Article are accepted. Array /
+                // @graph roots and non-Article types are skipped (fail closed —
+                // never invent metadata from the wrong node).
+                if (root.ValueKind != JsonValueKind.Object
+                    || !IsArticleType(root)
+                    || !TryReadArticleFields(
+                        root, out title, out description, out canonicalUrl, out author, out publishedAt))
                 {
                     continue;
-                }
-
-                title = root.TryGetProperty("headline", out var h) ? h.GetString() : null;
-                description = root.TryGetProperty("description", out var d) ? d.GetString() : null;
-                canonicalUrl = root.TryGetProperty("url", out var u) ? u.GetString() : null;
-
-                if (root.TryGetProperty("author", out var authorEl)
-                    && authorEl.TryGetProperty("name", out var nameEl))
-                {
-                    author = nameEl.GetString();
-                }
-
-                if (root.TryGetProperty("datePublished", out var dateEl)
-                    && DateTimeOffset.TryParse(dateEl.GetString(), out var parsed))
-                {
-                    publishedAt = parsed;
                 }
 
                 break;
@@ -164,6 +153,14 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
             catch (JsonException)
             {
                 // Malformed JSON-LD block — skip and try next.
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Shape mismatch (e.g. TryGetProperty on Array) — skip block.
+                // Must not escape: one bad article previously aborted the weekly job.
+                Logger.LogWarning(ex,
+                    "TwipNewsletterClient: unexpected JSON-LD shape for slug '{Slug}'; skipping block.",
+                    slug);
             }
         }
 
@@ -203,5 +200,104 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
             PublishedAt = publishedAt,
             BodyText = bodyText,
         };
+    }
+
+    // schema.org @type may be a string ("Article") or a multi-type array.
+    private static bool IsArticleType(JsonElement root)
+    {
+        if (!root.TryGetProperty("@type", out var typeEl)) return false;
+
+        return typeEl.ValueKind switch
+        {
+            JsonValueKind.String =>
+                string.Equals(typeEl.GetString(), "Article", StringComparison.Ordinal),
+            JsonValueKind.Array =>
+                typeEl.EnumerateArray().Any(t =>
+                    t.ValueKind == JsonValueKind.String
+                    && string.Equals(t.GetString(), "Article", StringComparison.Ordinal)),
+            _ => false,
+        };
+    }
+
+    private static bool TryReadArticleFields(
+        JsonElement root,
+        out string? title,
+        out string? description,
+        out string? canonicalUrl,
+        out string? author,
+        out DateTimeOffset? publishedAt)
+    {
+        title = root.TryGetProperty("headline", out var h) && h.ValueKind == JsonValueKind.String
+            ? h.GetString()
+            : null;
+        description = root.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String
+            ? d.GetString()
+            : null;
+        canonicalUrl = root.TryGetProperty("url", out var u) && u.ValueKind == JsonValueKind.String
+            ? u.GetString()
+            : null;
+
+        author = root.TryGetProperty("author", out var authorEl)
+            ? TryReadAuthorName(authorEl)
+            : null;
+
+        publishedAt = null;
+        if (root.TryGetProperty("datePublished", out var dateEl)
+            && dateEl.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(dateEl.GetString(), out var parsed))
+        {
+            publishedAt = parsed;
+        }
+
+        // Headline is required for an Article to be accepted; missing title
+        // fails closed (caller returns null) rather than fabricating one.
+        return !string.IsNullOrWhiteSpace(title);
+    }
+
+    // Beehiiv (2026-11) emits author as an Array of Person; older pages used a
+    // single Object. Both are valid schema.org. Unexpected kinds return null
+    // (caller applies the known TWIP default) — never throw on shape variance.
+    private static string? TryReadAuthorName(JsonElement authorEl)
+    {
+        switch (authorEl.ValueKind)
+        {
+            case JsonValueKind.Object:
+                return ReadPersonName(authorEl);
+
+            case JsonValueKind.Array:
+            {
+                var names = authorEl.EnumerateArray()
+                    .Where(item => item.ValueKind == JsonValueKind.Object)
+                    .Select(ReadPersonName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name!)
+                    .ToList();
+
+                return names.Count > 0
+                    ? string.Join(", ", names)
+                    : null;
+            }
+
+            case JsonValueKind.String:
+            {
+                var s = authorEl.GetString();
+                return string.IsNullOrWhiteSpace(s) ? null : s;
+            }
+
+            default:
+                return null;
+        }
+    }
+
+    private static string? ReadPersonName(JsonElement person)
+    {
+        if (person.TryGetProperty("name", out var nameEl)
+            && nameEl.ValueKind == JsonValueKind.String)
+        {
+            var name = nameEl.GetString();
+            return string.IsNullOrWhiteSpace(name) ? null : name;
+        }
+
+        return null;
     }
 }

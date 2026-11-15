@@ -69,6 +69,77 @@ public sealed class TwipNewsletterClientTests
         </html>
         """;
 
+    // Live Beehiiv shape (observed 2026-11-15 on twip.kineticist.com):
+    // author is an Array of Person objects, not a single Object.
+    private const string ArticleHtmlAuthorArray = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Save the Date</title>
+          <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "Article",
+            "headline": "Save the Date",
+            "description": "American Pinball's 2027 teased.",
+            "datePublished": "2026-11-06T05:00:00.000Z",
+            "author": [
+              {"@type": "Person", "name": "Colin Alsheimer"},
+              {"@type": "Person", "name": "Matt Owen"}
+            ],
+            "url": "https://twip.kineticist.com/p/save-the-date"
+          }
+          </script>
+        </head>
+        <body>
+          <p class="dream-post-content-paragraph">American Pinball teased 2027.</p>
+        </body>
+        </html>
+        """;
+
+    // author as a bare string (also valid schema.org).
+    private const string ArticleHtmlAuthorString = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <script type="application/ld+json">
+          {
+            "@type": "Article",
+            "headline": "String Author Issue",
+            "author": "Colin Alsheimer",
+            "url": "https://twip.kineticist.com/p/string-author",
+            "datePublished": "2026-11-01T08:00:00Z"
+          }
+          </script>
+        </head>
+        <body>
+          <p class="dream-post-content-paragraph">Body.</p>
+        </body>
+        </html>
+        """;
+
+    // Unexpected author kind must not throw (fail closed → default author).
+    private const string ArticleHtmlAuthorUnexpected = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <script type="application/ld+json">
+          {
+            "@type": "Article",
+            "headline": "Weird Author Kind",
+            "author": 42,
+            "url": "https://twip.kineticist.com/p/weird-author",
+            "datePublished": "2026-11-01T08:00:00Z"
+          }
+          </script>
+        </head>
+        <body>
+          <p class="dream-post-content-paragraph">Body.</p>
+        </body>
+        </html>
+        """;
+
     // A page without JSON-LD (edge case — e.g. subscribe or archive page).
     private const string NoJsonLdHtml = """
         <!DOCTYPE html><html><head><title>Subscribe</title></head>
@@ -150,8 +221,9 @@ public sealed class TwipNewsletterClientTests
     // ── FetchArticleAsync ────────────────────────────────────────────────
 
     [Fact]
-    public async Task FetchArticleAsync_FullFixture_ExtractsAllJsonLdFields()
+    public async Task FetchArticleAsync_AuthorObjectShape_ExtractsAllJsonLdFields()
     {
+        // Regression: single Person Object (legacy Beehiiv / fixture shape).
         const string slug = "this-week-2026-06-20";
         var (client, gate, handler) = BuildClient(h =>
             h.MapHtml($"{BaseUrl}/p/{slug}", ArticleHtml));
@@ -173,6 +245,57 @@ public sealed class TwipNewsletterClientTests
         Assert.Single(handler.Requests);
         Assert.Equal(gate.Acquired.Count, gate.Reported.Count);
         Assert.Equal(1, gate.LeasesDisposed);
+    }
+
+    [Fact]
+    public async Task FetchArticleAsync_AuthorArrayShape_ExtractsJoinedNames()
+    {
+        // 2026-11-15 production failure: ParseArticleAsync assumed author was
+        // Object; live Beehiiv JSON-LD emits Array → InvalidOperationException
+        // aborted the weekly TWIP job after discovering sitemap slugs.
+        const string slug = "save-the-date";
+        var (client, _, _) = BuildClient(h =>
+            h.MapHtml($"{BaseUrl}/p/{slug}", ArticleHtmlAuthorArray));
+
+        var article = await client.FetchArticleAsync(slug, CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Equal("Save the Date", article!.Title);
+        Assert.Equal("Colin Alsheimer, Matt Owen", article.Author);
+        Assert.Equal("https://twip.kineticist.com/p/save-the-date", article.CanonicalUrl);
+        Assert.Equal(2026, article.PublishedAt!.Value.Year);
+        Assert.Equal(11, article.PublishedAt!.Value.Month);
+        Assert.Equal(6, article.PublishedAt!.Value.Day);
+        Assert.Contains("American Pinball teased", article.BodyText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FetchArticleAsync_AuthorStringShape_ExtractsName()
+    {
+        const string slug = "string-author";
+        var (client, _, _) = BuildClient(h =>
+            h.MapHtml($"{BaseUrl}/p/{slug}", ArticleHtmlAuthorString));
+
+        var article = await client.FetchArticleAsync(slug, CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Equal("Colin Alsheimer", article!.Author);
+    }
+
+    [Fact]
+    public async Task FetchArticleAsync_AuthorUnexpectedKind_DoesNotThrow_UsesDefaultAuthor()
+    {
+        // Fail closed on shape: no InvalidOperationException; article still
+        // parses from headline/body; unknown author kind → TWIP default.
+        const string slug = "weird-author";
+        var (client, _, _) = BuildClient(h =>
+            h.MapHtml($"{BaseUrl}/p/{slug}", ArticleHtmlAuthorUnexpected));
+
+        var article = await client.FetchArticleAsync(slug, CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Equal("Weird Author Kind", article!.Title);
+        Assert.Equal("Colin Alsheimer", article.Author);
     }
 
     [Fact]

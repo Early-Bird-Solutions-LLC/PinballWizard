@@ -62,6 +62,47 @@ public sealed class SpookyWpPagesClientTests
     }
 
     [Fact]
+    public void ParsePageJson_BindsSinglePageObject()
+    {
+        // Hub page fetch uses /wp-json/wp/v2/pages/{id} — a single object, not an array.
+        const string json = """
+        {
+          "id": 476,
+          "slug": "game-support",
+          "link": "https://www.spookypinball.com/game-support/",
+          "parent": 0,
+          "modified": "2026-10-30T13:15:30",
+          "title": { "rendered": "Game Support" },
+          "content": { "rendered": "<a href=\"/wp-content/uploads/2026/08/Beetlejuice-Rules.pdf\">Rules</a>" }
+        }
+        """;
+
+        var page = SpookyWpPagesClient.ParsePageJson(json);
+
+        Assert.NotNull(page);
+        Assert.Equal(476, page!.Id);
+        Assert.Equal("game-support", page.Slug);
+        Assert.Equal("https://www.spookypinball.com/game-support/", page.Link);
+        Assert.Contains("Beetlejuice-Rules.pdf", page.Content.Rendered, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("    ")]
+    [InlineData("not-json")]
+    [InlineData("[]")]
+    public void ParsePageJson_NonObjectBodies_ReturnNull(string json)
+    {
+        Assert.Null(SpookyWpPagesClient.ParsePageJson(json));
+    }
+
+    [Fact]
+    public void ParsePageJson_NullThrows()
+    {
+        Assert.Throws<ArgumentNullException>(() => SpookyWpPagesClient.ParsePageJson(null!));
+    }
+
+    [Fact]
     public void ExtractS3Slugs_ReturnsDistinctFirstPathSegments()
     {
         const string html = """

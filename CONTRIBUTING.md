@@ -24,7 +24,7 @@ dotnet build
 
 ### Starting the local stack
 
-For full local dev with Cosmos persistence and Azurite-backed blob storage, start the .NET Aspire 13.5.3 orchestrator:
+For full local dev with Cosmos persistence and Azurite-backed blob storage, start the .NET Aspire 13.6.5 orchestrator:
 
 ```bash
 pwsh ./start-apphost.ps1
