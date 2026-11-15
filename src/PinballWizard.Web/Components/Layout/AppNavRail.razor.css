@@ -37,8 +37,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    /* 44×44 — WCAG 2.5.5 / #789; was 40×40 and under-min on every route. */
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: none;
     border-radius: 4px;
