@@ -265,11 +265,10 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
-        // getMatchPlayTournamentStandings typed arm (ADR-0061). Live standings
-        // — Citations only (public Match Play URL), not sourceIndex.
-        if (result is MatchPlayTournamentStandingsDto mpDto)
+        // Match Play live-tool typed arms (ADR-0061 / ADR-0062) — Citations only
+        // (public Match Play URL), not sourceIndex.
+        if (TryAddMatchPlayTypedCitation(result, byUrl, citations))
         {
-            AddCitationFromMatchPlayStandingsDto(mpDto, byUrl, citations);
             return;
         }
 
@@ -352,14 +351,54 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     return;
                 }
             }
-            else if (TryGetPropertyIgnoreCase(element, "Standings", out _)
-                && TryGetPropertyIgnoreCase(element, "PublicUrl", out _))
+            else if (TryGetPropertyIgnoreCase(element, "PublicUrl", out _)
+                && TryGetPropertyIgnoreCase(element, "TournamentId", out _)
+                && TryGetPropertyIgnoreCase(element, "Attribution", out _))
             {
-                // MatchPlayTournamentStandingsDto (ADR-0061): standings[] + publicUrl.
-                // getMatchPlayTournamentStandings → Citations only, NOT sourceIndex.
-                if (TryDeserialize<MatchPlayTournamentStandingsDto>(element, functionCallId, _logger) is { } mpDto)
+                // Any Match Play live-tool DTO (ADR-0061 / ADR-0062): PublicUrl +
+                // TournamentId + Attribution. Citations only, NOT sourceIndex.
+                if (TryGetPropertyIgnoreCase(element, "Standings", out _)
+                    && TryDeserialize<MatchPlayTournamentStandingsDto>(element, functionCallId, _logger) is { } standings)
                 {
-                    AddCitationFromMatchPlayStandingsDto(mpDto, byUrl, citations);
+                    AddMatchPlayCitation(
+                        standings.PublicUrl, standings.Name, standings.TournamentId,
+                        "standings", byUrl, citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Arenas", out _)
+                    && TryDeserialize<MatchPlayTournamentArenasDto>(element, functionCallId, _logger) is { } arenas)
+                {
+                    AddMatchPlayCitation(
+                        arenas.PublicUrl, arenas.Name, arenas.TournamentId,
+                        "arenas", byUrl, citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Rounds", out _)
+                    && TryDeserialize<MatchPlayTournamentFloorDto>(element, functionCallId, _logger) is { } floor)
+                {
+                    AddMatchPlayCitation(
+                        floor.PublicUrl, floor.Name, floor.TournamentId,
+                        "floor", byUrl, citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Players", out _)
+                    && TryGetPropertyIgnoreCase(element, "Query", out _)
+                    && TryDeserialize<MatchPlayPlayerLookupDto>(element, functionCallId, _logger) is { } players)
+                {
+                    AddMatchPlayCitation(
+                        players.PublicUrl, players.Name, players.TournamentId,
+                        "players", byUrl, citations);
+                    return;
+                }
+
+                if (TryDeserialize<MatchPlayTournamentDetailDto>(element, functionCallId, _logger) is { } detail)
+                {
+                    AddMatchPlayCitation(
+                        detail.PublicUrl, detail.Name, detail.TournamentId,
+                        "detail", byUrl, citations);
                     return;
                 }
             }
@@ -433,27 +472,50 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             SourceType: CitationSourceType.MarketValue));
     }
 
-    // ADR-0061: getMatchPlayTournamentStandings → one Citation linking the
+    private static bool TryAddMatchPlayTypedCitation(
+        object result,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations) =>
+        result switch
+        {
+            MatchPlayTournamentStandingsDto s => AddMatchPlayCitation(
+                s.PublicUrl, s.Name, s.TournamentId, "standings", byUrl, citations),
+            MatchPlayTournamentDetailDto d => AddMatchPlayCitation(
+                d.PublicUrl, d.Name, d.TournamentId, "detail", byUrl, citations),
+            MatchPlayTournamentArenasDto a => AddMatchPlayCitation(
+                a.PublicUrl, a.Name, a.TournamentId, "arenas", byUrl, citations),
+            MatchPlayTournamentFloorDto f => AddMatchPlayCitation(
+                f.PublicUrl, f.Name, f.TournamentId, "floor", byUrl, citations),
+            MatchPlayPlayerLookupDto p => AddMatchPlayCitation(
+                p.PublicUrl, p.Name, p.TournamentId, "players", byUrl, citations),
+            _ => false,
+        };
+
+    // ADR-0061 / ADR-0062: Match Play live tools → one Citation linking the
     // public Match Play tournament page. Citations only — not sourceIndex.
-    private static void AddCitationFromMatchPlayStandingsDto(
-        MatchPlayTournamentStandingsDto dto,
+    private static bool AddMatchPlayCitation(
+        string publicUrl,
+        string? name,
+        int tournamentId,
+        string kind,
         Dictionary<string, int> byUrl,
         List<Citation> citations)
     {
-        if (string.IsNullOrWhiteSpace(dto.PublicUrl))
+        if (string.IsNullOrWhiteSpace(publicUrl))
         {
-            return;
+            return false;
         }
 
-        var name = string.IsNullOrWhiteSpace(dto.Name)
-            ? $"Tournament {dto.TournamentId}"
-            : dto.Name;
+        var display = string.IsNullOrWhiteSpace(name)
+            ? $"Tournament {tournamentId}"
+            : name;
         AddOrUpgrade(byUrl, citations, new Citation(
-            Title: $"Match Play standings · {name}",
-            SourceUrl: dto.PublicUrl,
+            Title: $"Match Play {kind} · {display}",
+            SourceUrl: publicUrl,
             MachineId: null,
             DocumentChunkId: null,
             SourceType: CitationSourceType.MatchPlayTournament));
+        return true;
     }
 
     // ADR-0043 Tier B: getKineticistGuideLinks → one CuratedLink citation per
