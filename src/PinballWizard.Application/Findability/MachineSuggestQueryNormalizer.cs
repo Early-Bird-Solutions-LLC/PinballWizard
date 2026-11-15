@@ -71,10 +71,7 @@ public static class MachineSuggestQueryNormalizer
         if (string.IsNullOrWhiteSpace(text))
             return new([], RequireTitleTokenOverlap: false);
 
-        var lower = text.ToLowerInvariant();
-        var raw = lower.Split(
-            [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
-            StringSplitOptions.RemoveEmptyEntries);
+        var raw = SplitTokens(text);
 
         // Length-1 tokens never set removedStopwords (same as the prior loop:
         // single-char tokens are skipped before the StopWords membership check).
@@ -101,11 +98,13 @@ public static class MachineSuggestQueryNormalizer
             }
         }
 
-        // Post-filter only when we actually stripped question fluff. Bare
-        // name / abbreviation / typo queries rely on synonym + phonetic
-        // index fields and must not demand lexical title overlap.
-        var requireOverlap = (removedStopwords || removedIntent) && tokens.Count > 0;
-        return new(tokens, requireOverlap);
+        // PreferLexicalHits (RequireTitleTokenOverlap): question fluff was
+        // stripped. MachineSuggestService prefers TitleMatchesQuery hits when
+        // any exist, but MUST keep synonym/phonetic hits when none do —
+        // "whats a good strategy for afm" still resolves Attack from Mars
+        // (#785 Bugbot High). Bare abbreviations leave this false.
+        var preferLexical = (removedStopwords || removedIntent) && tokens.Count > 0;
+        return new(tokens, preferLexical);
     }
 
     // Tokenizes free text for suggest (tokens only). Prefer Normalize when
@@ -151,14 +150,22 @@ public static class MachineSuggestQueryNormalizer
     // Title-side tokenize: structural stopwords only — never strips intent
     // words that are part of a real machine name.
     private static List<string> TokenizeTitle(string title)
-    {
-        var lower = title.ToLowerInvariant();
-        var raw = lower.Split(
-            [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
-            StringSplitOptions.RemoveEmptyEntries);
-
-        return raw
+        => SplitTokens(title)
             .Where(static tok => tok.Length > 1 && !StopWords.Contains(tok))
             .ToList();
+
+    // Shared query/title splitter. Apostrophes are removed (not used as split
+    // points) so "don't" → "dont" and "what's" → "whats" — splitting on `'`
+    // used to emit "don" / "s", and "don" prefix-matched unrelated titles
+    // (Donkey Kong, …) via TitleMatchesQuery (#785 Bugbot Medium).
+    private static string[] SplitTokens(string text)
+    {
+        var lower = text.ToLowerInvariant()
+            .Replace("'", "", StringComparison.Ordinal)
+            .Replace("\u2019", "", StringComparison.Ordinal); // ’
+
+        return lower.Split(
+            [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '"', ':', ';'],
+            StringSplitOptions.RemoveEmptyEntries);
     }
 }

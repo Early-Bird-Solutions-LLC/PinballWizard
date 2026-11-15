@@ -122,4 +122,32 @@ public sealed class MachineSuggestQueryNormalizerTests
             MachineSuggestQueryNormalizer.BuildSearchText(["transformers"]));
         Assert.Equal(string.Empty, MachineSuggestQueryNormalizer.BuildSearchText([]));
     }
+
+    [Fact]
+    public void Tokenize_Contraction_DoesNotEmitDonPrefix()
+    {
+        // Splitting on apostrophe used to emit "don" from "don't", which
+        // TitleMatchesQuery prefix-matched Donkey Kong (#785 Bugbot Medium).
+        var tokens = MachineSuggestQueryNormalizer.Tokenize(
+            "don't tell me about jaws");
+
+        Assert.Equal(["dont", "jaws"], tokens);
+        Assert.DoesNotContain("don", tokens);
+        Assert.False(
+            MachineSuggestQueryNormalizer.TitleMatchesQuery("Donkey Kong", tokens));
+        Assert.True(
+            MachineSuggestQueryNormalizer.TitleMatchesQuery("Jaws", tokens));
+    }
+
+    [Fact]
+    public void Normalize_QuestionWrappedAbbreviation_StillFlagsPreferLexical()
+    {
+        // Fluff stripped → PreferLexical true, but the service soft-filters so
+        // synonym hits survive when lexical is empty (#785 Bugbot High).
+        var normalized = MachineSuggestQueryNormalizer.Normalize(
+            "whats a good strategy for afm");
+
+        Assert.Equal(["afm"], normalized.Tokens);
+        Assert.True(normalized.RequireTitleTokenOverlap);
+    }
 }

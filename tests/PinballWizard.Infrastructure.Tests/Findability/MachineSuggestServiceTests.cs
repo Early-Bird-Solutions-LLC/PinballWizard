@@ -159,6 +159,29 @@ public sealed class MachineSuggestServiceTests
         Assert.Equal("Attack from Mars", result[0].Title);
     }
 
+    [Fact]
+    public async Task SuggestAsync_QuestionWrappedAbbreviation_KeepsSynonymHit()
+    {
+        // Same synonym path wrapped in question fluff — RequireTitleTokenOverlap
+        // used to hard-wipe when lexical was empty (#785 Bugbot High).
+        var hits = new List<MachineSearchHit>
+        {
+            BuildHit("G-afm", "Attack from Mars", "Bally", 1995, groupId: null, score: 9.0),
+            BuildHit("G-fore", "Fore", "Bally", 1973, groupId: null, score: 7.5),
+        };
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync(
+            "whats a good strategy for afm", top: 8, CancellationToken.None);
+
+        Assert.Contains(result, s => s.Title.Equals("Attack from Mars", StringComparison.Ordinal));
+        // Soft filter: no lexical "afm" overlap → keep synonym set (including
+        // BM25 companions). PreferLexical alone must not empty the dropdown.
+        Assert.NotEmpty(result);
+    }
+
     // ── Unconfigured index ────────────────────────────────────────────────────
 
     [Fact]

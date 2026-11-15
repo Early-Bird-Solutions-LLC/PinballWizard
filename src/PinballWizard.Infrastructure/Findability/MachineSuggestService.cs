@@ -97,19 +97,17 @@ internal sealed class MachineSuggestService : IMachineSuggestService
             var hits = await _index.SearchAsync(
                 searchText, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
 
-            // Title post-filter (#785 Bugbot High):
-            // - Question-shaped (fluff stripped): always require lexical overlap
-            //   so BM25 noise on stopwords/intent cannot survive.
-            // - Bare typing: if any hit overlaps the typed token(s), keep only
-            //   those; if none overlap, keep all — synonym / title_phonetic
-            //   resolutions (e.g. AFM → Attack from Mars) have no lexical
-            //   title overlap and must not be wiped.
-            IReadOnlyList<MachineSearchHit> forCollapse = hits;
+            // Title post-filter (#785):
+            // Prefer lexical TitleMatchesQuery hits when any exist (drops BM25
+            // noise from question fluff matching Fore / Gofers / …). When none
+            // overlap, keep the raw hits — synonym / title_phonetic resolutions
+            // (AFM → Attack from Mars) have no lexical title overlap and must
+            // survive both bare typing AND question wrappers
+            // ("whats a good strategy for afm") — #785 Bugbot High.
             var lexical = hits
                 .Where(h => MachineSuggestQueryNormalizer.TitleMatchesQuery(h.Title, queryTokens))
                 .ToList();
-            if (normalized.RequireTitleTokenOverlap || lexical.Count > 0)
-                forCollapse = lexical;
+            IReadOnlyList<MachineSearchHit> forCollapse = lexical.Count > 0 ? lexical : hits;
 
             return CollapseEditions(forCollapse, top);
         }
