@@ -61,11 +61,21 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Retrievability uses IRagRetriever → IQueryEmbedder, which requires the
+      # Foundry project endpoint (embedding deployment is derived from it).
+      # AiSearch alone is not enough — Nov 2026 runs crashed with
+      # InvalidOperationException and uploaded stale committed coverage.*.json
+      # as the "report" (#749).
       - name: Run corpus-coverage probe
         env:
           AiSearch__Endpoint: https://pinwiz-search-dev-buutj.search.windows.net
+          AiFoundry__ProjectEndpoint: https://pinwiz-foundry-dev-buutj.services.ai.azure.com/api/projects/pinwiz-wizard
+          AiSearch__EmbeddingDeploymentName: text-embedding-3-large
           AZURE_TOKEN_CREDENTIALS: dev
         run: |
+          # Isolate this run's report from any committed historical coverage.*.json
+          # so the artifact is unambiguous.
+          rm -f data/eval/results/coverage.*.json
           dotnet run --project src/PinballWizard.Cli --configuration Release -- --corpus-coverage
 
       - name: Upload coverage report
