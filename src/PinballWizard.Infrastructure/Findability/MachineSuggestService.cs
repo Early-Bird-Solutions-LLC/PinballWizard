@@ -96,16 +96,13 @@ internal sealed class MachineSuggestService : IMachineSuggestService
             var hits = await _index.SearchAsync(
                 searchText, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
 
-            // Post-filter: multi-token queries keep only titles that share a
-            // max-length significant token (drops Invasion Strategy when the
-            // distinctive word is "transformers").
-            IReadOnlyList<MachineSearchHit> filtered = hits;
-            if (queryTokens.Count > 1)
-            {
-                filtered = hits
-                    .Where(h => MachineSuggestQueryNormalizer.TitleMatchesQuery(h.Title, queryTokens))
-                    .ToList();
-            }
+            // Post-filter: keep only titles that share a remaining query token
+            // (exact or prefix ≥3). Always applied — after intent stripping a
+            // question often collapses to one entity token, and BM25 may still
+            // return fluff hits from the pre-normalized query shape.
+            var filtered = hits
+                .Where(h => MachineSuggestQueryNormalizer.TitleMatchesQuery(h.Title, queryTokens))
+                .ToList();
 
             return CollapseEditions(filtered, top);
         }

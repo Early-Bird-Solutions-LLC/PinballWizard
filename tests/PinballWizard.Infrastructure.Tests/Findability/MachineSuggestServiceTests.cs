@@ -91,9 +91,9 @@ public sealed class MachineSuggestServiceTests
         await service.SuggestAsync(
             "whats a good strategy for transformers", top: 8, CancellationToken.None);
 
-        // Stopwords (whats/a/good/for) stripped; "strategy transformers" reaches the index.
+        // Stopwords + question-intent stripped; only the entity token is searched.
         await _index.Received(1).SearchAsync(
-            "strategy transformers",
+            "transformers",
             Arg.Any<int>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
@@ -253,12 +253,14 @@ public sealed class MachineSuggestServiceTests
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
-        // Single-token name query — post-filter is not applied; both mocked hits
-        // surface. (Query "from" used to exercise this path but is now a stopword
-        // under #785 and would short-circuit before the index call.)
+        // Query "creature" — post-filter keeps only titles sharing that token.
+        // Attack from Mars is dropped; Creature from the Black Lagoon surfaces.
+        // (Query "from" is a stopword under #785 and would short-circuit before I/O.)
         var result = await service.SuggestAsync("creature", top: 8, CancellationToken.None);
 
-        Assert.Equal(2, result.Count);
+        var suggestion = Assert.Single(result);
+        Assert.Equal("id2", suggestion.OpdbId);
+        Assert.Equal("Creature from the Black Lagoon", suggestion.Title);
     }
 
     // ── Rank order preservation ───────────────────────────────────────────────

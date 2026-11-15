@@ -7,18 +7,18 @@ namespace PinballWizard.Application.Findability;
 // stopwords and question fluff against unrelated titles (Fore ← "for",
 // No Good Gofers ← "good", Invasion Strategy ← "strategy").
 //
-// Two stages:
-//   1. Tokenize + strip stopwords → search text sent to the index.
-//   2. For multi-token (question-shaped) queries, post-filter hits so a title
-//      must share a *max-length* significant token with the query. That drops
-//      Invasion Strategy when "transformers" is the distinctive word, while
-//      still allowing a bare name query "strategy" → Invasion Strategy
-//      (single-token path: any shared token).
+// Pipeline:
+//   1. Tokenize + strip structural stopwords.
+//   2. When more than one token remains, also strip question-intent words
+//      (strategy, tips, rules, …) so they cannot outrank short machine names
+//      like Jaws / Tron. A bare name query "strategy" keeps that sole token.
+//   3. Post-filter hits: title must share a remaining token (exact or prefix
+//      ≥3 chars) so typing "transform…" still surfaces Transformers.
 //
 // Stopword list mirrors MachineGroundingTool.TokenStopWords (canonical
 // machine-title vocabulary) plus typeahead-specific question contractions
-// and filler ("whats", "good", "best"). Kept here rather than reaching into
-// the tool's `internal` set so Findability stays free of Ai.Tools coupling.
+// and filler. Kept here rather than reaching into the tool's `internal` set
+// so Findability stays free of Ai.Tools coupling.
 public static class MachineSuggestQueryNormalizer
 {
     // Lowercase only; Tokenize lowercases input before membership checks.
@@ -40,9 +40,25 @@ public static class MachineSuggestQueryNormalizer
         "good", "best", "great", "nice",
     };
 
+    // Stripped only when ≥2 tokens remain after StopWords — so a bare name
+    // query "strategy" / "rules" still finds Invasion Strategy / …Rules….
+    // Addresses Bugbot: question fluff must not outrank short titles (Jaws).
+    internal static readonly HashSet<string> QuestionIntentWords = new(StringComparer.Ordinal)
+    {
+        "strategy", "strategies", "tips", "tip", "rules", "rule",
+        "manual", "manuals", "worth", "price", "value",
+        "tournament", "mode", "modes", "multiball", "wizard",
+        "similar", "games", "game", "machine", "machines",
+        "pinball", "play", "playing", "playfield",
+    };
+
+    // Minimum length for prefix matching while the user is still typing
+    // the entity word ("transform" → Transformers).
+    internal const int MinPrefixMatchLength = 3;
+
     // Tokenizes free text for suggest: lowercase, split on whitespace /
-    // punctuation, drop single-char tokens and stopwords. Numerics kept
-    // (007, 2001) — same posture as MachineGroundingTool.TokenizeForOverlap.
+    // punctuation, drop single-char tokens and stopwords, then (when the
+    // query is question-shaped) drop question-intent words. Numerics kept.
     public static IReadOnlyList<string> Tokenize(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -61,6 +77,14 @@ public static class MachineSuggestQueryNormalizer
             result.Add(tok);
         }
 
+        // Multi-token (question-shaped): strip intent fluff so it cannot
+        // compete with short machine names on length. Sole remaining token
+        // is kept even if it is also an intent word (name typing).
+        if (result.Count > 1)
+        {
+            result.RemoveAll(static t => QuestionIntentWords.Contains(t));
+        }
+
         return result;
     }
 
@@ -70,39 +94,52 @@ public static class MachineSuggestQueryNormalizer
         => tokens.Count == 0 ? string.Empty : string.Join(' ', tokens);
 
     // True when a hit title is on-topic for the normalized query tokens.
-    //
-    // Single-token queries (name typing): any shared significant token.
-    // Multi-token queries (question-shaped): the title must share a token of
-    // *maximum* length among the query tokens — the distinctive entity word
-    // ("transformers"), not shorter leftovers that survived stopword stripping
-    // (e.g. "strategy" ranking Invasion Strategy).
+    // Exact token overlap OR prefix match (≥ MinPrefixMatchLength) so
+    // mid-typing still surfaces the intended machine.
     public static bool TitleMatchesQuery(string title, IReadOnlyList<string> queryTokens)
     {
         if (queryTokens.Count == 0 || string.IsNullOrWhiteSpace(title))
             return false;
 
-        var titleTokens = Tokenize(title);
+        // Title tokenization uses StopWords only (not QuestionIntentWords),
+        // so titles like "Invasion Strategy" keep "strategy" for bare-name hits.
+        var titleTokens = TokenizeTitle(title);
         if (titleTokens.Count == 0)
             return false;
 
-        var titleSet = new HashSet<string>(titleTokens, StringComparer.Ordinal);
-
-        if (queryTokens.Count == 1)
-            return titleSet.Contains(queryTokens[0]);
-
-        var maxLen = 0;
-        for (var i = 0; i < queryTokens.Count; i++)
+        foreach (var q in queryTokens)
         {
-            if (queryTokens[i].Length > maxLen)
-                maxLen = queryTokens[i].Length;
-        }
+            foreach (var t in titleTokens)
+            {
+                if (string.Equals(q, t, StringComparison.Ordinal))
+                    return true;
 
-        for (var i = 0; i < queryTokens.Count; i++)
-        {
-            if (queryTokens[i].Length == maxLen && titleSet.Contains(queryTokens[i]))
-                return true;
+                if (q.Length >= MinPrefixMatchLength &&
+                    t.StartsWith(q, StringComparison.Ordinal))
+                    return true;
+            }
         }
 
         return false;
+    }
+
+    // Title-side tokenize: structural stopwords only — never strips intent
+    // words that are part of a real machine name.
+    private static List<string> TokenizeTitle(string title)
+    {
+        var lower = title.ToLowerInvariant();
+        var raw = lower.Split(
+            [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        var result = new List<string>(raw.Length);
+        foreach (var tok in raw)
+        {
+            if (tok.Length <= 1) continue;
+            if (StopWords.Contains(tok)) continue;
+            result.Add(tok);
+        }
+
+        return result;
     }
 }
