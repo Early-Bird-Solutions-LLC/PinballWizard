@@ -80,11 +80,11 @@
     overflow-wrap: anywhere;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 360px) {
     /* Clip on .tilt-page-container alone does not shrink
        documentElement.scrollWidth under rotate() in Chromium — the AABB still
-       expands the document. Drop the tilt below 480 so the 320 gate stays
-       green; delight tilt remains on larger phones/tablets.
+       expands the document. Drop the tilt at ≤360 so the 320 gate stays green
+       without suppressing delight tilt on typical phones (375–430).
        Do NOT put overflow-x:clip on html/body to paper over this — that
        breaks MudBlazor overlay scroll-lock (body overflow:hidden only
        reaches the viewport when html stays overflow:visible). */
