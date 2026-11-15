@@ -6,8 +6,11 @@
 // identifiers, not credentials. They are committed deliberately so the
 // Bicep is reproducible from a fresh clone.
 //
-// To override values without committing changes, copy this file to
-// `main-shared.dev.local.bicepparam` (gitignored) and edit there.
+// Personal overlays: create a MINIMAL `main-shared.dev.local.bicepparam`
+// (gitignored) with only `param developerObjectId = '…'`. Deploy scripts
+// always load THIS committed file and layer allowlisted local values via
+// --parameters (#400). Do not copy this whole file into .local — that used
+// to silently drop committed param additions.
 // =============================================================================
 
 using 'main-shared.bicep'
@@ -168,3 +171,15 @@ param deployCohereRerank = true
 // the trace is off again. It is high-volume and bills against the Log Analytics
 // 1 GB cap. Flip to true only for a bounded diagnosis, then back to false.
 param enableAzureSdkDiagnostics = false
+
+// ADR-0060 — CUTOVER COMPLETE for dev (2026-11-15):
+//   1) pinwiz-shared-dev updated with manageAcaJobs=false + detachAll
+//      → platform managed set has 0 Microsoft.App/jobs
+//   2) pinwiz-jobs-dev created → owns all 22 pinwiz-job-* resources
+//   3) platform restored to deleteAll unmanage with manageAcaJobs=false
+// deleteResources on the platform stack cannot delete jobs that are no longer
+// in its managed set. This committed false is the steady-state after that
+// sequence — not a premature flip ahead of detach. Flip back to true only as
+// a documented rollback that re-adopts jobs into the platform template.
+// See docs/runbooks/migrate-aca-jobs-to-workload-stack.md.
+param manageAcaJobs = false

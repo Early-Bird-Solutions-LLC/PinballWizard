@@ -265,12 +265,19 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        // Match Play live-tool typed arms (ADR-0061 / ADR-0062) — Citations only
+        // (public Match Play URL), not sourceIndex.
+        if (TryAddMatchPlayTypedCitation(result, byUrl, citations))
+        {
+            return;
+        }
+
         // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
         // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
         // array; MachineGroundingDto has a top-level "OpdbId" string;
         // MarketValueDto has a top-level "AttributionUrl" string;
         // KineticistGuideLinksDto has FullTutorialLink / GameRulesLink /
-        // PinballPrimerUrl.
+        // PinballPrimerUrl; MatchPlayTournamentStandingsDto has Standings + PublicUrl.
         if (result is JsonElement element)
         {
             ExtractFromJsonElement(element, functionCallId, byUrl, citations, sourceIndex);
@@ -344,6 +351,57 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     return;
                 }
             }
+            else if (TryGetPropertyIgnoreCase(element, "PublicUrl", out _)
+                && TryGetPropertyIgnoreCase(element, "TournamentId", out _)
+                && TryGetPropertyIgnoreCase(element, "Attribution", out _))
+            {
+                // Any Match Play live-tool DTO (ADR-0061 / ADR-0062): PublicUrl +
+                // TournamentId + Attribution. Citations only, NOT sourceIndex.
+                if (TryGetPropertyIgnoreCase(element, "Standings", out _)
+                    && TryDeserialize<MatchPlayTournamentStandingsDto>(element, functionCallId, _logger) is { } standings)
+                {
+                    AddMatchPlayCitation(
+                        standings.PublicUrl, standings.Name, standings.TournamentId,
+                        "standings", byUrl, citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Arenas", out _)
+                    && TryDeserialize<MatchPlayTournamentArenasDto>(element, functionCallId, _logger) is { } arenas)
+                {
+                    AddMatchPlayCitation(
+                        arenas.PublicUrl, arenas.Name, arenas.TournamentId,
+                        "arenas", byUrl, citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Rounds", out _)
+                    && TryDeserialize<MatchPlayTournamentFloorDto>(element, functionCallId, _logger) is { } floor)
+                {
+                    AddMatchPlayCitation(
+                        floor.PublicUrl, floor.Name, floor.TournamentId,
+                        "floor", byUrl, citations);
+                    return;
+                }
+
+                if (TryGetPropertyIgnoreCase(element, "Players", out _)
+                    && TryGetPropertyIgnoreCase(element, "Query", out _)
+                    && TryDeserialize<MatchPlayPlayerLookupDto>(element, functionCallId, _logger) is { } players)
+                {
+                    AddMatchPlayCitation(
+                        players.PublicUrl, players.Name, players.TournamentId,
+                        "players", byUrl, citations);
+                    return;
+                }
+
+                if (TryDeserialize<MatchPlayTournamentDetailDto>(element, functionCallId, _logger) is { } detail)
+                {
+                    AddMatchPlayCitation(
+                        detail.PublicUrl, detail.Name, detail.TournamentId,
+                        "detail", byUrl, citations);
+                    return;
+                }
+            }
         }
 
         // Non-object or unrecognized shape — serialize to string and apply
@@ -412,6 +470,52 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             MachineId: null,
             DocumentChunkId: null,
             SourceType: CitationSourceType.MarketValue));
+    }
+
+    private static bool TryAddMatchPlayTypedCitation(
+        object result,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations) =>
+        result switch
+        {
+            MatchPlayTournamentStandingsDto s => AddMatchPlayCitation(
+                s.PublicUrl, s.Name, s.TournamentId, "standings", byUrl, citations),
+            MatchPlayTournamentDetailDto d => AddMatchPlayCitation(
+                d.PublicUrl, d.Name, d.TournamentId, "detail", byUrl, citations),
+            MatchPlayTournamentArenasDto a => AddMatchPlayCitation(
+                a.PublicUrl, a.Name, a.TournamentId, "arenas", byUrl, citations),
+            MatchPlayTournamentFloorDto f => AddMatchPlayCitation(
+                f.PublicUrl, f.Name, f.TournamentId, "floor", byUrl, citations),
+            MatchPlayPlayerLookupDto p => AddMatchPlayCitation(
+                p.PublicUrl, p.Name, p.TournamentId, "players", byUrl, citations),
+            _ => false,
+        };
+
+    // ADR-0061 / ADR-0062: Match Play live tools → one Citation linking the
+    // public Match Play tournament page. Citations only — not sourceIndex.
+    private static bool AddMatchPlayCitation(
+        string publicUrl,
+        string? name,
+        int tournamentId,
+        string kind,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations)
+    {
+        if (string.IsNullOrWhiteSpace(publicUrl))
+        {
+            return false;
+        }
+
+        var display = string.IsNullOrWhiteSpace(name)
+            ? $"Tournament {tournamentId}"
+            : name;
+        AddOrUpgrade(byUrl, citations, new Citation(
+            Title: $"Match Play {kind} · {display}",
+            SourceUrl: publicUrl,
+            MachineId: null,
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.MatchPlayTournament));
+        return true;
     }
 
     // ADR-0043 Tier B: getKineticistGuideLinks → one CuratedLink citation per
@@ -622,7 +726,10 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         }
         if (section is not null)
         {
-            return $"{section} ({pageRange})";
+            // Prefix so AnswerCitedSubjectFilter fail-opens — a bare
+            // "{section} (p. …)" would be mistaken for a machine subject and
+            // dropped when the answer names the game, not the heading (#783).
+            return $"Section · {section} ({pageRange})";
         }
         return pageRange;
     }

@@ -26,7 +26,7 @@ Before starting H1, verify all of the following. If any check fails, fix it firs
 | Logged into the personal Earlybird tenant | `az account show --query "{tid:tenantId,sid:id,user:user.name}" -o jsonc` | `tid=9793cd0f-2b27-4757-9986-1f7f1e35864a`, `sid=b1f33f17-74a9-4ecc-b46c-c4f31776b840` (pinwiz.ai). The Bicep deploy script will hard-fail otherwise (ADR-0010 guard). |
 | Bicep CLI present | `az bicep version` | Auto-installed by `az`; reinstall via `az bicep install` if missing |
 | PowerShell 7+ shell (NOT Git-Bash) | `$PSVersionTable.PSVersion` | ≥ 7.0. See § Known gotchas — Git-Bash mangles Cosmos resource ID env vars (CLAUDE.md § Locked invariants #6). |
-| `dotnet` SDK floor | `dotnet --version` | Matches `global.json` floor (currently 10.0.200) |
+| `dotnet` SDK floor | `dotnet --version` | Matches `global.json` floor (currently 10.0.404) |
 | Build green | `dotnet build PinballWizard.slnx -p:TreatWarningsAsErrors=true` | 0 warnings, 0 errors |
 | Tests green | `dotnet test PinballWizard.slnx` | All passing |
 | Identity check | `git log -1 --format='%an <%ae>'` | Personal noreply only — never the work email (CLAUDE.md § Locked invariants #5) |
@@ -45,25 +45,25 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 
 ### Steps
 
-1. **Pre-flight regional capacity.** Open the Azure Portal → Create resource → Azure AI Search → Basic SKU; confirm East US 2 has capacity. If the create dialog warns "Insufficient resources available," that's regional capacity exhaustion (see § Known gotchas). Pick a sibling region (East US, Central US) and edit the local override accordingly.
+1. **Pre-flight regional capacity.** Open the Azure Portal → Create resource → Azure AI Search → Basic SKU; confirm East US 2 has capacity. If the create dialog warns "Insufficient resources available," that's regional capacity exhaustion (see § Known gotchas). Pick a sibling region (East US, Central US) and set `searchLocation` in the committed `infra/main-shared.dev.bicepparam` accordingly (the local overlay can no longer override it — #400).
 
-2. **Verify the gitignored local override matches intent.** `infra/main-shared.dev.local.bicepparam` overrides committed defaults. Drift here causes silent skips (see § Known gotchas).
+2. **Verify the parameters match intent.** Deploy scripts always load the committed `infra/main-shared.dev.bicepparam`; the gitignored `infra/main-shared.dev.local.bicepparam` may only overlay `developerObjectId` — any other param in it is ignored with a yellow warning (#400). Check the committed file for the values below, and the local file for `developerObjectId`.
 
    ```powershell
+   Select-String -Path infra/main-shared.dev.bicepparam -Pattern '^param (environment|deployPhase2|deployAiSearch|searchLocation) '
    Get-Content infra/main-shared.dev.local.bicepparam
    ```
 
-   Expected for Phase 4 H1:
+   Expected for Phase 4 H1 (committed file):
 
    ```
-   using './main-shared.bicep'
    param environment = 'dev'
    param deployPhase2 = true
-   param deployAiSearch = true
    param searchLocation = 'eastus'   // or 'eastus2' if regional capacity allowed
+   param deployAiSearch = true
    ```
 
-   If `deployAiSearch = false` or `deployPhase2 = false` slipped through from a previous session, fix here before running the deploy.
+   Expected local overlay: `using 'main-shared.bicep'` plus `param developerObjectId = '<your object id>'` only. If the deploy prints a yellow "ignored" warning for other local params, delete them from the local file.
 
 3. **What-if pass.** Always preview before applying.
 
@@ -170,8 +170,8 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 ### Known gotchas (H1)
 
 - **PowerShell, not Git-Bash, for Cosmos resource IDs** (CLAUDE.md § Locked invariants #6). MSYS path translation rewrites `/subscriptions/.../pinwiz-cosmos-dev-XXXX` to `C:/Program Files/Git/subscriptions/.../pinwiz-cosmos-dev-XXXX`. The CLI's friendly-error guard catches it but PowerShell sidesteps the trip-up entirely.
-- **Regional capacity is not subscription quota.** Azure's `InsufficientResourcesAvailable` (with a "try creating the service in another region" hint in the error body) is **regional capacity exhaustion**, not quota. Quota-increase support tickets do not unblock it. The structural fix is region relocation via `searchLocation` in the local bicepparam override (added in PR #118). Read what Azure tells you in the error body before reaching for support.
-- **Local-override drift causes silent skip.** `main-shared.dev.local.bicepparam` is gitignored, so stale values (e.g., `deployAiSearch = false` left over from a prior session) survive past their useful life and don't show up in committed diffs. Periodically diff the local override against the committed defaults to catch staleness — and always check it in step 2 above.
+- **Regional capacity is not subscription quota.** Azure's `InsufficientResourcesAvailable` (with a "try creating the service in another region" hint in the error body) is **regional capacity exhaustion**, not quota. Quota-increase support tickets do not unblock it. The structural fix is region relocation via `searchLocation` (added in PR #118), now set in the committed `main-shared.dev.bicepparam` — the local overlay only carries `developerObjectId` (#400). Read what Azure tells you in the error body before reaching for support.
+- **Local-override drift (historical, fixed by #400).** Deploy scripts used to swap the committed `.bicepparam` for `main-shared.dev.local.bicepparam` wholesale, so stale local values (e.g., `deployAiSearch = false`) or missing committed additions silently skipped resources. Now the committed file always wins and only `developerObjectId` is overlaid from the local file; other local params are ignored with a yellow warning — heed that warning and move durable values into the committed file.
 - **Bicep `@description` strings hit the Windows console encoding ceiling.** Non-ASCII characters (arrows, em-dashes) in description strings break `az bicep build --stdout` on Windows with `'charmap' codec can't encode character`. The Bicep file is syntactically fine, but `az`'s stdout encoder chokes. Keep description strings ASCII-only.
 - **`az` ADR-0010 subscription guard fires on every apply.** Tenant or subscription mismatch aborts before any resources change. The guard exists because the personal Earlybird subscription is the only legitimate target (CLAUDE.md § Locked invariants #5). If the guard fires unexpectedly, run `az login --tenant 9793cd0f-2b27-4757-9986-1f7f1e35864a` and re-set the subscription rather than passing `-SkipGuard`.
 - **The RAG Indexer Container App ships with a placeholder image, by design.** PR #130 lands the Container App + KEDA scale rule + 5 role assignments BEFORE the worker code (W3-2 code PR) is ready, so the deploy is smoke-testable end-to-end without waiting for the image. The placeholder (`mcr.microsoft.com/k8se/quickstart:latest`) runs the ACA quickstart greeting on `:80` — `az containerapp logs show` shows the greeting; the Change Feed scaler is config-validated but does no real work. **`runningStatus = Running` with the placeholder image is the correct state for H1 until the W3-2 code PR ships the worker image.** A "deployment succeeded but nothing's indexing" complaint at this stage is the system working as designed.
@@ -291,11 +291,11 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 
 | Failure mode | Action |
 | --- | --- |
-| H1: Bicep apply fails on `InsufficientResourcesAvailable` | Edit `searchLocation` in the local override to a sibling region (`eastus`, `centralus`); re-run from step 3. Don't open a quota ticket — that's regional capacity, not quota. |
+| H1: Bicep apply fails on `InsufficientResourcesAvailable` | Edit `searchLocation` in the committed `main-shared.dev.bicepparam` to a sibling region (`eastus`, `centralus`); re-run from step 3. Don't open a quota ticket — that's regional capacity, not quota. |
 | H1: ADR-0010 subscription guard fires | Run `az login --tenant 9793cd0f-2b27-4757-9986-1f7f1e35864a` then `az account set --subscription b1f33f17-74a9-4ecc-b46c-c4f31776b840`; re-run from step 3. |
 | H1: smoke probe exits with code 2 + remediation message | The relevant env var (`Cosmos__AccountEndpoint` / `AiSearch__Endpoint` / `AiFoundry__ProjectEndpoint`) isn't set in the current shell. Re-run step 5 of H1. |
 | H1: Bicep apply succeeds but smoke probe fails authentication | RBAC propagation lag (typically ≤ 60s after first deploy). Wait, retry; if persistent, verify the principal has `Cosmos DB Operator` (Cosmos) or `Search Service Contributor` (AI Search) at the resource scope per [ADR-0012](../adr/0012-cosmos-arm-schema-data-plane-items.md). |
-| H1: deploy succeeded but `deployAiSearch` was secretly false | Local-override drift (see § Known gotchas — H1). Fix the local override, re-run from step 3. The Bicep is idempotent. |
+| H1: deploy succeeded but `deployAiSearch` was secretly false | Check `deployAiSearch` in the committed `main-shared.dev.bicepparam` (local-file values for it are ignored since #400; see § Known gotchas — H1). Fix it, re-run from step 3. The Bicep is idempotent. |
 | H2: OPDB sync 429s repeatedly | Per-source politeness override is too tight; check `IngestionSource.PolitenessOverrides` in Cosmos for `opdb`. The on-disk OPDB cache (PR #79) absorbs subsequent reruns at near-zero upstream load. |
 | H2: eval `citation_precision = 0.000` (not just floored) | The `--eval` run hit a configuration error before reaching the Foundry calls. Inspect the log; common cause is `AiFoundry__ProjectEndpoint` missing from the shell env. |
 | H2: eval baseline appears to regress vs. prior H2 | Probably ground-truth churn (OPDB upstream changed). Re-run recuration in dry-run mode and compare the resolved-question count against the prior recuration JSON to confirm. |

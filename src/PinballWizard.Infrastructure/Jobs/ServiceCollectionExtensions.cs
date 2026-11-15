@@ -51,7 +51,8 @@ public static class ServiceCollectionExtensions
                     "Cosmos:AccountResourceId is set.");
             }
 
-            return new ArmJobAdminService(armClient, subscriptionId, resourceGroupName, logger);
+            var endTimes = sp.GetService<IJobExecutionEndReader>();
+            return new ArmJobAdminService(armClient, subscriptionId, resourceGroupName, logger, endTimes);
         });
 
         return true;
@@ -70,6 +71,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<MonitoringOptions>()
             .Bind(configuration.GetSection(MonitoringOptions.SectionName));
         services.TryAddSingleton<IJobLogReader, LogAnalyticsJobLogReader>();
+        services.TryAddSingleton<IJobExecutionEndReader, LogAnalyticsJobExecutionEndReader>();
         return services;
     }
 

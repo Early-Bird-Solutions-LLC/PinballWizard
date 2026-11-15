@@ -665,6 +665,10 @@ public sealed class RefusalRecoveryServiceTests
             [nameof(RefusalRecoveryService.SuggestedRephrase_LowModelConfidence)] = RefusalRecoveryService.SuggestedRephrase_LowModelConfidence,
             [nameof(RefusalRecoveryService.MissingWhat_NoCitation)] = RefusalRecoveryService.MissingWhat_NoCitation,
             [nameof(RefusalRecoveryService.SuggestedRephrase_NoCitation)] = RefusalRecoveryService.SuggestedRephrase_NoCitation,
+            [nameof(RefusalRecoveryService.MissingWhat_MachineKnownNoDocsGeneric)] =
+                RefusalRecoveryService.MissingWhat_MachineKnownNoDocsGeneric,
+            [nameof(RefusalRecoveryService.SuggestedRephrase_MachineKnownNoDocs)] =
+                RefusalRecoveryService.SuggestedRephrase_MachineKnownNoDocs,
             [nameof(RefusalRecoveryService.MissingWhat_UpstreamThrottled)] = RefusalRecoveryService.MissingWhat_UpstreamThrottled,
         };
 
@@ -678,6 +682,99 @@ public sealed class RefusalRecoveryServiceTests
                     $"Refusal text must be polite and never blame the user (ADR-0026 § 5).");
             }
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ADR-0053 / #784 — machine-known / no-docs recovery
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuildMachineKnownNoDocsRecoveryAsync_ExcludesSubjectFromRelatedMachines()
+    {
+        // "tell me about Challenger" → title token finds Challenger itself.
+        // The subject must land in KnownMachineWithoutIndexedDocs, not Related.
+        const string MachineId = "G50L9-MDxXD";
+        const string Question = "tell me about Challenger";
+        var challenger = NewMachine(MachineId, "Challenger", "gameplan");
+        var sibling = NewMachine("OTHER-1", "Challenger Deluxe", "gameplan");
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("challenger", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(challenger, sibling));
+        repo.QueryByTitleAsync("tell", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+        repo.QueryByTitleAsync("about", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildMachineKnownNoDocsRecoveryAsync(
+            Question, MachineId, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.KnownMachineWithoutIndexedDocs);
+        Assert.Equal(MachineId, detail.KnownMachineWithoutIndexedDocs!.MachineId);
+        Assert.Equal("Challenger", detail.KnownMachineWithoutIndexedDocs.Title);
+
+        Assert.NotNull(detail.RelatedMachines);
+        Assert.DoesNotContain(detail.RelatedMachines!, m =>
+            string.Equals(m.MachineId, MachineId, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(detail.RelatedMachines!, m => m.MachineId == "OTHER-1");
+
+        Assert.Contains("Challenger", detail.MissingWhat, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "No indexed source could be linked",
+            detail.MissingWhat,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BuildMachineKnownNoDocsRecoveryAsync_WhenSubjectNotInOverlap_ResolvesViaGroupSiblings()
+    {
+        // Multi-word CTA: token overlap misses the pinned id. Fall back to
+        // GetSiblingsByGroupIdAsync so KnownMachineWithoutIndexedDocs still
+        // fills (#784 Bugbot Medium).
+        const string MachineId = "G50L9-MDxXD";
+        var challenger = NewMachine(MachineId, "Attack from Mars", "stern");
+
+        var repo = EmptyRepo();
+        repo.GetSiblingsByGroupIdAsync("G50L9", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(challenger));
+
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildMachineKnownNoDocsRecoveryAsync(
+            "tell me about Attack from Mars", MachineId, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.KnownMachineWithoutIndexedDocs);
+        Assert.Equal(MachineId, detail.KnownMachineWithoutIndexedDocs!.MachineId);
+        Assert.Equal("Attack from Mars", detail.KnownMachineWithoutIndexedDocs.Title);
+        Assert.Null(detail.RelatedMachines);
+        Assert.Contains("Attack from Mars", detail.MissingWhat, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "No indexed source could be linked",
+            detail.MissingWhat,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BuildMachineKnownNoDocsRecoveryAsync_WhenGroupLookupMisses_UsesGenericCopy()
+    {
+        var repo = EmptyRepo();
+        repo.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildMachineKnownNoDocsRecoveryAsync(
+            "tell me about Challenger", "G50L9-MDxXD", CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Null(detail!.KnownMachineWithoutIndexedDocs);
+        Assert.Equal(
+            RefusalRecoveryService.MissingWhat_MachineKnownNoDocsGeneric,
+            detail.MissingWhat);
     }
 
     // ──────────────────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
+using PinballWizard.Infrastructure.Integrations.MatchPlay;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinTips;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
@@ -156,7 +157,7 @@ var evalOption = new Option<bool>("--eval")
 
 var corpusCoverageOption = new Option<bool>("--corpus-coverage")
 {
-    Description = "Corpus coverage probe: for each (source × document_type) cell with indexed content, assert presence + retrievability (a query auto-derived from a sample chunk retrieves content from that cell). Writes data/eval/results/coverage.{ts}.json and exits non-zero on gaps. Requires AiSearch:Endpoint. No LLM calls."
+    Description = "Corpus coverage probe: for each (source × document_type) cell with indexed content, assert presence + retrievability (a query auto-derived from a sample chunk retrieves content from that cell). Writes data/eval/results/coverage.{ts}.json and exits non-zero on gaps. Requires AiSearch:Endpoint and AiFoundry:ProjectEndpoint (retrievability uses IQueryEmbedder — no chat LLM calls)."
 };
 
 var probeRetrievalOption = new Option<string?>("--probe-retrieval")
@@ -1067,12 +1068,24 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Handle --corpus-coverage. Resolves ICorpusCoverageProber (registered only
-    // when AddAzureAiSearchIntegration was wired, i.e. AiSearch:Endpoint is set).
+    // Handle --corpus-coverage. Resolves ICorpusCoverageProber (registered when
+    // AddAzureAiSearchIntegration was wired, i.e. AiSearch:Endpoint is set).
+    // Retrievability goes through IRagRetriever → IQueryEmbedder, so Foundry
+    // ProjectEndpoint must also be configured (embedding only — no chat LLM).
     // Writes a timestamped CoverageReport JSON and exits non-zero on gaps so the
-    // scheduled workflow can alarm. No Foundry/Cosmos required.
+    // scheduled workflow can alarm. Cosmos is not required.
     if (corpusCoverage)
     {
+        if (string.IsNullOrWhiteSpace(host.Services.GetService<IConfiguration>()?[AiFoundryOptions.ProjectEndpointKey]))
+        {
+            Console.Error.WriteLine(
+                $"--corpus-coverage requires {AiFoundryOptions.ProjectEndpointKey} " +
+                "(IQueryEmbedder derives the Azure OpenAI account endpoint from it). " +
+                "Set it alongside AiSearch:Endpoint — see .github/workflows/corpus-coverage.yml.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
         var prober = host.Services.GetService<ICorpusCoverageProber>();
         if (prober is null)
         {
@@ -2198,6 +2211,14 @@ static IHost CreateHost(string[] args)
     if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey]))
     {
         builder.Services.AddKineticistIntegration(builder.Configuration);
+    }
+
+    // Match Play Events live-tournament tools (ADR-0061). Token: MatchPlay:ApiToken
+    // or Opdb:ApiToken fallback. Absent = tools return null.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKey])
+        || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
+    {
+        builder.Services.AddMatchPlayIntegration(builder.Configuration);
     }
 
     // Azure AI Foundry integration — gated on AiFoundry:ProjectEndpoint

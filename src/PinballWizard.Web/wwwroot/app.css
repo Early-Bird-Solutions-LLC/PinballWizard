@@ -546,6 +546,20 @@ html, body {
     font-family: var(--pw-font-body);
 }
 
+/* ── Landing page (Index.razor MudContainer Class="landing-page") ─────── */
+/* Global because Class rides MudContainer — scoped Index.razor.css cannot
+   attach [b-xxxx] to that child root. Do NOT set max-width here: MudContainer
+   MaxWidth.Large (~1280px) already caps the measure. */
+.landing-page {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    position: relative;
+    /* #788 b): contain stray child min-content so / never page-scrolls at 320. */
+    min-width: 0;
+    overflow-x: clip;
+    box-sizing: border-box;
+}
+
 /* ── Admin dashboard summary cards (AppSummaryCard) ───────────────────── */
 
 /* Every AppSummaryCard tile in a MudGrid row is the same height regardless of
@@ -582,12 +596,65 @@ html.pw-admin-nav--collapsed .pw-admin-layout {
     --mud-drawer-width-left: 64px;
 }
 
-/* Icon-only collapse: hide the nav-link labels, the rail header text, and the status-
-   footer text. Icons and the toggle button stay visible; title tooltips are retained
-   for a11y (spec §5.1). Scoped to the admin rail (.app-nav-rail--collapsible, added
-   only when ShowCollapseToggle is on) so the public rail — which shares the .pw-nav-label
-   spans from the same AppNavRail component — is never affected. */
-html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-label,
+/* Narrow-viewport auto-collapse (#790).
+   AdminLayout keeps the rail Open="true" (static, always-expanded) so MudBlazor
+   never hides it below Breakpoint.Md. At phone widths that full rail (~240px)
+   plus MudMainContent produced page-level horizontal overflow (scrollWidth 447
+   on a 320px viewport) while the responsive snapshot gate stayed green —
+   because nothing asserted overflow. Mirror the collapsed-rail custom property
+   and label hiding below 600px without requiring the JS toggle or a Blazor
+   @onclick (FE-10 / static admin circuit profile unchanged).
+
+   Nav labels use the visually-hidden clip (not display:none) so the <a> keeps
+   its accessible name — same reason as the closed-mini public-rail rule below
+   (#790 Bugbot Medium). Header/footer chrome text can stay display:none.
+   Collapse-toggle hide lives in AppNavRail.razor.css (same sheet as its
+   display:flex) so cascade wins after bundled component CSS — see #1035
+   Bugbot Medium. */
+@media (max-width: 599.98px) {
+    .pw-admin-layout {
+        --mud-drawer-width-left: 64px;
+    }
+
+    .pw-admin-layout .app-nav-rail--collapsible .pw-nav-label {
+        position: absolute !important;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .pw-admin-layout .app-nav-rail--collapsible .pw-nav-header-text,
+    .pw-admin-layout .app-nav-rail--collapsible .admin-status-footer__text {
+        display: none;
+    }
+
+    /* App bar title + identity + back button also outgrow ~320px; let the
+       bar scroll internally rather than widening the document. */
+    .pw-admin-layout .mud-appbar .mud-toolbar {
+        overflow-x: auto;
+    }
+}
+
+/* Icon-only collapse (JS toggle): same visually-hidden treatment for link
+   names; header/footer chrome stays display:none. Scoped to the admin rail
+   (.app-nav-rail--collapsible) so the public rail is unaffected. */
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-label {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
 html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-header-text,
 html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__text {
     display: none;
@@ -1004,12 +1071,14 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
 }
 
 .brand-footer__link,
-.brand-footer__meta-link,
-.brand-footer__coverage-link {
+.brand-footer__meta-link {
     min-block-size: 44px;
     display: inline-flex;
     align-items: center;
 }
+
+/* Coverage link stays inline-in-sentence (WCAG 2.5.8 exempt) — do not stretch
+   the footer paragraph to 44px (#789 Bugbot). Nearby stacked chrome keeps 44. */
 
 /* Stacked document links in the machine-detail grid (WCAG 2.2 SC 2.5.8, #790).
 
