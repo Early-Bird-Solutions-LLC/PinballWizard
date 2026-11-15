@@ -1161,17 +1161,26 @@ public sealed class AiRouter : IAiRouter
         }
 
         // Multi-turn citation inheritance (2026-06-11 design). A grounded
-        // follow-up that the model answers from conversation context fires
-        // no retrieval tool, so the extractor sees zero citations — and
-        // without intervention the confidence gate (citation-coverage
-        // signal) or the NoCitation gate below would refuse a legitimate
-        // answer. The grounding for such an answer IS the prior turn's
-        // cited material, so we inherit the most recent cited turn's
-        // citations, flagged Inherited=true so the UI can label them.
+        // clarifying follow-up that the model answers from conversation
+        // context fires no retrieval tool, so the extractor sees zero
+        // citations — and without intervention the confidence gate
+        // (citation-coverage signal) or the NoCitation gate below would
+        // refuse a legitimate answer. The grounding for such an answer
+        // IS the prior turn's cited material, so we inherit the most
+        // recent cited turn's citations, flagged Inherited=true so the
+        // UI can label them.
+        //
+        // #780: new-intent follow-ups ("games similar to X") must NOT
+        // inherit — that path would pass confidence on borrowed manuals
+        // while the same question asked cold refuses. See
+        // FollowUpCitationInheritance.ShouldInherit.
+        //
         // Placement matters: this must run BEFORE Compute() so inherited
         // citations feed the citation-coverage signal, not just the binary
         // gate. Single-shot behavior is untouched (history is null).
-        if (citations.Count == 0 && history is { Count: > 0 })
+        if (citations.Count == 0
+            && history is { Count: > 0 }
+            && FollowUpCitationInheritance.ShouldInherit(normalized, history))
         {
             var donor = history.LastOrDefault(t => t.Citations is { Count: > 0 });
             if (donor is not null)
