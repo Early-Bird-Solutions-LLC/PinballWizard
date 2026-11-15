@@ -1431,6 +1431,39 @@ public sealed class ToolTraceCitationExtractorTests
                 new MatchPlayStandingRowDto(1, "Ada", 10, "12.00", 5, 123),
             ]);
 
+    [Fact]
+    public void Extract_MatchPlayArenasDto_AsTyped_ProducesCitation()
+    {
+        var dto = new MatchPlayTournamentArenasDto(
+            TournamentId: 99,
+            Name: "INDISC 2026",
+            PublicUrl: "https://app.matchplay.events/tournaments/99",
+            Attribution: "Match Play Events — https://app.matchplay.events/tournaments/99",
+            Arenas: [new MatchPlayArenaDto(1, "Godzilla", "active", "G33YF")]);
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentArenas", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal(CitationSourceType.MatchPlayTournament, citation.SourceType);
+        Assert.Contains("arenas", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Extract_MatchPlayFloorDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        var dto = new MatchPlayTournamentFloorDto(
+            TournamentId: 99,
+            Name: "INDISC 2026",
+            PublicUrl: "https://app.matchplay.events/tournaments/99",
+            Attribution: "Match Play Events — https://app.matchplay.events/tournaments/99",
+            Rounds: [new MatchPlayRoundDto(1, 0, "Round 1", "started", null)],
+            Games: []);
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentFloor", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Contains("floor", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static MarketValueDto SampleMarketValueDto(string opdbId) =>
         new(MachineTitle: "Medieval Madness",
             MedianPrice: 5500m,
