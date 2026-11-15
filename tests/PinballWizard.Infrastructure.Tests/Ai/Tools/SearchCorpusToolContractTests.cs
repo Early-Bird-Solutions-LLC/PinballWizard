@@ -185,6 +185,7 @@ public sealed class SearchCorpusToolContractTests
         Assert.Contains("manual", descText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("service_bulletin", descText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("metadata_card", descText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("play_tip", descText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

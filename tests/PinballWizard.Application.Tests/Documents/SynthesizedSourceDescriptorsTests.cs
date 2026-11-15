@@ -15,6 +15,7 @@ public sealed class SynthesizedSourceDescriptorsTests
     [InlineData("tiltforums_7210_M2", "tiltforums_")]
     [InlineData("twip_this-week", "twip_")]
     [InlineData("pb_freshdesk_12345", "pb_freshdesk_")]
+    [InlineData("pintips_2", "pintips_")]
     public void ForDocumentId_SynthesizedId_ResolvesByPrefix(string documentId, string expectedPrefix)
     {
         var descriptor = SynthesizedSourceDescriptors.ForDocumentId(documentId);
@@ -60,6 +61,16 @@ public sealed class SynthesizedSourceDescriptorsTests
         Assert.Equal(DocumentType.NewsDigest, d.DocumentType);
         Assert.Equal("html", d.FileFormat);
         Assert.Equal("Kineticist", d.ManufacturerOverride);
+    }
+
+    [Fact]
+    public void PinTips_PinsProvenanceConstants()
+    {
+        var d = SynthesizedSourceDescriptors.PinTips;
+        Assert.Equal("PinTips", d.DiscoveryContext);
+        Assert.Equal(DocumentType.PlayTip, d.DocumentType);
+        Assert.Equal("md", d.FileFormat);
+        Assert.Equal("PinTips", d.ManufacturerOverride);
     }
 
     [Fact]
