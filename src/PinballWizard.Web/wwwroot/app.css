@@ -990,6 +990,27 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
     min-inline-size: 44px;
 }
 
+/* Remaining #789 chrome targets that were still under 44×44 after #790:
+   nav-rail rows (Mud default ~40px tall), header brand mark, and footer /
+   meta links whose caption type scale collapsed the hit box to ~14–16px. */
+.app-nav-rail .mud-nav-link {
+    min-block-size: 44px;
+}
+
+.brand-logo {
+    min-block-size: 44px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.brand-footer__link,
+.brand-footer__meta-link,
+.brand-footer__coverage-link {
+    min-block-size: 44px;
+    display: inline-flex;
+    align-items: center;
+}
+
 /* Stacked document links in the machine-detail grid (WCAG 2.2 SC 2.5.8, #790).
 
    Measured 110x19.9 with only 16px between the two links, against the rule's

@@ -1,0 +1,8 @@
+/* Question heading visual size. Element is <h1> (live ask) or <h2> (prior
+   thread turns) for document outline (#789); keep the compact display scale
+   that Typo.h6 previously provided so the answer surface does not jump. */
+.wizard-answer-stream__question {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
