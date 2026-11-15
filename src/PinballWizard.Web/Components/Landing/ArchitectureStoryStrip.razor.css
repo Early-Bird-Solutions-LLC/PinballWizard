@@ -17,7 +17,8 @@
 
 .arch-strip__cell {
     flex: 1 1 180px;
-    min-width: 160px;
+    /* #788: 160px min-width beside container padding could nudge / past 320. */
+    min-width: 0;
 }
 
 .arch-card {
