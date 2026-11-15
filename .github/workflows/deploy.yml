@@ -803,8 +803,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
+      # Same scoped restore as scheduled canary.yml — do not pull AppHost via
+      # full-slnx restore (Aspire advisory NU1903/NU1904 would fail E2E before
+      # the live site is exercised; see #929).
       - name: Restore
-        run: dotnet restore PinballWizard.slnx
+        run: dotnet restore tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
 
       - name: Build (Release)
         run: dotnet build --no-restore --configuration Release tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj

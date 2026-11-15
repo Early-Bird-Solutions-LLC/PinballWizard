@@ -67,8 +67,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
+      # Restore only the E2E test project graph — not PinballWizard.slnx.
+      # Full-solution restore pulls PinballWizard.AppHost (local-dev Aspire
+      # orchestrator). When Aspire packages carry NuGet advisories treated as
+      # errors (NU1903/NU1904), the scheduled canary failed at restore and
+      # never reached the live site (#929, Nov 2026). The canary does not run
+      # AppHost; Web.Tests → Web/Api is sufficient.
       - name: Restore
-        run: dotnet restore PinballWizard.slnx
+        run: dotnet restore tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
 
       - name: Build (Release)
         run: dotnet build --no-restore --configuration Release tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
