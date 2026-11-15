@@ -1,0 +1,280 @@
+using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Citations;
+using Xunit;
+
+namespace PinballWizard.Application.Tests.Application.Ai.Citations;
+
+public sealed class AnswerCitedSubjectFilterTests
+{
+    [Fact]
+    public void Filter_DropsCitationWhoseSubjectIsAbsentFromAnswer()
+    {
+        // #783 fixture: recommendation names Hobbit / Halloween / … but the
+        // tool trace also returned The Jetsons Metadata — must not show.
+        var answer =
+            "Similarly themed games include The Hobbit, Halloween, " +
+            "The Texas Chainsaw Massacre, Evil Dead, and Barnyard.";
+
+        var citations = new[]
+        {
+            Cite("The Hobbit — Metadata", "https://opdb.org/machines/hobbit"),
+            Cite("Halloween — Metadata", "https://opdb.org/machines/halloween"),
+            Cite("The Jetsons — Metadata", "https://opdb.org/machines/jetsons"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(2, result.Kept.Count);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.Contains("Jetsons", StringComparison.Ordinal));
+        Assert.Contains(result.Kept, c => c.Title.Contains("Hobbit", StringComparison.Ordinal));
+        Assert.Contains(result.Kept, c => c.Title.Contains("Halloween", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsCitationWhenSubjectAppearsWithoutLeadingArticle()
+    {
+        var answer = "Jetsons is a rare licensed table from the early 90s.";
+        var citations = new[]
+        {
+            Cite("The Jetsons — Metadata", "https://opdb.org/machines/jetsons"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_KeepsInheritedCitationsEvenWhenSubjectAbsent()
+    {
+        // Clarifying follow-up ("how many balls?") may never restate the
+        // machine name — inherited grounding must survive (#783 vs #780).
+        var citations = new[]
+        {
+            Cite("Medieval Madness — Rules", "https://example.com/mm.pdf", inherited: true),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter("Three balls in multiball.", citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_KeepsOpdbRecordTitlesWithoutMachineName()
+    {
+        var citations = new[]
+        {
+            Cite("OPDB record GRBE-MJL05", "https://opdb.org/machines/GRBE-MJL05"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter("A grounded answer with no title echo.", citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_KeepsPageAnchoredCorpusTitleWhenMachineNamed()
+    {
+        var answer = "On Godzilla, the Godzilla multiball starts when you shoot the left orbit.";
+        var citations = new[]
+        {
+            Cite("Godzilla (p. 12–14)", "https://example.com/godzilla.pdf"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void ExtractSubject_SplitsEmDashAndPageRange()
+    {
+        Assert.Equal("The Jetsons", AnswerCitedSubjectFilter.ExtractSubject("The Jetsons — Metadata"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (p. 12–14)"));
+        Assert.Equal(
+            "Medieval Madness",
+            AnswerCitedSubjectFilter.ExtractSubject(
+                "Market value · Medieval Madness — Silverball Labs / PinballPrices.com"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("OPDB record GRBE-MJL05"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play standings · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play detail · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play arenas · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play floor · Pinburgh 2026"));
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Match Play players · Alice"));
+    }
+
+    [Fact]
+    public void Filter_KeepsMatchPlayLiveToolCitationsWithoutEventNameInAnswer()
+    {
+        // Bugbot: ADR-0062 titles are "Match Play detail|arenas|floor|players · …"
+        // — must fail-open like standings, or a tournament-only answer trips
+        // NoCitation.
+        var citations = new[]
+        {
+            Cite("Match Play detail · Pinburgh 2026", "https://matchplay.events/t/1"),
+            Cite("Match Play floor · Pinburgh 2026", "https://matchplay.events/t/1/floor"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(
+            "Top seed is on arena 3 in the current round.", citations);
+
+        Assert.Equal(2, result.Kept.Count);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_KeepsKineticistGuideLinksWhenMachineNamed()
+    {
+        // Bugbot: curated titles are "Label · {machine}" — subject is the
+        // machine on the right, not the full phrase.
+        var answer = "For Godzilla rules, start with the Kineticist tutorial.";
+        var citations = new[]
+        {
+            Cite("Kineticist tutorial · Godzilla", "https://kineticist.com/godzilla", CitationSourceType.CuratedLink),
+            Cite("Game rules · Godzilla", "https://kineticist.com/godzilla/rules", CitationSourceType.CuratedLink),
+            Cite("Pinball primer · Godzilla", "https://kineticist.com/primer", CitationSourceType.CuratedLink),
+            Cite("Kineticist tutorial · The Jetsons", "https://kineticist.com/jetsons", CitationSourceType.CuratedLink),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(3, result.Kept.Count);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.Contains("Jetsons", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsEditionQualifiedTitleWhenAnswerNamesBaseGame()
+    {
+        // Bugbot: "Godzilla (Pro)" must match answer prose that just says
+        // "Godzilla" — editions are retrieval variants, not distinct subjects.
+        var answer = "On Godzilla, flippers persist through multiball.";
+        var citations = new[]
+        {
+            Cite("Godzilla (Pro) — Rules", "https://example.com/godzilla-pro.pdf"),
+            Cite("Godzilla (Premium) (p. 4–6)", "https://example.com/godzilla-prem.pdf"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(2, result.Kept.Count);
+        Assert.Equal(0, result.DroppedCount);
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Pro) — Rules"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Premium) (p. 4–6)"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (Premium/LE) — Metadata"));
+        Assert.Equal("AC/DC", AnswerCitedSubjectFilter.ExtractSubject("AC/DC (Pro Vault Edition) — Metadata"));
+        Assert.Equal("AC/DC", AnswerCitedSubjectFilter.ExtractSubject("AC/DC (Premium Vault Edition) — Metadata"));
+        Assert.Equal("Foo", AnswerCitedSubjectFilter.ExtractSubject("Foo (Super LE) — Metadata"));
+        Assert.Equal("Bar", AnswerCitedSubjectFilter.ExtractSubject("Bar (Collector's Edition) — Metadata"));
+        Assert.Equal("Godzilla", AnswerCitedSubjectFilter.ExtractSubject("Godzilla (70th Anniversary) — Rules"));
+    }
+
+    [Fact]
+    public void Filter_KeepsSectionOnlyCorpusTitleWithoutMachineSubject()
+    {
+        // Bugbot: "{section} (p. …)" without a machine was treated as a subject
+        // and dropped; BuildCorpusCitationTitle now stamps "Section · …".
+        var citations = new[]
+        {
+            Cite("Section · Multiball rules (p. 12–14)", "https://example.com/rules.pdf"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(
+            "On Godzilla, shoot the left orbit to start multiball.", citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+        Assert.Null(AnswerCitedSubjectFilter.ExtractSubject("Section · Multiball rules (p. 12–14)"));
+    }
+
+    [Fact]
+    public void Filter_DropsShortSubjectWhenOnlyCommonWordMatches()
+    {
+        // Bugbot: "IT" must not stay because the answer contains lowercase "it".
+        var answer = "Godzilla is great because it has a deep rule set.";
+        var citations = new[]
+        {
+            Cite("Godzilla — Metadata", "https://opdb.org/machines/godzilla"),
+            Cite("IT — Metadata", "https://opdb.org/machines/it"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.StartsWith("IT", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsShortSubjectWhenExactTokenPresent()
+    {
+        var answer = "Stern's IT is a widebody with a unique layout.";
+        var citations = new[]
+        {
+            Cite("IT — Metadata", "https://opdb.org/machines/it"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_DropsTheWhoWhenOnlyPronounWhoMatches()
+    {
+        // Bugbot: article strip "The Who" → "Who" matched "who"/"whose".
+        var answer = "Players who prefer multiball should try Godzilla.";
+        var citations = new[]
+        {
+            Cite("Godzilla — Metadata", "https://opdb.org/machines/godzilla"),
+            Cite("The Who — Metadata", "https://opdb.org/machines/the-who"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.Contains("Who", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsTheWhoWhenFullTitlePresent()
+    {
+        var answer = "The Who is a Stern table with rock-band theming.";
+        var citations = new[]
+        {
+            Cite("The Who — Metadata", "https://opdb.org/machines/the-who"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_EmptyInput_IsNoOp()
+    {
+        var empty = Array.Empty<Citation>();
+        var result = AnswerCitedSubjectFilter.Filter("anything", empty);
+        Assert.Empty(result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    private static Citation Cite(
+        string title,
+        string url,
+        CitationSourceType sourceType = CitationSourceType.MachineRecord,
+        bool inherited = false)
+        => new(
+            Title: title,
+            SourceUrl: url,
+            SourceType: sourceType,
+            Inherited: inherited);
+}

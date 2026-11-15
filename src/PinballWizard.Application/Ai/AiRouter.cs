@@ -1224,6 +1224,22 @@ public sealed class AiRouter : IAiRouter
             }
         }
 
+        // Answer-subject filter (#783 / ADR-0063): drop tool-trace hits whose
+        // machine subject never appears in the answer. Runs AFTER inheritance
+        // (Inherited citations are exempt — clarifying follow-ups) and BEFORE
+        // reconcile / confidence / NoCitation so unused hits cannot inflate
+        // coverage or pass the binary gate.
+        var subjectFilter = AnswerCitedSubjectFilter.Filter(responseText, citations);
+        citations = subjectFilter.Kept;
+        if (subjectFilter.DroppedCount > 0)
+        {
+            PinballWizardTelemetry.AiCitationsDroppedUnusedSubject.Add(subjectFilter.DroppedCount);
+            _logger.LogDebug(
+                "AiRouter dropped {Dropped} citation(s) whose subject is absent from the answer (kept {Kept}).",
+                subjectFilter.DroppedCount,
+                citations.Count);
+        }
+
         // Inline-citation reconciliation (inline-citation-markers feature).
         // Rewrites [[cite:k]] markers emitted by the model (k = 1-based
         // searchCorpus source index position) to [[cite:N]] (N = 1-based
