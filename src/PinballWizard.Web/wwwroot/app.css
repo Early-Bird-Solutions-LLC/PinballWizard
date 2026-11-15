@@ -544,12 +544,6 @@ html, body {
     margin: 0;
     padding: 0;
     font-family: var(--pw-font-body);
-    /* #790: page-level horizontal scroll is never intentional. Clip at the
-       document root so CSS transforms (TiltPage rotate) cannot expand
-       documentElement.scrollWidth past the viewport. Nested regions that
-       need sideways scroll (AppDataGrid, code blocks) use overflow-x:auto
-       on their own boxes. */
-    overflow-x: clip;
 }
 
 /* ── Admin dashboard summary cards (AppSummaryCard) ───────────────────── */
