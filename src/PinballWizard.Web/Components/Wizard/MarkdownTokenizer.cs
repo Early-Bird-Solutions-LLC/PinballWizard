@@ -6,10 +6,11 @@ namespace PinballWizard.Web.Components.Wizard;
 
 // Minimal safe-markdown tokenizer for Wizard answer prose.
 //
-// Renders a safe subset of markdown — bold, italic, ordered/unordered lists,
-// and paragraph line breaks — into known-safe Blazor RenderFragment elements
-// (strong / em / ol / ul / li / br / p). All text content is HTML-encoded by
-// Blazor's RenderFragment pipeline; MarkupString is never used.
+// Renders a safe subset of markdown — bold, italic, ordered/unordered lists
+// (with nested UL under OL items), ATX headings, thematic breaks, and
+// paragraph line breaks — into known-safe Blazor RenderFragment elements.
+// All text content is HTML-encoded by Blazor's RenderFragment pipeline;
+// MarkupString is never used.
 //
 // Design constraints:
 //   - Streaming path is UNTOUCHED: TokenRenderer's streaming spans stay
@@ -22,26 +23,23 @@ namespace PinballWizard.Web.Components.Wizard;
 //     side by the Citation pipeline before this class ever sees the text.
 //     This tokenizer does NOT render links; if [text](url) leaks through,
 //     the brackets and parens render as literal text (safe degradation).
-//   - Subset only: headings (# ##), thematic breaks (---), code blocks,
-//     tables are not rendered; they pass through as literal text. The model
-//     answer style does not use them today.
 //
-// Supported syntax (all spec-minimal, no nesting within inline spans):
+// Supported syntax (spec-minimal):
 //   **text**           → <strong>text</strong>
 //   *text*             → <em>text</em>
-//   1. item text\n     → <ol><li>item text</li>…</ol>
-//   - item text\n      → <ul><li>item text</li>…</ul>
+//   1. item text\n     → <ol><li>…</li></ol>  (nested - bullets stay in the same <ol>)
+//   - item text\n      → <ul><li>…</li></ul>
+//   ##–###### heading  → <h2>–<h6>  (# demoted to h2 so answers never steal page h1)
+//   --- / *** / ___    → <hr />
 //   blank line         → paragraph break (<p> wrapping)
 //   line break (\n)    → <br /> within a paragraph
 //
 // Not supported (renders as literal text):
-//   __bold__  _italic_  ~~strike~~  `code`  # heading  links  tables
+//   __bold__  _italic_  ~~strike~~  `code`  links  tables
 //
 // Sequence numbers: Blazor's ASP0006 analyzer requires literal integers in
 // Razor-generated code; for manually-written RenderTreeBuilder code, using 0
-// for all calls is the documented pattern (Blazor diffing uses the sequence
-// only within Razor-generated source positions, not in hand-authored builders).
-// Suppress ASP0006 at the method level accordingly.
+// for all calls is the documented pattern. Suppress ASP0006 at the method level.
 internal static class MarkdownTokenizer
 {
     // Builds a RenderFragment for the given markdown text using the safe subset above.
@@ -59,7 +57,16 @@ internal static class MarkdownTokenizer
     private abstract record Block;
 
     private sealed record ParagraphBlock(string Text) : Block;
-    private sealed record OrderedListBlock(List<string> Items) : Block;
+    private sealed record HeadingBlock(int Level, string Text) : Block;
+    private sealed record ThematicBreakBlock : Block;
+
+    // Ordered list item may carry nested unordered bullets (issue #786):
+    //   1. Parent
+    //   - nested
+    //   2. Sibling
+    // must stay ONE <ol> with two <li>s, the first containing a nested <ul>.
+    private sealed record OrderedListItem(string Text, List<string> NestedUnordered);
+    private sealed record OrderedListBlock(List<OrderedListItem> Items) : Block;
     private sealed record UnorderedListBlock(List<string> Items) : Block;
 
     // ── Block parser ──────────────────────────────────────────────────────
@@ -69,17 +76,13 @@ internal static class MarkdownTokenizer
         // Normalize line endings to \n for simplicity.
         text = text.Replace("\r\n", "\n").Replace('\r', '\n');
 
-        // Split into raw lines.
         var lines = text.Split('\n');
-
         var blocks = new List<Block>();
         var paragraphLines = new List<string>();
 
-        // Process any accumulated paragraph-buffer lines and emit a ParagraphBlock.
         void FlushParagraph()
         {
             if (paragraphLines.Count == 0) return;
-            // Join with \n so line-break rendering can split on it later.
             var joined = string.Join("\n", paragraphLines).Trim();
             if (!string.IsNullOrEmpty(joined))
                 blocks.Add(new ParagraphBlock(joined));
@@ -99,16 +102,68 @@ internal static class MarkdownTokenizer
                 continue;
             }
 
-            // Ordered list: "N. " prefix (1-3 digits + dot + space).
+            // Thematic break: --- / *** / ___ (3+ of the same char, optional spaces).
+            if (IsThematicBreak(line))
+            {
+                FlushParagraph();
+                blocks.Add(new ThematicBreakBlock());
+                i++;
+                continue;
+            }
+
+            // ATX heading: 1–6 leading # + space + text.
+            if (IsAtxHeading(line, out var headingLevel, out var headingText))
+            {
+                FlushParagraph();
+                blocks.Add(new HeadingBlock(headingLevel, headingText!));
+                i++;
+                continue;
+            }
+
+            // Ordered list: "N. " prefix. Nested "- "/"* " lines between items
+            // stay attached to the current item so the <ol> is not split (#786).
             if (IsOrderedListItem(line, out var olText))
             {
                 FlushParagraph();
-                var items = new List<string> { olText! };
-                i++;
-                while (i < lines.Length && IsOrderedListItem(lines[i], out var nextOlText))
+                var items = new List<OrderedListItem>
                 {
-                    items.Add(nextOlText!);
-                    i++;
+                    new(olText!, []),
+                };
+                i++;
+                while (i < lines.Length)
+                {
+                    if (string.IsNullOrWhiteSpace(lines[i]))
+                    {
+                        // Blank inside a list: peek — continue if next non-blank
+                        // is still a list item (OL or nested UL); else end list.
+                        var peek = i + 1;
+                        while (peek < lines.Length && string.IsNullOrWhiteSpace(lines[peek]))
+                            peek++;
+                        if (peek < lines.Length
+                            && (IsOrderedListItem(lines[peek], out _)
+                                || IsUnorderedListItem(lines[peek], out _)))
+                        {
+                            i++;
+                            continue;
+                        }
+                        break;
+                    }
+
+                    if (IsOrderedListItem(lines[i], out var nextOlText))
+                    {
+                        items.Add(new OrderedListItem(nextOlText!, []));
+                        i++;
+                        continue;
+                    }
+
+                    if (IsUnorderedListItem(lines[i], out var nestedUlText))
+                    {
+                        items[^1].NestedUnordered.Add(nestedUlText!);
+                        i++;
+                        continue;
+                    }
+
+                    break;
                 }
                 blocks.Add(new OrderedListBlock(items));
                 continue;
@@ -136,6 +191,64 @@ internal static class MarkdownTokenizer
 
         FlushParagraph();
         return blocks;
+    }
+
+    private static bool IsAtxHeading(string line, out int level, out string? text)
+    {
+        level = 0;
+        text = null;
+        var trimmed = line.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '#')
+            return false;
+
+        var hashes = 0;
+        while (hashes < trimmed.Length && trimmed[hashes] == '#')
+            hashes++;
+
+        // CommonMark: 1–6 hashes, then whitespace (or end). We require a space
+        // before text so "###foo" stays literal.
+        if (hashes is < 1 or > 6)
+            return false;
+        if (hashes >= trimmed.Length)
+        {
+            level = hashes;
+            text = string.Empty;
+            return true;
+        }
+        if (!char.IsWhiteSpace(trimmed[hashes]))
+            return false;
+
+        level = hashes;
+        text = trimmed[hashes..].Trim();
+        // Strip optional trailing closing hashes ("### Title ###").
+        text = text.TrimEnd('#').TrimEnd();
+        return true;
+    }
+
+    private static bool IsThematicBreak(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.Length < 3)
+            return false;
+
+        var ch = trimmed[0];
+        if (ch is not ('-' or '*' or '_'))
+            return false;
+
+        var count = 0;
+        foreach (var c in trimmed)
+        {
+            if (c == ch)
+            {
+                count++;
+                continue;
+            }
+            if (char.IsWhiteSpace(c))
+                continue;
+            return false;
+        }
+
+        return count >= 3;
     }
 
     private static bool IsOrderedListItem(string line, out string? text)
@@ -171,11 +284,6 @@ internal static class MarkdownTokenizer
     }
 
     // ── RenderTreeBuilder output ──────────────────────────────────────────
-    // Sequence numbers are all 0 — see class-level comment. Suppress ASP0006
-    // (sequence-number lint) since this is a hand-written builder, not
-    // Razor-generated code. The Blazor diffing algorithm does not rely on
-    // sequence numbers in manually-written builders the same way it does in
-    // Razor-generated sources.
 
 #pragma warning disable ASP0006
     private static void BuildTree(RenderTreeBuilder builder, List<Block> blocks)
@@ -195,12 +303,38 @@ internal static class MarkdownTokenizer
                     builder.CloseElement();
                     break;
 
+                case HeadingBlock h:
+                    // Demote level-1 ATX to h2 so answer prose never injects a
+                    // second document <h1> (page shell owns that — #789/#790).
+                    // ##→h2, ###→h3, … ######→h6.
+                    var htmlLevel = h.Level == 1 ? 2 : h.Level;
+                    builder.OpenElement(0, "h" + htmlLevel.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    RenderInline(builder, h.Text, occurrences);
+                    builder.CloseElement();
+                    break;
+
+                case ThematicBreakBlock:
+                    builder.OpenElement(0, "hr");
+                    builder.CloseElement();
+                    break;
+
                 case OrderedListBlock ol:
                     builder.OpenElement(0, "ol");
                     foreach (var item in ol.Items)
                     {
                         builder.OpenElement(0, "li");
-                        RenderInline(builder, item, occurrences);
+                        RenderInline(builder, item.Text, occurrences);
+                        if (item.NestedUnordered.Count > 0)
+                        {
+                            builder.OpenElement(0, "ul");
+                            foreach (var nested in item.NestedUnordered)
+                            {
+                                builder.OpenElement(0, "li");
+                                RenderInline(builder, nested, occurrences);
+                                builder.CloseElement();
+                            }
+                            builder.CloseElement();
+                        }
                         builder.CloseElement();
                     }
                     builder.CloseElement();
@@ -220,13 +354,8 @@ internal static class MarkdownTokenizer
         }
     }
 
-    // Renders inline markdown within a block: **bold**, *italic*, \n→<br>.
-    // Text content is always passed to AddContent (HTML-encoded by Blazor).
-    // occurrences is threaded from BuildTree so [[cite:N]] markers across all
-    // lines of a block (and all blocks) share the same per-render counter.
     private static void RenderInline(RenderTreeBuilder builder, string text, Dictionary<int, int> occurrences)
     {
-        // Split by \n to handle intra-paragraph line breaks → <br />.
         var lines = text.Split('\n');
         for (var li = 0; li < lines.Length; li++)
         {
@@ -240,10 +369,6 @@ internal static class MarkdownTokenizer
         }
     }
 
-    // Renders bold/italic/cite inline markers within a single line of text.
-    // Processes the string left-to-right, emitting text runs and wrapped elements.
-    // occurrences is threaded from BuildTree so the per-render occurrence counter
-    // for [[cite:N]] is maintained across all calls within a single Render pass.
     private static void RenderInlineSpans(RenderTreeBuilder builder, string text, Dictionary<int, int> occurrences)
     {
         var pos = 0;
@@ -279,9 +404,7 @@ internal static class MarkdownTokenizer
                 }
             }
 
-            // Try [[cite:N]] inline citation token. Closed registry — currently only
-            // "cite" with an integer payload. Unknown kind / malformed payload falls
-            // through to literal text (fail-safe, CSP-safe, designed to extend).
+            // Try [[cite:N]] inline citation token.
             if (pos + 1 < text.Length && text[pos] == '[' && text[pos + 1] == '[')
             {
                 if (TryMatchInlineToken(text, pos, out var consumed, out var kind, out var payload)
@@ -297,15 +420,12 @@ internal static class MarkdownTokenizer
                     pos += consumed;
                     continue;
                 }
-                // Not a recognized token — fall through; the '[' is appended as literal text.
             }
 
-            // No inline marker — emit one character as plain text. Buffer up
-            // consecutive plain chars to reduce RenderTreeBuilder node count.
+            // No inline marker — emit consecutive plain chars.
             var runStart = pos;
             while (pos < text.Length)
             {
-                // Stop buffering at any potential marker start character.
                 if (text[pos] == '*') break;
                 if (text[pos] == '[') break;
                 pos++;
@@ -317,7 +437,6 @@ internal static class MarkdownTokenizer
             }
             else
             {
-                // Single unmatched '*' or '[' — emit it literally and advance.
                 builder.AddContent(0, text[pos].ToString());
                 pos++;
             }
@@ -325,12 +444,6 @@ internal static class MarkdownTokenizer
     }
 #pragma warning restore ASP0006
 
-    // Inline-token scanner: [[<kind>:<payload>]]. Returns true when a well-formed
-    // token is found at pos; sets consumed to the full token length (including ]]
-    // so the caller can skip past it). Empty kind, empty payload, or a missing ]]
-    // are all treated as non-tokens so the surrounding '[' characters fall through
-    // to literal text (fail-safe, CSP-safe). Designed to extend — callers filter
-    // by kind ("cite" today; "portal" or others later).
     private static bool TryMatchInlineToken(
         string text, int pos, out int consumed, out string kind, out string payload)
     {
@@ -338,7 +451,6 @@ internal static class MarkdownTokenizer
         kind = "";
         payload = "";
 
-        // Need at least "[[x:y]]" = 7 chars; pos+1 is already '[' (caller verified).
         if (pos + 4 >= text.Length || text[pos] != '[' || text[pos + 1] != '[')
             return false;
 
@@ -346,7 +458,7 @@ internal static class MarkdownTokenizer
         if (close < 0)
             return false;
 
-        var inner = text.Substring(pos + 2, close - (pos + 2)); // e.g. "cite:2"
+        var inner = text.Substring(pos + 2, close - (pos + 2));
         var colon = inner.IndexOf(':');
         if (colon <= 0)
             return false;
@@ -356,21 +468,16 @@ internal static class MarkdownTokenizer
         if (payload.Length == 0)
             return false;
 
-        consumed = (close + 2) - pos; // include closing ]]
+        consumed = (close + 2) - pos;
         return true;
     }
 
-    // Finds the index of the closing single '*' after startIdx.
-    // A single '*' close must NOT be immediately preceded by another '*'
-    // (that would be part of a '**' pair). It also must not be followed by
-    // another '*' (opening of a ** bold marker).
     private static int FindSingleStarClose(string text, int startIdx)
     {
         for (var i = startIdx; i < text.Length; i++)
         {
             if (text[i] == '*')
             {
-                // Ensure it is not part of a ** pair.
                 var prevStar = i > 0 && text[i - 1] == '*';
                 var nextStar = i + 1 < text.Length && text[i + 1] == '*';
                 if (!prevStar && !nextStar)

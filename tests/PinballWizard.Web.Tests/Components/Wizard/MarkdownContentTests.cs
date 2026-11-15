@@ -233,4 +233,87 @@ public sealed class MarkdownContentTests
         // No <em> element spawned from the lone *.
         Assert.Empty(cut.FindAll("em"));
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // #786: ATX headings render as real heading elements (never literal ###)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("## Rules Overview", "h2", "Rules Overview")]
+    [InlineData("### Main Objectives", "h3", "Main Objectives")]
+    [InlineData("#### Multiball Modes", "h4", "Multiball Modes")]
+    [InlineData("##### Features", "h5", "Features")]
+    public void Atx_heading_renders_heading_element(string markdown, string tag, string expectedText)
+    {
+        using var ctx = BuildCtx();
+        var cut = ctx.Render<MarkdownContent>(p => p.Add(c => c.Text, markdown));
+
+        var heading = cut.Find(tag);
+        Assert.Equal(expectedText, heading.TextContent.Trim());
+        // Literal hash markers must not appear in the rendered text.
+        Assert.DoesNotContain("###", cut.Markup);
+        Assert.DoesNotContain("##", heading.TextContent);
+    }
+
+    [Fact]
+    public void Single_hash_heading_demotes_to_h2()
+    {
+        // Answers must not inject a document <h1> — page shell owns that (#789).
+        using var ctx = BuildCtx();
+        var cut = ctx.Render<MarkdownContent>(p => p
+            .Add(c => c.Text, "# Top-level title"));
+
+        Assert.Empty(cut.FindAll("h1"));
+        Assert.Equal("Top-level title", cut.Find("h2").TextContent.Trim());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // #786: thematic breaks render <hr>, not literal ---
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("---")]
+    [InlineData("***")]
+    [InlineData("___")]
+    public void Thematic_break_renders_hr(string markdown)
+    {
+        using var ctx = BuildCtx();
+        var cut = ctx.Render<MarkdownContent>(p => p.Add(c => c.Text, markdown));
+
+        Assert.Single(cut.FindAll("hr"));
+        Assert.DoesNotContain("---", cut.Find("div").TextContent);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // #786: nested bullets between numbered items stay in ONE <ol>
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Ordered_list_with_nested_bullets_stays_single_ol()
+    {
+        // Live failure mode: interleaved "- " between "1." / "2." produced a
+        // separate <ol> per numbered item (both rendering as "1.").
+        using var ctx = BuildCtx();
+        var text =
+            "1. Destroy Castles:\n" +
+            "- Shoot the left ramp\n" +
+            "- Shoot the right ramp\n" +
+            "2. Qualify for the Wizard Mode:\n" +
+            "- Lock balls in the castle";
+        var cut = ctx.Render<MarkdownContent>(p => p.Add(c => c.Text, text));
+
+        var ols = cut.FindAll("ol").ToList();
+        Assert.Single(ols);
+        // Two top-level numbered items (nested UL li's are descendants, not
+        // direct children of the ol — but FindAll("li") is flat). Assert via
+        // direct children of the ol.
+        var topItems = ols[0].Children.Where(e => e.TagName.Equals("LI", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.Equal(2, topItems.Count);
+        Assert.Contains("Destroy Castles", topItems[0].TextContent, StringComparison.Ordinal);
+        Assert.Contains("Qualify for the Wizard Mode", topItems[1].TextContent, StringComparison.Ordinal);
+
+        // Nested unordered lists live inside each <li>.
+        Assert.Equal(2, ols[0].QuerySelectorAll("ul").Length);
+        Assert.Equal(3, ols[0].QuerySelectorAll("ul li").Length);
+    }
 }
