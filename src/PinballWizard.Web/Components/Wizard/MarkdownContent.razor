@@ -9,15 +9,15 @@
       • All text content is passed through Blazor's RenderTreeBuilder.AddContent,
         which HTML-encodes every string. MarkupString is NOT used anywhere in
         this component or MarkdownTokenizer.
-      • Output elements are a fixed safe subset: p, strong, em, ol, ul, li, br.
-        No links, no script, no style attributes, no inline event handlers.
+      • Output elements are a fixed safe subset: p, strong, em, ol, ul, li, br,
+        h2–h6, hr. No links, no script, no style attributes, no inline event handlers.
       • The CSP enforcement in production is unaffected because no inline markup
         is injected.
 
     The component emits a single <div class="markdown-content"> wrapper and
-    lets the MarkdownTokenizer own the block structure (p / ol / ul). MudText
-    is not used as a container here to avoid double-wrapping with an extra
-    block element, which is both invalid HTML (p-in-p) and makes test
+    lets the MarkdownTokenizer own the block structure (p / ol / ul / h* / hr).
+    MudText is not used as a container here to avoid double-wrapping with an
+    extra block element, which is both invalid HTML (p-in-p) and makes test
     assertions on block counts unreliable.
 
     ADR-0026 § 6 — delight surface lock (sub-component of WizardAnswerStream)
