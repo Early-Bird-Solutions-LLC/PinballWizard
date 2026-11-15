@@ -31,4 +31,5 @@ public static class IngestionSourceIds
     public const string MultimorphicP3Sdk = "multimorphic_p3_sdk";
     public const string PinballBrothersFreshdesk = "pb_freshdesk";
     public const string TiltForumsRulesheets = "tiltforums_rulesheets";
+    public const string MatchPlay = "matchplay";
 }
