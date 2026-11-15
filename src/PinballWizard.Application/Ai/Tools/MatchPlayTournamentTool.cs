@@ -1,7 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Net.Http;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Tournaments;
@@ -17,9 +15,12 @@ namespace PinballWizard.Application.Ai.Tools;
 // CancellationToken defaults are load-bearing for AIFunctionFactory schemas
 // (same rationale as MarketValueTool / SearchCorpusTool).
 //
-// Fail closed on expected operational failures (HTTP / JSON / timeout /
-// InvalidOperation from mapping) — return null so the Wizard can degrade
-// honestly rather than aborting the turn. Caller cancellation still propagates.
+// Fail closed on unexpected faults — return null so the Wizard can degrade
+// honestly rather than aborting the turn. Broad catch mirrors MarketValueTool /
+// KineticistGuideLinkTool: AddStandardResilienceHandler surfaces Polly
+// TimeoutRejectedException / BrokenCircuitException, and mapping can throw
+// ArgumentException — none of which should kill the Wizard turn. Caller
+// cancellation (OperationCanceledException) still propagates.
 public sealed class MatchPlayTournamentTool
 {
     internal const string SearchToolTag = "searchMatchPlayTournaments";
@@ -79,30 +80,15 @@ public sealed class MatchPlayTournamentTool
                     h.PublicUrl))
                 .ToList();
         }
-        // TaskCanceledException : OperationCanceledException — catch timeout-like
-        // cancels before the rethrow arm so HttpClient timeouts fail closed.
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            return FailSearch(ex, query);
-        }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex)
         {
-            return FailSearch(ex, query);
-        }
-        catch (JsonException ex)
-        {
-            return FailSearch(ex, query);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return FailSearch(ex, query);
-        }
-        catch (IOException ex)
-        {
+            // Broad catch intentional — Polly resilience + mapping faults must
+            // fail closed (null) rather than abort the Wizard turn. Same posture
+            // as MarketValueTool.
             return FailSearch(ex, query);
         }
         finally
@@ -166,28 +152,15 @@ public sealed class MatchPlayTournamentTool
                         s.IfpaId))
                     .ToList());
         }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            return FailStandings(ex, tournamentId);
-        }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex)
         {
-            return FailStandings(ex, tournamentId);
-        }
-        catch (JsonException ex)
-        {
-            return FailStandings(ex, tournamentId);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return FailStandings(ex, tournamentId);
-        }
-        catch (IOException ex)
-        {
+            // Broad catch intentional — Polly resilience + mapping faults must
+            // fail closed (null) rather than abort the Wizard turn. Same posture
+            // as MarketValueTool.
             return FailStandings(ex, tournamentId);
         }
         finally

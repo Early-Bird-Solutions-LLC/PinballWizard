@@ -105,4 +105,40 @@ public sealed class MatchPlayTournamentToolTests
         var tool = NewTool(provider);
         Assert.Null(await tool.GetMatchPlayTournamentStandingsAsync(1));
     }
+
+    // Bugbot: narrowed catches missed Polly / mapping faults that abort the turn.
+    // ArgumentException stands in for resilience + duplicate-key mapping failures.
+    [Fact]
+    public async Task Standings_ProviderThrowsArgumentException_ReturnsNull()
+    {
+        var provider = Substitute.For<IMatchPlayTournamentProvider>();
+        provider.GetStandingsAsync(1, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ArgumentException("An item with the same key has already been added."));
+
+        var tool = NewTool(provider);
+        Assert.Null(await tool.GetMatchPlayTournamentStandingsAsync(1));
+    }
+
+    [Fact]
+    public async Task Search_ProviderThrowsInvalidOperation_ReturnsNull()
+    {
+        var provider = Substitute.For<IMatchPlayTournamentProvider>();
+        provider.SearchTournamentsAsync("x", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("circuit open"));
+
+        var tool = NewTool(provider);
+        Assert.Null(await tool.SearchMatchPlayTournamentsAsync("x"));
+    }
+
+    [Fact]
+    public async Task Standings_CallerCancellation_Propagates()
+    {
+        var provider = Substitute.For<IMatchPlayTournamentProvider>();
+        provider.GetStandingsAsync(1, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        var tool = NewTool(provider);
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => tool.GetMatchPlayTournamentStandingsAsync(1));
+    }
 }
