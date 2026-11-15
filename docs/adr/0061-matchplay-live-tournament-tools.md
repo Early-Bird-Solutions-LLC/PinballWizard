@@ -39,7 +39,9 @@ alongside Pinball Map / manufacturer scrapers.
 
 4. **Attribution:** every standings payload includes the public Match Play tournament URL
    (`https://app.matchplay.events/tournaments/{id}`). Answers must credit Match Play Events
-   and link out (community-resource posture, ADR-0027).
+   and link out (community-resource posture, ADR-0027). `ToolTraceCitationExtractor` maps
+   `MatchPlayTournamentStandingsDto` → `CitationSourceType.MatchPlayTournament` (typed +
+   JSON arms), same Wizard-observable pattern as `getMarketValue`.
 
 5. **Non-goals for this ADR:** IFPA WPPR tools, Match Play Ratings CDN ingest, scraping
    `matchplay.events` HTML, embedding historical standings into AI Search.
