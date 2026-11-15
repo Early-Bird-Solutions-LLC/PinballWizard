@@ -31,6 +31,15 @@ public sealed class PinTipsCatalogTargetsTests
     }
 
     [Fact]
+    public void Resolve_AliasId_MatchesTheBaseMachine()
+    {
+        var targets = PinTipsCatalogTargets.Resolve("G5pe4-Mpro-Azzz", MedievalMadness);
+
+        var only = Assert.Single(targets);
+        Assert.Equal("G5pe4-Mpro", only.MachineId);
+    }
+
+    [Fact]
     public void Resolve_UnknownGroup_ReturnsNothing()
     {
         Assert.Empty(PinTipsCatalogTargets.Resolve("Gnone", []));
