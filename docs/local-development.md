@@ -16,7 +16,7 @@ This guide covers everything needed to get a fully functional local environment 
 ```mermaid
 graph LR
     AppHost["AppHost\n(aspire run)"]
-    Emulator["Cosmos preview emulator\n(Docker)"]
+    Emulator["Cosmos vNext emulator\n(Docker)"]
     Azurite["Azurite\n(Docker)"]
     CLI["PinballWizard.Cli"]
     OPDB["opdb.org API"]
@@ -52,7 +52,7 @@ Foundry and AI Search require a live Azure identity. The emulator containers are
 
 ## Prerequisites
 
-- Docker Desktop (for the Cosmos preview emulator and Azurite containers)
+- Docker Desktop (for the Cosmos vNext emulator and Azurite containers)
 - .NET 10 SDK (pinned via `global.json`)
 - .NET Aspire workload (`dotnet workload install aspire`)
 - Aspire CLI (`dotnet tool install -g Microsoft.Aspire.Cli` or via workload)
@@ -119,7 +119,7 @@ pwsh ./start-apphost.ps1
 
 This runs `aspire run --apphost src\PinballWizard.AppHost`, which:
 
-1. Pulls the Cosmos preview emulator and Azurite images on first run (~3 GB, one-time).
+1. Pulls the Cosmos vNext emulator and Azurite images on first run (~3 GB, one-time).
 2. Starts both containers with persistent Docker volumes so seed data survives restarts.
 3. Wires the API and Web projects with Aspire-injected connection strings and the relayed `AZURE_CONFIG_DIR`.
 4. Registers the AppHost with the Aspire CLI (enables `aspire agent mcp` for AI assistant integration via the committed `.mcp.json`).

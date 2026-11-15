@@ -52,7 +52,7 @@ and the [documentation home](README.md).
 - **Two-tier Bicep** — `deployPhase2` gates Phase-2 resources ([ADR-0013](adr/0013-two-tier-bicep-deploy.md)).
 - **Deployment Stacks** — all Azure deploys use `az stack …`, never `az deployment …` (locked invariant).
 - **`--ensure-cosmos-containers`** — the canonical, idempotent Cosmos schema reconcile (creates/updates containers + indexing policies via the provisioner).
-- **.NET Aspire** — local orchestration (Cosmos preview emulator + Azurite) mirroring production topology.
+- **.NET Aspire** — local orchestration (Cosmos vNext emulator + Azurite) mirroring production topology.
 - **Public-read admin** — admin pages are `[AllowAnonymous]` (viewable by anyone, read-only); mutations are gated by `AdminActionGuard`. Pinned by `AuthorizationContractTests`.
 
 ## Process & governance
