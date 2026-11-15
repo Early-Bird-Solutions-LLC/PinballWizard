@@ -153,14 +153,21 @@ $rg = "rg-pinwiz-shared-$Environment"
 $scriptDir = $PSScriptRoot
 $infraDir  = Split-Path -Parent $scriptDir
 
-$templateFile   = Join-Path $infraDir 'main-shared.bicep'
-$parametersFile = Join-Path $infraDir "main-shared.$Environment.bicepparam"
-$localOverride  = Join-Path $infraDir "main-shared.$Environment.local.bicepparam"
+. (Join-Path $scriptDir 'BicepParamOverlay.ps1')
 
-if (Test-Path $localOverride) {
-    Write-Host "Using LOCAL override parameters file: $localOverride" -ForegroundColor Yellow
-    $parametersFile = $localOverride
-}
+$templateFile  = Join-Path $infraDir 'main-shared.bicep'
+$committedParams = Join-Path $infraDir "main-shared.$Environment.bicepparam"
+$localOverride   = Join-Path $infraDir "main-shared.$Environment.local.bicepparam"
+
+# #400: committed file is always the --parameters source. *.local.bicepparam may
+# only overlay allowlisted personal values (developerObjectId). Wholesale
+# replacement silently dropped committed additions (cicdDeployPrincipalId).
+$paramSource = Resolve-BicepParamSource `
+    -CommittedPath $committedParams `
+    -LocalPath $localOverride `
+    -AllowedLocalParams @('developerObjectId')
+$parametersFile = $paramSource.ParametersFile
+$paramOverlays = @($paramSource.OverlayArgs)
 
 if (-not (Test-Path $templateFile)) {
     throw "Template file not found: $templateFile"
@@ -177,7 +184,7 @@ if (-not (Test-Path $parametersFile)) {
 # `!empty(developerObjectId)`. The COMMITTED main-shared.<env>.bicepparam sets it
 # to '' — deliberately, because this repo is PUBLIC and a personal AAD object id
 # does not belong in it. The real value lives only in the gitignored
-# main-shared.<env>.local.bicepparam.
+# main-shared.<env>.local.bicepparam and is layered via --parameters (#400).
 #
 # The failure mode that keeps recurring: deploy from a tree WITHOUT that local
 # file, the stack resolves developerObjectId='', and — because the stack owns
@@ -188,10 +195,18 @@ if (-not (Test-Path $parametersFile)) {
 # So refuse. A destructive default must be an explicit choice, not a silent one
 # (invariant #17: degrade visibly, never silently).
 $developerObjectId = ''
-$paramMatch = Select-String -Path $parametersFile -Pattern "^\s*param\s+developerObjectId\s*=\s*'([^']*)'" |
-    Select-Object -First 1
-if ($paramMatch) {
-    $developerObjectId = $paramMatch.Matches[0].Groups[1].Value
+foreach ($overlay in $paramOverlays) {
+    if ($overlay -match '^developerObjectId=(.*)$') {
+        $developerObjectId = $Matches[1]
+        break
+    }
+}
+if ([string]::IsNullOrWhiteSpace($developerObjectId)) {
+    $paramMatch = Select-String -Path $parametersFile -Pattern "^\s*param\s+developerObjectId\s*=\s*'([^']*)'" |
+        Select-Object -First 1
+    if ($paramMatch) {
+        $developerObjectId = $paramMatch.Matches[0].Groups[1].Value
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($developerObjectId)) {
@@ -208,12 +223,14 @@ Contributor, Search Index Data Contributor, Cognitive Services OpenAI User) — 
 stack owns them, and with an empty developerObjectId it deletes them. Local CLI
 runs against live would then fail with an opaque 403. See issue #744.
 
-Fix — create the gitignored local override with your object id:
+Fix — create a minimal gitignored local overlay (only developerObjectId; #400):
 
-  cp infra/main-shared.$Environment.bicepparam infra/main-shared.$Environment.local.bicepparam
-  # then set, in that new file:
-  #   param developerObjectId = '<your az ad signed-in-user object id>'
-  # get it with:  az ad signed-in-user show --query id -o tsv
+  cat > infra/main-shared.$Environment.local.bicepparam <<'EOF'
+  using 'main-shared.bicep'
+  param developerObjectId = '<your az ad signed-in-user object id>'
+  EOF
+  # get the id with:  az ad signed-in-user show --query id -o tsv
+  # Do NOT copy the whole committed file — durable params stay committed.
 
 Verify afterwards with:  pwsh ./infra/scripts/Check-DeveloperRbac.ps1
 
@@ -422,6 +439,7 @@ if ($WhatIf) {
         --location $location `
         --template-file $templateFile `
         --parameters $parametersFile `
+            @paramOverlays `
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
             ragIndexerImageTag="$RagIndexerImageTag" `
@@ -445,6 +463,7 @@ else {
         --location $location `
         --template-file $templateFile `
         --parameters $parametersFile `
+            @paramOverlays `
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
             ragIndexerImageTag="$RagIndexerImageTag" `
