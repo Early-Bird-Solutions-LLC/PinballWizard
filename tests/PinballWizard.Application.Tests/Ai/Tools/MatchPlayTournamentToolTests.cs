@@ -141,4 +141,71 @@ public sealed class MatchPlayTournamentToolTests
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => tool.GetMatchPlayTournamentStandingsAsync(1));
     }
+
+    [Fact]
+    public async Task Arenas_MapsAttribution()
+    {
+        var provider = Substitute.For<IMatchPlayTournamentProvider>();
+        provider.GetArenasAsync(7, Arg.Any<CancellationToken>())
+            .Returns(new MatchPlayTournamentArenas(
+                7, "Open", "https://app.matchplay.events/tournaments/7",
+                [new MatchPlayArenaInfo(1, "Godzilla", "active", "G33YF")],
+                DateTimeOffset.UtcNow));
+
+        var tool = NewTool(provider);
+        var dto = await tool.GetMatchPlayTournamentArenasAsync(7);
+
+        Assert.NotNull(dto);
+        Assert.Equal("Godzilla", dto!.Arenas[0].Name);
+        Assert.Contains("Match Play Events", dto.Attribution, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Floor_WhenProviderAbsent_ReturnsNull()
+    {
+        var tool = NewTool(provider: null);
+        Assert.Null(await tool.GetMatchPlayTournamentFloorAsync(7));
+    }
+
+    [Fact]
+    public async Task FindPlayers_MapsHits()
+    {
+        var provider = Substitute.For<IMatchPlayTournamentProvider>();
+        provider.FindPlayersAsync(7, "Ada", Arg.Any<CancellationToken>())
+            .Returns(new MatchPlayPlayerLookup(
+                7, "Open", "https://app.matchplay.events/tournaments/7", "Ada",
+                [new MatchPlayPlayerInfo(1, "Ada", 42)],
+                DateTimeOffset.UtcNow));
+
+        var tool = NewTool(provider);
+        var dto = await tool.FindMatchPlayTournamentPlayersAsync(7, "Ada");
+
+        Assert.NotNull(dto);
+        Assert.Equal(1, dto!.Players[0].PlayerId);
+        Assert.Equal(42, dto.Players[0].IfpaId);
+    }
+
+    [Fact]
+    public async Task Detail_MapsLinkedTournaments()
+    {
+        var provider = Substitute.For<IMatchPlayTournamentProvider>();
+        provider.GetTournamentDetailAsync(7, Arg.Any<CancellationToken>())
+            .Returns(new MatchPlayTournamentDetail(
+                7, "Open", "started", "group_matchplay",
+                DateTimeOffset.UtcNow, null, "America/Indiana/Indianapolis", null,
+                new MatchPlayLocationInfo(1, "Expo", "Indy", "IN", "US"),
+                new MatchPlaySeriesInfo(2, "INDISC"),
+                [new MatchPlayLinkedTournamentInfo(
+                    8, "Playoffs", "planned", "group_matchplay",
+                    "https://app.matchplay.events/tournaments/8")],
+                "https://app.matchplay.events/tournaments/7",
+                DateTimeOffset.UtcNow));
+
+        var tool = NewTool(provider);
+        var dto = await tool.GetMatchPlayTournamentDetailAsync(7);
+
+        Assert.NotNull(dto);
+        Assert.Equal("Indy", dto!.Location!.City);
+        Assert.Equal("Playoffs", dto.LinkedTournaments[0].Name);
+    }
 }

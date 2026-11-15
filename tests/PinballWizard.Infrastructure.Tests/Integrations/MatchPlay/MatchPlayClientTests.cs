@@ -53,7 +53,7 @@ public sealed class MatchPlayClientTests : IDisposable
             {"data":{"tournamentId":42,"name":"INDISC","status":"started","players":[{"playerId":7,"name":"Ada","ifpaId":99}]}}
             """);
 
-        var t = await _client.GetTournamentAsync(42, includePlayers: true);
+        var t = await _client.GetTournamentAsync(42, MatchPlayTournamentInclude.Players);
 
         Assert.NotNull(t);
         Assert.Equal("Ada", t!.Players![0].Name);
@@ -83,7 +83,57 @@ public sealed class MatchPlayClientTests : IDisposable
             "https://api.matchplay.events/api/tournaments/404?includePlayers=true",
             HttpStatusCode.NotFound);
 
-        Assert.Null(await _client.GetTournamentAsync(404, includePlayers: true));
+        Assert.Null(await _client.GetTournamentAsync(404, MatchPlayTournamentInclude.Players));
+    }
+
+    [Fact]
+    public async Task GetRoundsAsync_ParsesDataArray()
+    {
+        _handler.Map(
+            "https://api.matchplay.events/api/tournaments/42/rounds",
+            """
+            {"data":[{"roundId":1,"tournamentId":42,"index":0,"name":"Round 1","status":"started"}]}
+            """);
+
+        var rounds = await _client.GetRoundsAsync(42);
+
+        Assert.Single(rounds);
+        Assert.Equal(1, rounds[0].RoundId);
+        Assert.Equal("started", rounds[0].Status);
+    }
+
+    [Fact]
+    public async Task GetTournamentGamesAsync_ParsesDataArray()
+    {
+        _handler.Map(
+            "https://api.matchplay.events/api/tournaments/42/games?limit=50&status=started",
+            """
+            {"data":[{"gameId":9,"roundId":1,"tournamentId":42,"arenaId":3,"status":"started","bye":false,"playerIds":[7,8],"arena":{"arenaId":3,"name":"Godzilla","opdbId":"G33YF"}}]}
+            """);
+
+        var games = await _client.GetTournamentGamesAsync(42, status: "started");
+
+        Assert.Single(games);
+        Assert.Equal(9, games[0].GameId);
+        Assert.Equal("Godzilla", games[0].Arena!.Name);
+    }
+
+    [Fact]
+    public async Task GetTournamentAsync_BuildsIncludeQuery()
+    {
+        _handler.Map(
+            "https://api.matchplay.events/api/tournaments/42?includeArenas=true&includeLocation=true",
+            """
+            {"data":{"tournamentId":42,"name":"INDISC","status":"started","arenas":[{"arenaId":1,"name":"MM","status":"active","opdbId":"G4"}],"location":{"locationId":5,"name":"Expo","city":"Indy"}}}
+            """);
+
+        var t = await _client.GetTournamentAsync(
+            42,
+            MatchPlayTournamentInclude.Arenas | MatchPlayTournamentInclude.Location);
+
+        Assert.NotNull(t);
+        Assert.Equal("MM", t!.Arenas![0].Name);
+        Assert.Equal("Indy", t.Location!.City);
     }
 
     // Owns responses created for HttpClient so CodeQL sees Dispose on every
