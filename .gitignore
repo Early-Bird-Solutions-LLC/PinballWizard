@@ -175,3 +175,8 @@ __pycache__/
 # review and future RAG ingestion, never committed). Source tracks the ADR /
 # ingest plan; not the binary artifact itself.
 *.zip
+
+# Corpus-coverage probe outputs (written by --corpus-coverage / CI). Historical
+# committed snapshots misled #749 triage when the workflow uploaded them as
+# the "live" report after a crash before writing a new file.
+data/eval/results/coverage.*.json
