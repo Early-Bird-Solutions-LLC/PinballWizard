@@ -238,8 +238,9 @@ The dashboard runs at the URL printed in the AppHost output (default `https://lo
 
 ```pwsh
 $env:ConnectionStrings__cosmos = "<the-emulator-connection-string-from-the-dashboard>"
-$env:Opdb__BaseUrl = "https://opdb.org/api/"
-$env:Opdb__ApiToken = "<your-token>"  # register at https://opdb.org/api
+$env:Opdb__BaseUrl   = "https://api.matchplay.events/"
+$env:Opdb__ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-opdb.json"
+$env:Opdb__ApiToken  = "<your-token>"  # optional — Match Play API token; not sent to the CDN export (ADR-0059)
 
 # Now run the CLI — auto-detects Cosmos via ConnectionStrings:cosmos and
 # wires the persistence layer + OPDB integration + the Cosmos-backed

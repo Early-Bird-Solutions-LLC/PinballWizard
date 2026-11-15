@@ -19,7 +19,7 @@ graph LR
     Emulator["Cosmos vNext emulator\n(Docker)"]
     Azurite["Azurite\n(Docker)"]
     CLI["PinballWizard.Cli"]
-    OPDB["opdb.org API"]
+    OPDB["Match Play OPDB export (CDN)"]
     Foundry["Azure AI Foundry\n(live, personal sub)"]
     Search["Azure AI Search\n(live, personal sub)"]
     Api["PinballWizard.Api"]
@@ -56,7 +56,7 @@ Foundry and AI Search require a live Azure identity. The emulator containers are
 - .NET 10 SDK (pinned via `global.json`)
 - .NET Aspire workload (`dotnet workload install aspire`)
 - Aspire CLI (`dotnet tool install -g Microsoft.Aspire.Cli` or via workload)
-- An OPDB API token — register at [opdb.org/api](https://opdb.org/api); stored as machine env var `OPDB_API_TOKEN`
+- (Optional) a Match Play API token, stored as machine env var `OPDB_API_TOKEN` — the catalog sync reads the public Match Play CDN export and does not send it (ADR-0059)
 - Access to the personal Earlybird Azure subscription (`b1f33f17`) — the Foundry project and AI Search index live there
 - **Preflight before any local-live CLI run** (i.e. any command that touches live Cosmos / AI Search / Foundry): run `pwsh ./infra/scripts/Check-DeveloperRbac.ps1`. The three developer data-plane RBAC grants (Cosmos Built-in Data Contributor, Search Index Data Contributor, Cognitive Services OpenAI User on Foundry) are stripped whenever a Deployment Stack runs without `developerObjectId` set — the committed `main-shared.dev.bicepparam` intentionally leaves it empty, so any deploy from a fresh clone silently removes them. Without them every live call 403s with no useful error. See [#744](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/744).
 
@@ -164,7 +164,7 @@ $env:Opdb__ExportUrl = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-o
 dotnet run --project src/PinballWizard.Cli -- --source opdb
 ```
 
-Fetches the OPDB catalog (~2,400 machines) in paginated segments and writes each machine into `machines` + a title-lookup row into `machine_title_lookups` (dual-write per ADR-0025 section 1).
+Fetches the OPDB catalog (~2,400 machines) in a single GET of the Match Play V1 CDN export and writes each machine into `machines` + a title-lookup row into `machine_title_lookups` (dual-write per ADR-0025 section 1).
 
 > **Time cost:** the full sync takes **30-90 minutes** due to the polite per-request delay enforced by `IPolitenessGate`. OPDB is a community resource and this delay is not negotiable. Plan accordingly, or use Option B for a quick start.
 
