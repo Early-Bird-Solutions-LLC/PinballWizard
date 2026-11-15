@@ -4,8 +4,10 @@
     padding-top: 1.5rem;
     padding-bottom: 3rem;
     position: relative;
-    /* #788 b): contain stray child min-content so / never page-scrolls at 320. */
-    max-width: 100%;
+    /* #788 b): contain stray child min-content so / never page-scrolls at 320.
+       Do NOT set max-width here — Class="landing-page" rides the MudContainer
+       that already applies MaxWidth.Large (~1280px); a scoped max-width:100%
+       would override that cap on wide viewports. */
     min-width: 0;
     overflow-x: clip;
     box-sizing: border-box;
