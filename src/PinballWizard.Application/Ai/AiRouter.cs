@@ -471,34 +471,72 @@ public sealed class AiRouter : IAiRouter
                 SingleWriter = true,
             });
 
+        // Linked CTS so a consumer that stops without cancelling the caller's
+        // token (Dispose / break) still aborts the Foundry producer (#781 Bugbot).
+        using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         var aggregateTask = AggregateStreamAsync(
             wizardAgent,
             question,
             trimmedHistory is null ? null : BuildConversationMessages(question, trimmedHistory),
             promptVersion,
             liveChunks.Writer,
-            cancellationToken);
+            producerCts.Token);
 
-        // Yield live chunks outside try/catch. Record first_token_ms on the
-        // first TextDelta — now wall-clock first visible token, not end-of-run.
+        // Yield live chunks outside try/catch (CS1626). try/finally is allowed
+        // with yield and lets us always observe aggregateTask — a non-429 fault
+        // completes the channel with an exception, so ReadAllAsync throws before
+        // the post-loop await would run (#781 Bugbot).
         var firstTokenRecorded = false;
-        await foreach (var chunk in liveChunks.Reader.ReadAllAsync(cancellationToken)
-            .ConfigureAwait(false))
+        List<ChatMessage> accumulatedMessages = [];
+        WizardAnswer? refusalFromException = null;
+        var producerObserved = false;
+
+        try
         {
-            if (!firstTokenRecorded && chunk is AnswerChunk.TextDelta)
+            await foreach (var chunk in liveChunks.Reader.ReadAllAsync(cancellationToken)
+                .ConfigureAwait(false))
             {
-                RecordFirstTokenMs(
-                    requestStopwatch,
-                    cacheState: "miss",
-                    outcome: "streamed");
-                firstTokenRecorded = true;
+                if (!firstTokenRecorded && chunk is AnswerChunk.TextDelta)
+                {
+                    RecordFirstTokenMs(
+                        requestStopwatch,
+                        cacheState: "miss",
+                        outcome: "streamed");
+                    firstTokenRecorded = true;
+                }
+
+                yield return chunk;
             }
 
-            yield return chunk;
+            (accumulatedMessages, refusalFromException) =
+                await aggregateTask.ConfigureAwait(false);
+            producerObserved = true;
         }
+        finally
+        {
+            if (!producerCts.IsCancellationRequested)
+                producerCts.Cancel();
 
-        var (accumulatedMessages, refusalFromException) =
-            await aggregateTask.ConfigureAwait(false);
+            if (!producerObserved)
+            {
+                try
+                {
+                    await aggregateTask.ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Observed — channel already surfaced this (or consumer aborted).
+                    _logger.LogDebug(
+                        ex,
+                        "Observed AggregateStreamAsync fault after channel reader exited.");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Producer stopped because we cancelled it above, or the caller did.
+                }
+            }
+        }
 
         // ── 429 path: emit Refusal + Final, no cache write ────────────
         if (refusalFromException is not null)
@@ -1154,17 +1192,26 @@ public sealed class AiRouter : IAiRouter
         }
 
         // Multi-turn citation inheritance (2026-06-11 design). A grounded
-        // follow-up that the model answers from conversation context fires
-        // no retrieval tool, so the extractor sees zero citations — and
-        // without intervention the confidence gate (citation-coverage
-        // signal) or the NoCitation gate below would refuse a legitimate
-        // answer. The grounding for such an answer IS the prior turn's
-        // cited material, so we inherit the most recent cited turn's
-        // citations, flagged Inherited=true so the UI can label them.
+        // clarifying follow-up that the model answers from conversation
+        // context fires no retrieval tool, so the extractor sees zero
+        // citations — and without intervention the confidence gate
+        // (citation-coverage signal) or the NoCitation gate below would
+        // refuse a legitimate answer. The grounding for such an answer
+        // IS the prior turn's cited material, so we inherit the most
+        // recent cited turn's citations, flagged Inherited=true so the
+        // UI can label them.
+        //
+        // #780: new-intent follow-ups ("games similar to X") must NOT
+        // inherit — that path would pass confidence on borrowed manuals
+        // while the same question asked cold refuses. See
+        // FollowUpCitationInheritance.ShouldInherit.
+        //
         // Placement matters: this must run BEFORE Compute() so inherited
         // citations feed the citation-coverage signal, not just the binary
         // gate. Single-shot behavior is untouched (history is null).
-        if (citations.Count == 0 && history is { Count: > 0 })
+        if (citations.Count == 0
+            && history is { Count: > 0 }
+            && FollowUpCitationInheritance.ShouldInherit(normalized, history))
         {
             var donor = history.LastOrDefault(t => t.Citations is { Count: > 0 });
             if (donor is not null)
@@ -1175,6 +1222,22 @@ public sealed class AiRouter : IAiRouter
                     "AiRouter inherited {Count} citations from the prior conversation turn (no retrieval tool fired this turn).",
                     citations.Count);
             }
+        }
+
+        // Answer-subject filter (#783 / ADR-0063): drop tool-trace hits whose
+        // machine subject never appears in the answer. Runs AFTER inheritance
+        // (Inherited citations are exempt — clarifying follow-ups) and BEFORE
+        // reconcile / confidence / NoCitation so unused hits cannot inflate
+        // coverage or pass the binary gate.
+        var subjectFilter = AnswerCitedSubjectFilter.Filter(responseText, citations);
+        citations = subjectFilter.Kept;
+        if (subjectFilter.DroppedCount > 0)
+        {
+            PinballWizardTelemetry.AiCitationsDroppedUnusedSubject.Add(subjectFilter.DroppedCount);
+            _logger.LogDebug(
+                "AiRouter dropped {Dropped} citation(s) whose subject is absent from the answer (kept {Kept}).",
+                subjectFilter.DroppedCount,
+                citations.Count);
         }
 
         // Inline-citation reconciliation (inline-citation-markers feature).

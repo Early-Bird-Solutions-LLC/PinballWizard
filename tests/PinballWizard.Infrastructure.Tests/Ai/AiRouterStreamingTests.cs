@@ -528,6 +528,33 @@ public sealed class AiRouterStreamingTests
         Assert.IsType<AnswerChunk.ToolCallCompleted>(firstLive);
     }
 
+    [Fact]
+    public async Task AnswerStreamingAsync_Non429AgentFault_PropagatesAndObservesProducer()
+    {
+        // Channel completes with the fault; ReadAllAsync throws before the
+        // post-loop await. The try/finally must still observe AggregateStreamAsync
+        // so the exception is not left unobserved (#781 Bugbot).
+        var boom = new InvalidOperationException("foundry-500");
+        var (router, cache, _, confidence, _, _) = BuildRouter(
+            agentUpdates: [],
+            throwOnStart: boom);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var chunk in router.AnswerStreamingAsync("Who made it?", CancellationToken.None))
+            {
+                // Drain until the channel faults — body intentionally unused
+                // (keeps the empty-block linter happy without assigning to the
+                // foreach iteration variable — CS1656).
+                _ = chunk;
+            }
+        });
+
+        Assert.Same(boom, thrown);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // T12 — Post-guardrails reconciler rewrites [[cite:k]] → [[cite:N]]
     //       using the searchCorpus source index.
@@ -562,8 +589,9 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_001", corpus),
             }),
-            // Answer references k=1 (matched) and k=99 (unmatched — must be dropped).
-            MakeTextUpdate("Flippers persist [[cite:1]] and unknown [[cite:99]]."),
+            // Answer names Godzilla so ADR-0063 subject filter keeps the hit;
+            // references k=1 (matched) and k=99 (unmatched — must be dropped).
+            MakeTextUpdate("On Godzilla, flippers persist [[cite:1]] and unknown [[cite:99]]."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
         SetCacheMiss(cache);
@@ -581,7 +609,7 @@ public sealed class AiRouterStreamingTests
         // k=99 out-of-range → dropped (reconciler ran; raw pass-through would leave it).
         Assert.DoesNotContain("[[cite:99]]", final.Answer.Text, StringComparison.Ordinal);
         // Prose preserved.
-        Assert.Contains("Flippers persist", final.Answer.Text, StringComparison.Ordinal);
+        Assert.Contains("flippers persist", final.Answer.Text, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -629,10 +657,11 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_002", corpus),
             }),
-            // Answer references k1 and k99 (unmatched). After reconcile:
+            // Answer names Godzilla so ADR-0063 keeps both corpus hits.
+            // References k1 and k99 (unmatched). After reconcile:
             //   [[cite:1]] → [[cite:1]] (k1=urlB→N1)
             //   [[cite:99]] → "" (dropped — no k99 in sourceIndex)
-            MakeTextUpdate("Source A [[cite:1]] and unknown [[cite:99]]."),
+            MakeTextUpdate("On Godzilla, source A [[cite:1]] and unknown [[cite:99]]."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
         SetCacheMiss(cache);
@@ -684,8 +713,8 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_003", corpus),
             }),
-            // One update with a cite token embedded in prose.
-            MakeTextUpdate("Flippers persist [[cite:1]]. Read more."),
+            // Name Godzilla so ADR-0063 subject filter keeps the corpus hit.
+            MakeTextUpdate("On Godzilla, flippers persist [[cite:1]]. Read more."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
         SetCacheMiss(cache);
@@ -706,7 +735,7 @@ public sealed class AiRouterStreamingTests
         Assert.False(final.Answer.IsRefusal,
             $"Expected a successful answer but got a refusal: {final.Answer.Text}");
         Assert.Contains("[[cite:1]]", final.Answer.Text, StringComparison.Ordinal);
-        Assert.Contains("Flippers persist", final.Answer.Text, StringComparison.Ordinal);
+        Assert.Contains("flippers persist", final.Answer.Text, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -822,7 +851,8 @@ public sealed class AiRouterStreamingTests
         BuildRouter(
             IEnumerable<AgentResponseUpdate> agentUpdates,
             bool throwOn429 = false,
-            Task? pauseAfterFirstUpdate = null)
+            Task? pauseAfterFirstUpdate = null,
+            Exception? throwOnStart = null)
     {
         var cache = Substitute.For<ISemanticAnswerCache>();
         var promptProvider = Substitute.For<IAgentPromptProvider>();
@@ -835,7 +865,8 @@ public sealed class AiRouterStreamingTests
         var costCalculator = Substitute.For<IAiCostCalculator>();
         costCalculator.ComputeUsdCents(Arg.Any<TokenUsage>()).Returns(0.0);
 
-        var fakeAgent = new FakeStreamingAgent(agentUpdates.ToList(), throwOn429, pauseAfterFirstUpdate);
+        var fakeAgent = new FakeStreamingAgent(
+            agentUpdates.ToList(), throwOn429, pauseAfterFirstUpdate, throwOnStart);
         var agentFactory = Substitute.For<IFoundryAgentFactory>();
         agentFactory.GetAgent(Arg.Any<string>()).Returns(fakeAgent);
 
@@ -898,14 +929,18 @@ public sealed class AiRouterStreamingTests
         private readonly bool _throwOn429;
         private readonly Task? _pauseAfterFirstUpdate;
 
+        private readonly Exception? _throwOnStart;
+
         public FakeStreamingAgent(
             IReadOnlyList<AgentResponseUpdate> updates,
             bool throwOn429 = false,
-            Task? pauseAfterFirstUpdate = null)
+            Task? pauseAfterFirstUpdate = null,
+            Exception? throwOnStart = null)
         {
             _updates = updates;
             _throwOn429 = throwOn429;
             _pauseAfterFirstUpdate = pauseAfterFirstUpdate;
+            _throwOnStart = throwOnStart;
         }
 
         protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
@@ -914,6 +949,9 @@ public sealed class AiRouterStreamingTests
             AgentRunOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            if (_throwOnStart is not null)
+                throw _throwOnStart;
+
             if (_throwOn429)
             {
                 // Simulate a 429 Too Many Requests from the Foundry model tier.
