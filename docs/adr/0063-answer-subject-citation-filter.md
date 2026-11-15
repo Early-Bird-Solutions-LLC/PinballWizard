@@ -28,8 +28,12 @@ returned to the UI.
 
 - Subject is parsed from `Citation.Title` (text before an em-dash / page-range
   suffix; market-value titles strip the `Market value ·` prefix).
-- Match is case-insensitive substring; leading articles (`The` / `A` / `An`)
-  may be dropped so "The Jetsons" matches an answer that says "Jetsons".
+- Match is case-insensitive substring for subjects ≥ 3 characters. Subjects
+  shorter than 3 (Stern `IT`) require a **case-sensitive whole-token** match so
+  ordinary English "it" does not keep an unused citation. Leading articles
+  (`The` / `A` / `An`) may be dropped when the remainder is ≥ 4 characters so
+  "The Jetsons" matches "Jetsons", but not so "The Who" matches the pronoun
+  "who".
 - **Inherited** citations are never dropped — clarifying follow-ups often omit
   the machine name while still relying on prior-turn grounding (#780 contract).
 - Titles with **no extractable subject** (e.g. `OPDB record {id}`, Match Play

@@ -177,22 +177,42 @@ public static class AnswerCitedSubjectFilter
             return false;
         }
 
-        if (answerText.Contains(subject, StringComparison.OrdinalIgnoreCase))
+        if (ContainsSubjectToken(answerText, subject))
         {
             return true;
         }
 
         // "The Jetsons" ↔ answer saying "Jetsons" without the article.
+        // Length floor is 4 (not 3): stripping "The" from "The Who" yields
+        // "Who", which matches the pronoun in almost every English answer —
+        // the #783 false-keep Bugbot flagged. "Jetsons" / "Hobbit" clear it.
         var withoutArticle = StripLeadingArticle(subject);
         if (withoutArticle is not null
-            && withoutArticle.Length >= 3
+            && withoutArticle.Length >= 4
             && !string.Equals(withoutArticle, subject, StringComparison.OrdinalIgnoreCase)
-            && answerText.Contains(withoutArticle, StringComparison.OrdinalIgnoreCase))
+            && ContainsSubjectToken(answerText, withoutArticle))
         {
             return true;
         }
 
         return false;
+    }
+
+    // Subjects shorter than 3 chars (Stern "IT") are English substrings under
+    // OrdinalIgnoreCase Contains — "it" appears in nearly every answer. Require
+    // a case-sensitive whole-token match so only an intentional "IT" keeps the
+    // citation; longer titles keep the case-insensitive substring path.
+    private static bool ContainsSubjectToken(string answerText, string subject)
+    {
+        if (subject.Length < 3)
+        {
+            return Regex.IsMatch(
+                answerText,
+                $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(subject)}(?![\p{{L}}\p{{N}}])",
+                RegexOptions.CultureInvariant);
+        }
+
+        return answerText.Contains(subject, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? StripLeadingArticle(string subject)

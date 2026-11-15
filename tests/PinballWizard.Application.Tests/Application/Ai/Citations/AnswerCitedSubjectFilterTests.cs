@@ -193,6 +193,72 @@ public sealed class AnswerCitedSubjectFilterTests
     }
 
     [Fact]
+    public void Filter_DropsShortSubjectWhenOnlyCommonWordMatches()
+    {
+        // Bugbot: "IT" must not stay because the answer contains lowercase "it".
+        var answer = "Godzilla is great because it has a deep rule set.";
+        var citations = new[]
+        {
+            Cite("Godzilla — Metadata", "https://opdb.org/machines/godzilla"),
+            Cite("IT — Metadata", "https://opdb.org/machines/it"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.StartsWith("IT", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsShortSubjectWhenExactTokenPresent()
+    {
+        var answer = "Stern's IT is a widebody with a unique layout.";
+        var citations = new[]
+        {
+            Cite("IT — Metadata", "https://opdb.org/machines/it"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
+    public void Filter_DropsTheWhoWhenOnlyPronounWhoMatches()
+    {
+        // Bugbot: article strip "The Who" → "Who" matched "who"/"whose".
+        var answer = "Players who prefer multiball should try Godzilla.";
+        var citations = new[]
+        {
+            Cite("Godzilla — Metadata", "https://opdb.org/machines/godzilla"),
+            Cite("The Who — Metadata", "https://opdb.org/machines/the-who"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Single(result.Kept);
+        Assert.Equal(1, result.DroppedCount);
+        Assert.DoesNotContain(result.Kept, c => c.Title.Contains("Who", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Filter_KeepsTheWhoWhenFullTitlePresent()
+    {
+        var answer = "The Who is a Stern table with rock-band theming.";
+        var citations = new[]
+        {
+            Cite("The Who — Metadata", "https://opdb.org/machines/the-who"),
+        };
+
+        var result = AnswerCitedSubjectFilter.Filter(answer, citations);
+
+        Assert.Equal(citations, result.Kept);
+        Assert.Equal(0, result.DroppedCount);
+    }
+
+    [Fact]
     public void Filter_EmptyInput_IsNoOp()
     {
         var empty = Array.Empty<Citation>();
