@@ -83,13 +83,13 @@ jobs:
           # credentials, so widening this is a real privilege decision, not a
           # convenience toggle.
           #
-          # These two names are the bots actually observed reviewing PRs here
-          # (sampled across the last twelve PRs: github-code-quality 8 reviews,
-          # github-advanced-security 2), not a guess at what GitHub might send.
-          # A new scanning bot will be rejected until it is added here — that is
-          # the intended failure direction, and it fails loudly in the workflow
-          # log rather than silently skipping findings.
-          allowed_bots: "github-advanced-security[bot],github-code-quality[bot]"
+          # Named bots observed reviewing PRs here (not '*': public repo, and
+          # the prompt below goes to a model with write-scoped credentials).
+          # A new scanning bot is rejected until added — intended fail-loud.
+          # cursor[bot] included so Bugbot review comments (and agent replies
+          # that re-fire pull_request_review_comment) can be triaged without
+          # "non-human actor" hard-fail (observed on #1026).
+          allowed_bots: "github-advanced-security[bot],github-code-quality[bot],cursor[bot]"
           prompt: |
             REPO: ${{ github.repository }}
             PR: ${{ github.event.pull_request.number || github.event.issue.number }}
