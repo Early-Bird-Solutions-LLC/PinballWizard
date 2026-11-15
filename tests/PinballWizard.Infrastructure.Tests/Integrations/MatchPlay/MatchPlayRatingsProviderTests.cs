@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -117,11 +118,46 @@ public sealed class MatchPlayRatingsProviderTests
             () => harness.Provider.SearchAsync("Ada"));
     }
 
+    [Fact]
+    public async Task GetBestMatch_Numeric_PrefersIfpaOverOverlappingUserId()
+    {
+        // UserId 42 is a different person from IFPA 42 — compare must pick IFPA.
+        var csv =
+            "Name,User ID,IFPA ID,Rating,RD,Lower Bound,Last Rating Period,Rating class\n" +
+            "Ifpa Player,999,42,1800.0,40.0,1720.0,2026-11-14,2\n" +
+            "User Player,42,7,1200.0,50.0,1100.0,2026-11-14,8\n";
+        using var harness = NewProvider(csv);
+
+        var best = await harness.Provider.GetBestMatchAsync("42");
+        var search = await harness.Provider.SearchAsync("42");
+
+        Assert.Equal("Ifpa Player", best!.Name);
+        Assert.Equal(999, best.UserId);
+        Assert.Equal(2, search.Count);
+        Assert.Equal("Ifpa Player", search[0].Name);
+        Assert.Equal("User Player", search[1].Name);
+    }
+
+    [Fact]
+    public async Task Download_Utf8WithoutCharset_PreservesNonAsciiNames()
+    {
+        var csv =
+            "Name,User ID,IFPA ID,Rating,RD,Lower Bound,Last Rating Period,Rating class\n" +
+            "José García,501,88,1700.0,45.0,1610.0,2026-11-14,4\n";
+        using var harness = NewProvider(csv, omitCharset: true);
+
+        var hits = await harness.Provider.SearchAsync("José");
+
+        Assert.Single(hits);
+        Assert.Equal("José García", hits[0].Name);
+    }
+
     private static ProviderHarness NewProvider(
         string csv,
-        System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK)
+        System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK,
+        bool omitCharset = false)
     {
-        var handler = new CountingHandler(csv, statusCode);
+        var handler = new CountingHandler(csv, statusCode, omitCharset);
         var client = new HttpClient(handler);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient("MatchPlayRatingsCdn").Returns(client);
@@ -168,14 +204,19 @@ public sealed class MatchPlayRatingsProviderTests
     {
         private readonly string _body;
         private readonly System.Net.HttpStatusCode _status;
+        private readonly bool _omitCharset;
         private readonly List<HttpResponseMessage> _created = [];
 
         public int RequestCount { get; private set; }
 
-        public CountingHandler(string body, System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK)
+        public CountingHandler(
+            string body,
+            System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK,
+            bool omitCharset = false)
         {
             _body = body;
             _status = statusCode;
+            _omitCharset = omitCharset;
         }
 
         protected override Task<HttpResponseMessage> SendAsync(
@@ -183,10 +224,20 @@ public sealed class MatchPlayRatingsProviderTests
             CancellationToken cancellationToken)
         {
             RequestCount++;
-            var response = new HttpResponseMessage(_status)
+            HttpContent content;
+            if (_omitCharset)
             {
-                Content = new StringContent(_body),
-            };
+                // Mimic CDN object storage: UTF-8 body, no charset on Content-Type.
+                content = new ByteArrayContent(Encoding.UTF8.GetBytes(_body));
+                content.Headers.ContentType =
+                    new System.Net.Http.Headers.MediaTypeHeaderValue("text/csv");
+            }
+            else
+            {
+                content = new StringContent(_body, Encoding.UTF8, "text/csv");
+            }
+
+            var response = new HttpResponseMessage(_status) { Content = content };
             _created.Add(response);
             return Task.FromResult(response);
         }

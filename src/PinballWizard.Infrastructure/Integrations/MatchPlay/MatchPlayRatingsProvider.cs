@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Tournaments;
@@ -53,16 +54,18 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
         if (int.TryParse(needle, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var id))
         {
+            // IFPA first, then Match Play user id. Id spaces overlap across ~150k
+            // rows; callers (and compare's single best match) more often mean IFPA.
             var byId = new List<MatchPlayRatingRow>(2);
-            if (index.ByUserId.TryGetValue(id, out var userRow))
-            {
-                byId.Add(userRow);
-            }
-
-            if (index.ByIfpaId.TryGetValue(id, out var ifpaRow)
-                && !byId.Exists(r => r.UserId == ifpaRow.UserId))
+            if (index.ByIfpaId.TryGetValue(id, out var ifpaRow))
             {
                 byId.Add(ifpaRow);
+            }
+
+            if (index.ByUserId.TryGetValue(id, out var userRow)
+                && !byId.Exists(r => r.UserId == userRow.UserId))
+            {
+                byId.Add(userRow);
             }
 
             if (byId.Count > 0)
@@ -93,6 +96,24 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
         if (index.ByExactName.TryGetValue(needle, out var exact))
         {
             return exact;
+        }
+
+        // Numeric: prefer IFPA over UserId when both id spaces hit different rows
+        // (compare takes a single best match; Search still returns both).
+        if (int.TryParse(needle, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var id))
+        {
+            if (index.ByIfpaId.TryGetValue(id, out var ifpaRow))
+            {
+                return ifpaRow;
+            }
+
+            if (index.ByUserId.TryGetValue(id, out var userRow))
+            {
+                return userRow;
+            }
+
+            return null;
         }
 
         var hits = await SearchAsync(needle, limit: 5, cancellationToken).ConfigureAwait(false);
@@ -180,7 +201,14 @@ internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDis
         _logger.LogInformation("MatchPlayRatings: downloading CDN export {Url}", url);
         using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        // CDN object storage often omits charset; ReadAsStringAsync would then
+        // default to ISO-8859-1 and mojibake UTF-8 names. Force UTF-8 (+ BOM).
+        await using var stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var reader = new StreamReader(
+            stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
