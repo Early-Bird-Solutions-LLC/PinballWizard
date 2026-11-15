@@ -92,7 +92,7 @@ When Step 1 routed to the Match Play row:
 4. If the needed tool returns null/empty, say live Match Play data is unavailable — do not fall back to parametric knowledge or stale memory of results.
 5. Skip Steps 2–5 sub-agent dispatch for this question type (no `searchCorpus` / Valuation / Rules / Repair required).
 
-Step 3.95 — **Match Play Ratings (ADR-0063).**
+Step 3.95 — **Match Play Ratings (ADR-0065).**
 
 When Step 1 routed to Match Play Ratings:
 

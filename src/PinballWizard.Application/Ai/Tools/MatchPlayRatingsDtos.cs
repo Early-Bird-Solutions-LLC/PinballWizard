@@ -1,6 +1,6 @@
 namespace PinballWizard.Application.Ai.Tools;
 
-// Foundry DTOs for Match Play Ratings CDN tools (ADR-0063).
+// Foundry DTOs for Match Play Ratings CDN tools (ADR-0065).
 // AttributionUrl is the citation surface for ToolTraceCitationExtractor.
 
 public sealed record MatchPlayRatingHitDto(

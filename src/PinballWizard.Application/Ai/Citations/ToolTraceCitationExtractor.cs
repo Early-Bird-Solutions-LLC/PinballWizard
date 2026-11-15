@@ -272,7 +272,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
-        // Match Play Ratings CDN (ADR-0063) — Citations only.
+        // Match Play Ratings CDN (ADR-0065) — Citations only.
         if (result is MatchPlayRatingsSearchDto ratingsSearch)
         {
             AddMatchPlayRatingCitation(ratingsSearch.AttributionUrl, byUrl, citations);
@@ -316,7 +316,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            // Match Play Ratings CDN (ADR-0063) before Hits/AttributionUrl arms —
+            // Match Play Ratings CDN (ADR-0065) before Hits/AttributionUrl arms —
             // search payloads also carry Hits (corpus probe) and AttributionUrl
             // (market-value probe).
             if (TryGetPropertyIgnoreCase(element, "AttributionUrl", out _)

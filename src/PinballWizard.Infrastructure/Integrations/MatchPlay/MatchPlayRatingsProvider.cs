@@ -6,7 +6,7 @@ using PinballWizard.Core.Configuration;
 namespace PinballWizard.Infrastructure.Integrations.MatchPlay;
 
 // Loads Match Play Ratings from the public CDN CSV and serves search/compare
-// from an in-process TTL cache (ADR-0063). Fail closed on empty/malformed export.
+// from an in-process TTL cache (ADR-0065). Fail closed on empty/malformed export.
 internal sealed class MatchPlayRatingsProvider : IMatchPlayRatingsProvider, IDisposable
 {
     internal const string DefaultAttributionUrl =

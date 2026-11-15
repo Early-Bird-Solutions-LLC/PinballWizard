@@ -345,7 +345,7 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[KineticistOptions.ApiKeyKey
 }
 
 // Match Play Events: tournament API (ADR-0061/0062) needs bearer; Ratings CDN
-// (ADR-0063) is public and registers without a token.
+// (ADR-0065) is public and registers without a token.
 if (!string.IsNullOrWhiteSpace(builder.Configuration[MatchPlayOptions.ApiTokenKey])
     || !string.IsNullOrWhiteSpace(builder.Configuration[$"{OpdbOptions.SectionName}:ApiToken"]))
 {

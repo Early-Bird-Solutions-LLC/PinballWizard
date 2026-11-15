@@ -80,7 +80,7 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    // Match Play Ratings CDN (ADR-0063) — no bearer required. Safe to call
+    // Match Play Ratings CDN (ADR-0065) — no bearer required. Safe to call
     // even when tournament API token is absent.
     public static IServiceCollection AddMatchPlayRatings(
         this IServiceCollection services,

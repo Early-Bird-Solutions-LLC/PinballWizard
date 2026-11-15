@@ -7,7 +7,7 @@ using Xunit;
 
 namespace PinballWizard.Application.Tests.Ai.Tools;
 
-// Behavior tests for MatchPlayRatingsTool (ADR-0063).
+// Behavior tests for MatchPlayRatingsTool (ADR-0065).
 public sealed class MatchPlayRatingsToolTests
 {
     private static MatchPlayRatingsTool NewTool(IMatchPlayRatingsProvider? provider = null) =>

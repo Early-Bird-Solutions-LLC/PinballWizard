@@ -1,4 +1,4 @@
-# 0063 — Match Play Ratings CDN Wizard tools
+# 0065 — Match Play Ratings CDN Wizard tools
 
 **Status:** Accepted  
 **Date:** 2026-11-15

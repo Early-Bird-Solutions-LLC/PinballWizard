@@ -1,6 +1,6 @@
 namespace PinballWizard.Application.Tournaments;
 
-// Application-layer Match Play Ratings models (ADR-0063).
+// Application-layer Match Play Ratings models (ADR-0065).
 // Sourced from the CDN CSV export — never from API bulk.
 
 public sealed record MatchPlayRatingRow(

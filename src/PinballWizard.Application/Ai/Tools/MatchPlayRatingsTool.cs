@@ -6,7 +6,7 @@ using PinballWizard.Application.Tournaments;
 
 namespace PinballWizard.Application.Ai.Tools;
 
-// Wizard tools over Match Play Ratings CDN (ADR-0063).
+// Wizard tools over Match Play Ratings CDN (ADR-0065).
 // Fail closed → null. Citation via AttributionUrl on every payload.
 public sealed class MatchPlayRatingsTool
 {

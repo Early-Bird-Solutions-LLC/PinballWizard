@@ -1,6 +1,6 @@
 namespace PinballWizard.Application.Tournaments;
 
-// Query-time Match Play Ratings (ADR-0063). Backed by the public CDN CSV
+// Query-time Match Play Ratings (ADR-0065). Backed by the public CDN CSV
 // export with an in-process TTL cache — never RAG-indexed, never API bulk.
 public interface IMatchPlayRatingsProvider
 {

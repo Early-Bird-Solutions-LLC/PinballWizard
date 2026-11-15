@@ -216,7 +216,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             _matchPlayTournamentTool.GetMatchPlayTournamentFloorAsync);
         var findMatchPlayTournamentPlayers = AIFunctionFactory.Create(
             _matchPlayTournamentTool.FindMatchPlayTournamentPlayersAsync);
-        // Match Play Ratings CDN tools (ADR-0063) — no bearer required.
+        // Match Play Ratings CDN tools (ADR-0065) — no bearer required.
         var searchMatchPlayRatings = AIFunctionFactory.Create(
             _matchPlayRatingsTool.SearchMatchPlayRatingsAsync);
         var compareMatchPlayRatings = AIFunctionFactory.Create(

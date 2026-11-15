@@ -37,7 +37,7 @@ public sealed class MatchPlayOptions
     [Range(15, 600)]
     public int StandingsMinIntervalSeconds { get; set; } = 15;
 
-    // Match Play Ratings CDN export (ADR-0063). Public object — no bearer.
+    // Match Play Ratings CDN export (ADR-0065). Public object — no bearer.
     // Handbook: fetch ratings from the CDN, not the API bulk surface.
     [Url]
     public string RatingsExportUrl { get; set; } =

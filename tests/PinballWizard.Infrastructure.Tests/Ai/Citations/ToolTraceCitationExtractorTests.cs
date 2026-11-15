@@ -1464,7 +1464,7 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Contains("floor", citation.Title, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ── searchMatchPlayRatings / compareMatchPlayRatings (ADR-0063) ─────
+    // ── searchMatchPlayRatings / compareMatchPlayRatings (ADR-0065) ─────
 
     [Fact]
     public void Extract_MatchPlayRatingsSearchDto_AsTyped_ProducesCitation()

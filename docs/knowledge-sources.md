@@ -235,7 +235,7 @@ This is a hobbyist project, but it interacts with third-party content. The ethic
 
 **Phase 3b — Reference databases.** IPDB cross-reference fields (`Machine.IpdbId` + `Machine.IpdbReferenceUrl`) are now populated from OPDB sync (commit `11a3a8d`); IPDB returns HTTP 403 to scrapers so full content ingestion is not planned without an access path. PinWiki scrape for technical content and manual glossary remain future work.
 
-**Phase 3c — Live competitive agent.** Match Play tournament search + standings (ADR-0061), event-floor tools (ADR-0062), and Ratings CDN search/compare (ADR-0063) shipped. IFPA WPPR tools remain. Player registry curated manually for the top tier. Hybrid architecture (§5) applies.
+**Phase 3c — Live competitive agent.** Match Play tournament search + standings (ADR-0061), event-floor tools (ADR-0062), and Ratings CDN search/compare (ADR-0065) shipped. IFPA WPPR tools remain. Player registry curated manually for the top tier. Hybrid architecture (§5) applies.
 
 **Phase 3d — Educational corpus.** Bowen Kerins / PAPA tutorial transcripts, podcast transcripts, technique videos. Audio pipeline (Whisper) added.
 
