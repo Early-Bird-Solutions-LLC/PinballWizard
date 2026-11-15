@@ -110,7 +110,7 @@ For machines from defunct manufacturers (Williams, Bally, Gottlieb, Data East, S
 | Reddit /r/pinball | `reddit.com/r/pinball` | Active free community discussion, broad reach, well-moderated. **Forum plurality.** | Linking-to fine. Reddit has a public API but rate-limited and ToS-restricted; treat as link-only for v1. |
 | TiltForums | `tiltforums.com` | Competitive-play / tech / repair focused. **Forum plurality**, niche but legitimate. | Linking-to encouraged. |
 | Pinball Map | `pinballmap.com` | Where machines are physically located on routes. | API access available; out of Phase 4 scope but Phase 5+ planned. |
-| Match Play Events | `matchplay.events` | Tournament platform. Live event listings + results. | API available; tournament data is a future ingestion source. The PinTips play-tip export is indexed as `PlayTip` documents (`--sync-pintips`). |
+| Match Play Events | `matchplay.events` | Tournament platform. Live event listings + results. | API available; live tournament search + standings are queried at answer time by the Wizard tools `searchMatchPlayTournaments` / `getMatchPlayTournamentStandings` (ADR-0061) — not RAG-indexed. The PinTips play-tip export is indexed as `PlayTip` documents (`--sync-pintips`). |
 | IFPA | `ifpapinball.com` | International Flipper Pinball Association — player rankings, sanctioned event results, world rankings. | API available; future ingestion source. |
 
 ### Where pinball commerce / discussion happens but we can't deep-link
