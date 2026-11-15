@@ -1071,12 +1071,14 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
 }
 
 .brand-footer__link,
-.brand-footer__meta-link,
-.brand-footer__coverage-link {
+.brand-footer__meta-link {
     min-block-size: 44px;
     display: inline-flex;
     align-items: center;
 }
+
+/* Coverage link stays inline-in-sentence (WCAG 2.5.8 exempt) — do not stretch
+   the footer paragraph to 44px (#789 Bugbot). Nearby stacked chrome keeps 44. */
 
 /* Stacked document links in the machine-detail grid (WCAG 2.2 SC 2.5.8, #790).
 
