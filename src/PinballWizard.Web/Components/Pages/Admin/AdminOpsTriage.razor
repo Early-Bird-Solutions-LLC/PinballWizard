@@ -180,7 +180,7 @@
         if (!_isAdmin)
         {
             _loading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+            SafeStateHasChanged();
             return;
         }
 
@@ -188,7 +188,7 @@
         {
             _serviceUnavailable = true;
             _loading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+            SafeStateHasChanged();
             return;
         }
 
@@ -217,21 +217,32 @@
 
         _loading = true;
         _loadFailed = false;
-        await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+        SafeStateHasChanged();
 
+        // Linked to component disposal (#615) so navigate-away cancels Cosmos work
+        // and SafeStateHasChanged no-ops instead of ObjectDisposedException.
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             if (!string.IsNullOrWhiteSpace(RunId) && !string.IsNullOrWhiteSpace(Day))
             {
-                _selected = await Runs!.GetAsync(RunId, Day, CancellationToken.None).ConfigureAwait(true);
+                _selected = await Runs!.GetAsync(RunId, Day, cts.Token).ConfigureAwait(true);
             }
             else
             {
                 _selected = null;
-                _runs = (await Runs!.ListRecentAsync(100, CancellationToken.None).ConfigureAwait(true)).ToList();
+                _runs = (await Runs!.ListRecentAsync(100, cts.Token).ConfigureAwait(true)).ToList();
             }
 
             _loadedRouteKey = routeKey;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            if (!ComponentDisposalToken.IsCancellationRequested)
+            {
+                Logger.LogWarning("/admin/ops-triage load timed out after 30 s.");
+                _loadFailed = true;
+            }
         }
         catch (Exception ex)
         {
@@ -242,7 +253,7 @@
         finally
         {
             _loading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+            SafeStateHasChanged();
         }
     }
 
