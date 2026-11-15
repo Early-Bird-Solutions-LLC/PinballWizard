@@ -169,9 +169,14 @@ param deployCohereRerank = true
 // 1 GB cap. Flip to true only for a bounded diagnosis, then back to false.
 param enableAzureSdkDiagnostics = false
 
-// ADR-0060 — after migrate-aca-jobs-to-workload-stack.md cutover (2026-11-15),
-// ACA jobs are owned by pinwiz-jobs-dev. Platform must NOT re-include them
-// (would fight the workload stack) and must keep manageAcaJobs=false so
-// deleteResources cannot delete the detached jobs. Flip back to true only
-// as a documented rollback that re-adopts jobs into the platform template.
+// ADR-0060 — CUTOVER COMPLETE for dev (2026-11-15):
+//   1) pinwiz-shared-dev updated with manageAcaJobs=false + detachAll
+//      → platform managed set has 0 Microsoft.App/jobs
+//   2) pinwiz-jobs-dev created → owns all 22 pinwiz-job-* resources
+//   3) platform restored to deleteAll unmanage with manageAcaJobs=false
+// deleteResources on the platform stack cannot delete jobs that are no longer
+// in its managed set. This committed false is the steady-state after that
+// sequence — not a premature flip ahead of detach. Flip back to true only as
+// a documented rollback that re-adopts jobs into the platform template.
+// See docs/runbooks/migrate-aca-jobs-to-workload-stack.md.
 param manageAcaJobs = false
