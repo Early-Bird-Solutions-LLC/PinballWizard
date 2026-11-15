@@ -317,25 +317,42 @@ public sealed class OpdbClientTests : IDisposable
             _responses[pathAndQuery] = (body, status);
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage(
-            "CodeQuality",
-            "cs/local-not-disposed",
-            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
             var key = request.RequestUri!.PathAndQuery;
             if (_responses.TryGetValue(key, out var entry))
             {
-                var response = new HttpResponseMessage(entry.Status);
-                if (entry.Body is not null)
-                {
-                    response.Content = new StringContent(entry.Body, Encoding.UTF8, "application/json");
-                }
-                return Task.FromResult(response);
+                return Task.FromResult(CreateResponse(entry.Status, entry.Body));
             }
-            var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
-            return Task.FromResult(notFound);
+
+            return Task.FromResult(CreateResponse(HttpStatusCode.NotFound));
+        }
+
+        /// <summary>
+        /// Builds a response whose ownership transfers to the HttpClient caller.
+        /// Assign-then-return with dispose-on-failure so CodeQL/code-quality
+        /// see every local disposed or escaped via return.
+        /// </summary>
+        private static HttpResponseMessage CreateResponse(HttpStatusCode status, string? body = null)
+        {
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = new HttpResponseMessage(status);
+                if (body is not null)
+                {
+                    response.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                }
+
+                var result = response;
+                response = null;
+                return result;
+            }
+            finally
+            {
+                response?.Dispose();
+            }
         }
     }
 }
