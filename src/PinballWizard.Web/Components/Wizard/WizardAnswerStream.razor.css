@@ -1,27 +1,9 @@
-/* Flex layout keeps visual chronology (prior turns → live question → body)
-   while DOM order places <h1> before any <h2> for heading-order (#789 Bugbot). */
-.wizard-answer-stream {
-    display: flex;
-    flex-direction: column;
-}
-
-.wizard-answer-stream__doc-title {
-    order: 2;
-}
-
-.wizard-thread {
-    order: 1;
-}
-
-.wizard-answer-stream__body {
-    order: 3;
-}
-
-/* Question heading visual size. Element is <h1> (live ask) or <h2> (prior
-   thread turns) for document outline (#789); keep the compact display scale
-   that Typo.h6 previously provided so the answer surface does not jump. */
+/* Question label visual size. Live ask is <h1>; prior turns are <p> with the
+   same class so chronology matches DOM/reading/focus order (#789 Bugbot —
+   no flex reorder). Keep the compact scale Typo.h6 used to provide. */
 .wizard-answer-stream__question {
     font-size: 1.25rem;
     font-weight: 600;
     line-height: 1.4;
+    margin: 0;
 }

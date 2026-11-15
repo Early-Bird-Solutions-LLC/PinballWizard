@@ -173,10 +173,12 @@ public sealed class WizardAnswerStreamTests
     }
 
     [Fact]
-    public async Task FollowUp_submit_keeps_h1_before_prior_turn_h2_in_dom()
+    public async Task FollowUp_keeps_chronological_dom_with_single_live_h1()
     {
-        // #789 Bugbot: prior turns as h2 must not precede the live h1 in the
-        // document outline. DOM order is h1 then h2; flex reorders visually.
+        // #789 / #1031 Bugbot: prior turns must not be <h2> (that forced a
+        // flex reorder so h1 preceded h2 in the outline while sighted order
+        // stayed chronological). Prior questions are <p>; live ask is the
+        // sole <h1>; thread markup precedes the live h1 in the DOM.
         var answer = BuildAnswer("First answer.", citations: [BuildCitation("Source A")]);
         var (client, _) = BuildHistoryCapturingClient(
             new AnswerChunk.TextDelta("First answer."),
@@ -198,12 +200,15 @@ public sealed class WizardAnswerStreamTests
             () => Assert.Equal("who designed it", cut.Find("[data-testid='submitted-question']").TextContent.Trim()),
             timeout: TimeSpan.FromSeconds(3));
 
+        Assert.Single(cut.FindAll("h1"));
+        Assert.Empty(cut.FindAll("[data-testid='conversation-thread'] h2"));
+        Assert.Equal("first question", cut.Find("[data-testid='turn-question']").TextContent.Trim());
+
         var markup = cut.Markup;
+        var threadAt = markup.IndexOf("data-testid=\"conversation-thread\"", StringComparison.Ordinal);
         var h1At = markup.IndexOf("<h1", StringComparison.OrdinalIgnoreCase);
-        var h2At = markup.IndexOf("<h2", StringComparison.OrdinalIgnoreCase);
-        Assert.True(h1At >= 0, "Expected a live <h1> for the follow-up question.");
-        Assert.True(h2At >= 0, "Expected a prior-turn <h2>.");
-        Assert.True(h1At < h2At, "Document outline must place <h1> before prior-turn <h2>.");
+        Assert.True(threadAt >= 0 && h1At >= 0 && threadAt < h1At,
+            "Chronological DOM: prior thread must precede the live <h1> (no flex reorder).");
     }
 
     // ──────────────────────────────────────────────────────────────────────

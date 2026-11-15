@@ -38,14 +38,40 @@
 
 <div class="wizard-answer-stream" data-testid="wizard-answer-stream">
 
-    @* Document outline (#789 / Bugbot): <h1> MUST precede any <h2> in the DOM.
-       Flex order keeps the visual chronology (prior turns → live question →
-       answer body) while screen readers see h1 then h2. *@
+    @* Document outline (#789): exactly one page <h1>. Prior turns use <p>
+       (same visual class) so chronological DOM = reading/focus order —
+       no flex reorder (#1031 Bugbot). Idle uses a visually-hidden title. *@
     @if (_state == AnswerState.Idle)
     {
         <h1 class="pw-visually-hidden wizard-answer-stream__doc-title">Ask the Wizard</h1>
     }
-    else
+
+    @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
+       Lives in component state only — circuit lifetime, no persistence
+       (ADR-0027: the ban is on PERSISTENT session history; a page refresh
+       starts a fresh conversation). Each turn renders through the same
+       TokenRenderer + CitationStrip surfaces as the live answer. *@
+    @if (_thread.Count > 0)
+    {
+        <MudStack Spacing="4" Class="wizard-thread mb-6" data-testid="conversation-thread">
+            @foreach (var turn in _thread)
+            {
+                <div class="wizard-thread__turn" data-testid="conversation-turn">
+                    <p class="wizard-answer-stream__question"
+                       data-testid="turn-question">
+                        @turn.Question
+                    </p>
+                    <TokenRenderer SpanTexts="@turn.TextSpans" IsStreaming="false" />
+                    @if (turn.Citations.Count > 0)
+                    {
+                        <CitationStrip Citations="turn.Citations" />
+                    }
+                </div>
+            }
+        </MudStack>
+    }
+
+    @if (_state != AnswerState.Idle)
     {
         <MudStack Spacing="1" Class="mb-3 wizard-answer-stream__doc-title">
             <MudText Typo="Typo.h1" Class="wizard-answer-stream__question"
@@ -90,31 +116,6 @@
                         New conversation
                     </MudButton>
                 </MudStack>
-            }
-        </MudStack>
-    }
-
-    @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
-       Lives in component state only — circuit lifetime, no persistence
-       (ADR-0027: the ban is on PERSISTENT session history; a page refresh
-       starts a fresh conversation). Each turn renders through the same
-       TokenRenderer + CitationStrip surfaces as the live answer. *@
-    @if (_thread.Count > 0)
-    {
-        <MudStack Spacing="4" Class="wizard-thread mb-6" data-testid="conversation-thread">
-            @foreach (var turn in _thread)
-            {
-                <div class="wizard-thread__turn" data-testid="conversation-turn">
-                    <MudText Typo="Typo.h2" Class="wizard-answer-stream__question"
-                             data-testid="turn-question">
-                        @turn.Question
-                    </MudText>
-                    <TokenRenderer SpanTexts="@turn.TextSpans" IsStreaming="false" />
-                    @if (turn.Citations.Count > 0)
-                    {
-                        <CitationStrip Citations="turn.Citations" />
-                    }
-                </div>
             }
         </MudStack>
     }
