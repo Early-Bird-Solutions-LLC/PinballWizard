@@ -121,7 +121,7 @@ public static class PinballWizardTelemetry
     public static readonly Counter<long> AiCitationsDroppedUnusedSubject = Meter.CreateCounter<long>(
         "pinwiz.ai.citations.dropped_unused_subject_total",
         unit: "{citation}",
-        description: "Citations dropped by AnswerCitedSubjectFilter because their machine subject never appeared in the answer prose (ADR-0062 / #783). A sustained rate means retrieval is returning unused hits — expected on broad recommendations; investigate if it dominates single-machine rules answers.");
+        description: "Citations dropped by AnswerCitedSubjectFilter because their machine subject never appeared in the answer prose (ADR-0063 / #783). A sustained rate means retrieval is returning unused hits — expected on broad recommendations; investigate if it dominates single-machine rules answers.");
 
     public static readonly Counter<long> AiCostUsdCents = Meter.CreateCounter<long>(
         "pinwiz.ai.cost_usd_cents",

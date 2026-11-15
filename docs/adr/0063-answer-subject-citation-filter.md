@@ -1,4 +1,4 @@
-# 0062 — Drop citations whose subject is absent from the answer
+# 0063 — Drop citations whose subject is absent from the answer
 
 **Status:** Accepted
 **Date:** 2026-11-15

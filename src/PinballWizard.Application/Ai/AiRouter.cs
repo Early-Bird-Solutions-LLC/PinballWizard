@@ -1177,7 +1177,7 @@ public sealed class AiRouter : IAiRouter
             }
         }
 
-        // Answer-subject filter (#783 / ADR-0062): drop tool-trace hits whose
+        // Answer-subject filter (#783 / ADR-0063): drop tool-trace hits whose
         // machine subject never appears in the answer. Runs AFTER inheritance
         // (Inherited citations are exempt — clarifying follow-ups) and BEFORE
         // reconcile / confidence / NoCitation so unused hits cannot inflate

@@ -562,7 +562,7 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_001", corpus),
             }),
-            // Answer names Godzilla so ADR-0062 subject filter keeps the hit;
+            // Answer names Godzilla so ADR-0063 subject filter keeps the hit;
             // references k=1 (matched) and k=99 (unmatched — must be dropped).
             MakeTextUpdate("On Godzilla, flippers persist [[cite:1]] and unknown [[cite:99]]."),
         };
@@ -630,7 +630,7 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_002", corpus),
             }),
-            // Answer names Godzilla so ADR-0062 keeps both corpus hits.
+            // Answer names Godzilla so ADR-0063 keeps both corpus hits.
             // References k1 and k99 (unmatched). After reconcile:
             //   [[cite:1]] → [[cite:1]] (k1=urlB→N1)
             //   [[cite:99]] → "" (dropped — no k99 in sourceIndex)
@@ -686,7 +686,7 @@ public sealed class AiRouterStreamingTests
             {
                 new FunctionResultContent("call_searchCorpus_003", corpus),
             }),
-            // Name Godzilla so ADR-0062 subject filter keeps the corpus hit.
+            // Name Godzilla so ADR-0063 subject filter keeps the corpus hit.
             MakeTextUpdate("On Godzilla, flippers persist [[cite:1]]. Read more."),
         };
         var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);

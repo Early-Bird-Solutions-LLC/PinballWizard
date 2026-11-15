@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace PinballWizard.Application.Ai.Citations;
 
 // Drops citations whose machine subject never appears in the answer prose
-// (#783 / ADR-0062). ADR-0022 extracts every tool-trace hit; without this
+// (#783 / ADR-0063). ADR-0022 extracts every tool-trace hit; without this
 // filter a recommendation can list Hobbit / Halloween while the Sources
 // panel still shows "The Jetsons — Metadata" from an unused retrieval hit.
 //
