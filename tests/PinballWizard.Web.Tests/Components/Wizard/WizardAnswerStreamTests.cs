@@ -172,6 +172,48 @@ public sealed class WizardAnswerStreamTests
         await Task.CompletedTask;
     }
 
+    [Fact]
+    public async Task FollowUp_keeps_chronological_dom_with_single_live_h1()
+    {
+        // #789 / #1031 Bugbot: prior turns must not be <h2> (that forced a
+        // flex reorder so h1 preceded h2 in the outline while sighted order
+        // stayed chronological). Prior questions are <p>; live ask is the
+        // sole <h1>; thread markup precedes the live h1 in the DOM.
+        var answer = BuildAnswer("First answer.", citations: [BuildCitation("Source A")]);
+        var (client, _) = BuildHistoryCapturingClient(
+            new AnswerChunk.TextDelta("First answer."),
+            new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "first question"));
+
+        // #787: follow-up composer is always mounted after Complete — no
+        // "Ask a follow-up" / new-question reveal click.
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='follow-up-composer']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        await cut.InvokeAsync(() =>
+        {
+            cut.Find("input").Input("who designed it");
+            cut.Find("[data-testid='ask-button']").Click();
+        });
+
+        cut.WaitForAssertion(
+            () => Assert.Equal("who designed it", cut.Find("[data-testid='submitted-question']").TextContent.Trim()),
+            timeout: TimeSpan.FromSeconds(3));
+
+        Assert.Single(cut.FindAll("h1"));
+        Assert.Empty(cut.FindAll("[data-testid='conversation-thread'] h2"));
+        Assert.Equal("first question", cut.Find("[data-testid='turn-question']").TextContent.Trim());
+
+        var markup = cut.Markup;
+        var threadAt = markup.IndexOf("data-testid=\"conversation-thread\"", StringComparison.Ordinal);
+        var h1At = markup.IndexOf("<h1", StringComparison.OrdinalIgnoreCase);
+        Assert.True(threadAt >= 0 && h1At >= 0 && threadAt < h1At,
+            "Chronological DOM: prior thread must precede the live <h1> (no flex reorder).");
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Submitted_state_renders_thinking_indicator
     // ──────────────────────────────────────────────────────────────────────
