@@ -5,6 +5,10 @@
  * no grounding documents can be cited. Tone: "no documented evidence —
  * check these authoritative sources".
  *
+ * ADR-0053 / #784: when the ask was pinned to a catalog machine with zero
+ * indexed chunks, KnownMachineWithoutIndexedDocs carries that subject so
+ * we do not label it "Related machines I know about".
+ *
  * Community resources here focus on machine_reference category — the user
  * is likely asking about a specific machine and wants authoritative
  * documentation.
@@ -24,10 +28,41 @@
         <MudText Typo="Typo.h4" Class="refusal-category-label" data-testid="refusal-category-label">
             LOW CONFIDENCE
         </MudText>
-        <MudText Typo="Typo.body1" Color="Color.Default">
-            The available sources don't directly address this question.
+        <MudText Typo="Typo.body1" Color="Color.Default" data-testid="no-citation-reason">
+            @if (KnownMachineWithoutIndexedDocs is not null)
+            {
+                @:I recognize this machine, but the corpus has no indexed rules or service documentation for it.
+            }
+            else
+            {
+                @:The available sources don't directly address this question.
+            }
         </MudText>
     </MudStack>
+
+    @if (KnownMachineWithoutIndexedDocs is not null)
+    {
+        <div data-testid="known-machine-section">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">This machine:</MudText>
+            <MudList T="RelatedMachine" Dense="true">
+                <MudListItem Icon="@Icons.Material.Filled.Casino" Dense="true">
+                    @if (!string.IsNullOrWhiteSpace(KnownMachineWithoutIndexedDocs.OpdbUrl))
+                    {
+                        <a href="@KnownMachineWithoutIndexedDocs.OpdbUrl"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="mud-typography mud-link mud-primary-text mud-link-underline-hover">
+                            @KnownMachineWithoutIndexedDocs.Title
+                        </a>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@KnownMachineWithoutIndexedDocs.Title</MudText>
+                    }
+                </MudListItem>
+            </MudList>
+        </div>
+    }
 
     @if (RelatedMachines is not null && RelatedMachines.Count > 0)
     {
@@ -59,4 +94,6 @@
 
 @code {
     [Parameter] public IReadOnlyList<RelatedMachine>? RelatedMachines { get; set; }
+
+    [Parameter] public RelatedMachine? KnownMachineWithoutIndexedDocs { get; set; }
 }

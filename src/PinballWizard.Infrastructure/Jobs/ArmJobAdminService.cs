@@ -31,17 +31,20 @@ internal sealed class ArmJobAdminService : IJobAdminService
     private readonly string _subscriptionId;
     private readonly string _resourceGroupName;
     private readonly ILogger<ArmJobAdminService> _logger;
+    private readonly IJobExecutionEndReader? _endTimes;
 
     public ArmJobAdminService(
         ArmClient armClient,
         string subscriptionId,
         string resourceGroupName,
-        ILogger<ArmJobAdminService> logger)
+        ILogger<ArmJobAdminService> logger,
+        IJobExecutionEndReader? endTimes = null)
     {
         _armClient = armClient;
         _subscriptionId = subscriptionId;
         _resourceGroupName = resourceGroupName;
         _logger = logger;
+        _endTimes = endTimes;
     }
 
     public async Task<IReadOnlyList<JobStatus>> ListJobsAsync(CancellationToken cancellationToken)
@@ -156,11 +159,7 @@ internal sealed class ArmJobAdminService : IJobAdminService
                 firstExecData ??= exec.Data;
                 if (fetched < count)
                 {
-                    executions.Add(new JobExecution(
-                        ExecutionName: exec.Data.Name,
-                        Status:        exec.Data.Status?.ToString() ?? "Unknown",
-                        StartOn:       exec.Data.StartOn,
-                        EndOn:         exec.Data.EndOn));
+                    executions.Add(MapExecution(exec.Data));
                     fetched++;
                 }
                 else
@@ -172,6 +171,7 @@ internal sealed class ArmJobAdminService : IJobAdminService
             }
 
             var imageTag = firstExecData?.Template?.Containers?.FirstOrDefault()?.Image;
+            var withEnds = await WithEndTimesAsync(jobName, executions, cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Fetched detail for ACA job {JobName}: {ExecutionCount} executions, hasMore={HasMore}.",
@@ -184,7 +184,7 @@ internal sealed class ArmJobAdminService : IJobAdminService
                 TriggerType:           triggerType,
                 LatestExecutionStatus: executions.FirstOrDefault()?.Status ?? "Unknown",
                 ImageTag:              imageTag,
-                Executions:            executions,
+                Executions:            withEnds,
                 HasMore:               hasMore);
         }
         catch (ArmJobAdminException)
@@ -231,11 +231,9 @@ internal sealed class ArmJobAdminService : IJobAdminService
             {
                 if (string.Equals(exec.Data.Name, executionName, StringComparison.Ordinal))
                 {
-                    return new JobExecution(
-                        ExecutionName: exec.Data.Name,
-                        Status:        exec.Data.Status?.ToString() ?? "Unknown",
-                        StartOn:       exec.Data.StartOn,
-                        EndOn:         exec.Data.EndOn);
+                    var mapped = MapExecution(exec.Data);
+                    var filled = await WithEndTimesAsync(jobName, [mapped], cancellationToken).ConfigureAwait(false);
+                    return filled[0];
                 }
             }
 
@@ -332,6 +330,36 @@ internal sealed class ArmJobAdminService : IJobAdminService
                 "Unexpected error updating schedule for ACA job {JobName}.",
                 jobName);
             throw new ArmJobAdminException($"Unexpected error updating schedule for job '{jobName}'.", ex);
+        }
+    }
+
+    private static JobExecution MapExecution(ContainerAppJobExecutionData data) =>
+        new(
+            ExecutionName: data.Name,
+            Status:        data.Status?.ToString() ?? "Unknown",
+            StartOn:       data.StartOn,
+            EndOn:         data.EndOn);
+
+    // Failed executions omit endTime. The system log still has the stop.
+    // A lookup failure leaves the blank ARM value; the page stays up.
+    private async Task<IReadOnlyList<JobExecution>> WithEndTimesAsync(
+        string jobName, IReadOnlyList<JobExecution> executions, CancellationToken cancellationToken)
+    {
+        if (_endTimes is null || executions.All(e => !JobExecutionEnds.NeedsLookup(e)))
+            return executions;
+
+        try
+        {
+            var found = await _endTimes.GetEndTimesAsync(jobName, executions, cancellationToken)
+                .ConfigureAwait(false);
+            return JobExecutionEnds.Apply(executions, found);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Could not fill end times for job {JobName}; failed executions keep a blank end time.",
+                JobLogSafe.Scrub(jobName));
+            return executions;
         }
     }
 
