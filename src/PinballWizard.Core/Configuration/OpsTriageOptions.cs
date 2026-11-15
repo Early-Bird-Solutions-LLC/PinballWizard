@@ -49,4 +49,25 @@ public sealed class OpsTriageOptions
 
     /// <summary>Public admin deep-link base (no trailing slash), e.g. https://pinwiz.ai.</summary>
     public string AdminBaseUrl { get; set; } = "https://pinwiz.ai";
+
+    /// <summary>
+    /// Max Foundry diagnoses accepted per rolling hour (AGENT-07 budget).
+    /// Excess runs fail closed with an explicit error (OBS-01).
+    /// </summary>
+    [Range(1, 500)]
+    public int MaxDiagnosesPerHour { get; set; } = 20;
+
+    /// <summary>Per-diagnosis Foundry wall-clock timeout.</summary>
+    [Range(5, 300)]
+    public int DiagnosisTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>In-process triage queue capacity (AGENT-12). Full → webhook 503.</summary>
+    [Range(1, 1000)]
+    public int QueueCapacity { get; set; } = 32;
+
+    /// <summary>
+    /// Alert rules allowed to trigger CI remediation (AGENT-10). Empty falls
+    /// back to the built-in allowlist in <c>OpsTriageRemediationPolicy</c>.
+    /// </summary>
+    public string[] AllowedRemediationAlertRules { get; set; } = [];
 }

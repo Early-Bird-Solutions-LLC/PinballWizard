@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
 
         services.TryAddSingleton<IOpsTriageWorkChannel, ChannelOpsTriageWorkChannel>();
+        services.TryAddSingleton<IOpsTriageInvocationBudget, HourlyOpsTriageInvocationBudget>();
         services.TryAddSingleton<IOpsTriageAgent, OpsTriageAgent>();
         services.TryAddSingleton<IOpsTriageNotifier, AcsOpsTriageNotifier>();
         services.TryAddSingleton<IOpsTriageRemediationDispatcher, GitHubOpsTriageRemediationDispatcher>();

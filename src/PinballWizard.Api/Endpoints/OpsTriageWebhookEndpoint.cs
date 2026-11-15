@@ -106,7 +106,17 @@ public static class OpsTriageWebhookEndpoint
         }
 
         await runs.UpsertAsync(run, cancellationToken).ConfigureAwait(false);
-        await queue.EnqueueAsync(run.Id, run.AlertDay, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await queue.EnqueueAsync(run.Id, run.AlertDay, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Ops triage queue full for {TriageRunId}", run.Id);
+            return Results.Json(
+                new { error = "Ops triage queue is full; retry later.", id = run.Id },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
 
         logger.LogInformation(
             "Accepted ops triage run {TriageRunId} rule={Rule} job={Job}",

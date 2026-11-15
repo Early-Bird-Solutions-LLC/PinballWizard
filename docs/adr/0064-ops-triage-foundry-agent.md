@@ -87,9 +87,16 @@ run state inside the Api/Web stack for showcase traceability.
   on-demand and token-bounded by the CI agent's existing WIF path (ADR-0047).
 - Blast radius of auto-fix PRs is gated by branch protection and human merge.
 
+## Kit status (ADR-0066)
+
+- **Category:** Hybrid (Foundry reason + CI mutate)  
+- **Trust tier:** Act  
+- **kit_status:** `transitional`  
+- **Expiry:** 2026-12-31 — by then close act-gate (AGENT-10), budgeted `RunAsync` (AGENT-07), outcomes UI, eval gold set, and KB — or extend this date explicitly in an ADR amendment. `enableOpsTriage` stays false until adversary P0s for this agent are closed.
+
 ## Related
 
 - Alert rule: `pinwiz-alert-aca-job-failure` in `infra/modules/shared.bicep`
 - Dead-man's-switch gap remains [#856](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/856)
 - PR feedback triage (ADR-0041) is unrelated — review bots, not runtime alerts
-- Lifecycle closure (outcomes / eval / KB) is required by [ADR-0066](0066-agent-lifecycle-kit.md) before claiming a self-improving ops agent; diagnose+act may ship with `enableOpsTriage=false` meanwhile
+- Lifecycle kit: [ADR-0066](0066-agent-lifecycle-kit.md)

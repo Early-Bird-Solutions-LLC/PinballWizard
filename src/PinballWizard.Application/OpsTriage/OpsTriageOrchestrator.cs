@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Observability;
+using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Application.OpsTriage;
 
@@ -10,6 +12,7 @@ public sealed class OpsTriageOrchestrator
     private readonly IOpsTriageAgent _agent;
     private readonly IOpsTriageNotifier _notifier;
     private readonly IOpsTriageRemediationDispatcher _remediation;
+    private readonly OpsTriageOptions _options;
     private readonly ILogger<OpsTriageOrchestrator> _logger;
 
     public OpsTriageOrchestrator(
@@ -17,12 +20,14 @@ public sealed class OpsTriageOrchestrator
         IOpsTriageAgent agent,
         IOpsTriageNotifier notifier,
         IOpsTriageRemediationDispatcher remediation,
+        IOptions<OpsTriageOptions> options,
         ILogger<OpsTriageOrchestrator> logger)
     {
         _runs = runs;
         _agent = agent;
         _notifier = notifier;
         _remediation = remediation;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -65,7 +70,11 @@ public sealed class OpsTriageOrchestrator
             run.NotificationStatus = await _notifier.NotifyAsync(run, diagnosis, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (diagnosis.RemediationReasonable)
+            var allowedRules = _options.AllowedRemediationAlertRules is { Length: > 0 }
+                ? new HashSet<string>(_options.AllowedRemediationAlertRules, StringComparer.OrdinalIgnoreCase)
+                : null;
+
+            if (OpsTriageRemediationPolicy.IsRemediationAllowed(run, diagnosis, allowedRules))
             {
                 run.Status = TriageRunStatus.Remediating;
                 await _runs.UpsertAsync(run, cancellationToken).ConfigureAwait(false);
@@ -77,9 +86,11 @@ public sealed class OpsTriageOrchestrator
                     run.SkipRemediationReason = "Remediation dispatcher returned no workflow URL.";
                 }
             }
-            else if (string.IsNullOrWhiteSpace(run.SkipRemediationReason))
+            else
             {
-                run.SkipRemediationReason = diagnosis.SkipRemediationReason ?? "Agent marked remediation not reasonable.";
+                run.SkipRemediationReason = OpsTriageRemediationPolicy.DescribeDenial(run, diagnosis, allowedRules)
+                    ?? "Remediation denied by deterministic gate.";
+                run.RemediationReasonable = false;
             }
 
             run.Status = TriageRunStatus.Completed;

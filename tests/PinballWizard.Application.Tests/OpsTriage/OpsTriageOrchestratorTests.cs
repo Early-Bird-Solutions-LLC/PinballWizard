@@ -1,14 +1,29 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.OpsTriage;
+using PinballWizard.Core.Configuration;
 using Xunit;
 
 namespace PinballWizard.Application.Tests.OpsTriage;
 
 public sealed class OpsTriageOrchestratorTests
 {
+    private static OpsTriageOrchestrator CreateSut(
+        ITriageRunRepository repo,
+        IOpsTriageAgent agent,
+        IOpsTriageNotifier notifier,
+        IOpsTriageRemediationDispatcher remediation)
+        => new(
+            repo,
+            agent,
+            notifier,
+            remediation,
+            Options.Create(new OpsTriageOptions()),
+            NullLogger<OpsTriageOrchestrator>.Instance);
+
     [Fact]
-    public async Task ProcessAsync_Diagnoses_Notifies_AndDispatchesWhenReasonable()
+    public async Task ProcessAsync_Diagnoses_Notifies_AndDispatchesWhenPolicyAllows()
     {
         var run = new TriageRun
         {
@@ -47,8 +62,7 @@ public sealed class OpsTriageOrchestratorTests
         remediation.DispatchAsync(run, diagnosis, Arg.Any<CancellationToken>())
             .Returns("https://github.com/example/actions/workflows/ops-triage-remediate.yml");
 
-        var sut = new OpsTriageOrchestrator(
-            repo, agent, notifier, remediation, NullLogger<OpsTriageOrchestrator>.Instance);
+        var sut = CreateSut(repo, agent, notifier, remediation);
 
         await sut.ProcessAsync("triage_test", "2026-11-15", CancellationToken.None);
 
@@ -67,6 +81,7 @@ public sealed class OpsTriageOrchestratorTests
             Id = "triage_skip",
             AlertDay = "2026-11-15",
             AlertRuleName = "pinwiz-alert-aca-job-failure",
+            JobName = "pinwiz-job-opdb-buutj",
             AlertSummary = "cf challenge",
             RawPayloadJson = "{}",
             Status = TriageRunStatus.Accepted,
@@ -90,13 +105,53 @@ public sealed class OpsTriageOrchestratorTests
         notifier.NotifyAsync(run, diagnosis, Arg.Any<CancellationToken>()).Returns("Skipped: no ACS");
         var remediation = Substitute.For<IOpsTriageRemediationDispatcher>();
 
-        var sut = new OpsTriageOrchestrator(
-            repo, agent, notifier, remediation, NullLogger<OpsTriageOrchestrator>.Instance);
+        var sut = CreateSut(repo, agent, notifier, remediation);
 
         await sut.ProcessAsync("triage_skip", "2026-11-15", CancellationToken.None);
 
         Assert.Equal(TriageRunStatus.Completed, run.Status);
         Assert.Equal("Third-party edge challenge — not repo-local.", run.SkipRemediationReason);
+        await remediation.DidNotReceive()
+            .DispatchAsync(Arg.Any<TriageRun>(), Arg.Any<OpsTriageDiagnosis>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DeniesDispatchWhenAgentSaysYesButRuleNotAllowlisted()
+    {
+        var run = new TriageRun
+        {
+            Id = "triage_gate",
+            AlertDay = "2026-11-15",
+            AlertRuleName = "some-other-alert",
+            JobName = "pinwiz-job-opdb-buutj",
+            AlertSummary = "other",
+            RawPayloadJson = "{}",
+            Status = TriageRunStatus.Accepted,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<ITriageRunRepository>();
+        repo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(run);
+
+        var diagnosis = new OpsTriageDiagnosis(
+            "Would remediate",
+            "cause",
+            ["e"],
+            RemediationReasonable: true,
+            RemediationPlan: new OpsTriageRemediationPlan("t", "f", "r"),
+            SkipRemediationReason: null);
+
+        var agent = Substitute.For<IOpsTriageAgent>();
+        agent.DiagnoseAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(diagnosis);
+        var notifier = Substitute.For<IOpsTriageNotifier>();
+        notifier.NotifyAsync(run, diagnosis, Arg.Any<CancellationToken>()).Returns("Sent");
+        var remediation = Substitute.For<IOpsTriageRemediationDispatcher>();
+
+        var sut = CreateSut(repo, agent, notifier, remediation);
+        await sut.ProcessAsync("triage_gate", "2026-11-15", CancellationToken.None);
+
+        Assert.False(run.RemediationReasonable);
+        Assert.Contains("allowlist", run.SkipRemediationReason, StringComparison.OrdinalIgnoreCase);
         await remediation.DidNotReceive()
             .DispatchAsync(Arg.Any<TriageRun>(), Arg.Any<OpsTriageDiagnosis>(), Arg.Any<CancellationToken>());
     }

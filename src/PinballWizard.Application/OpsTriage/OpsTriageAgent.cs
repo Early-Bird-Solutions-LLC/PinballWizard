@@ -1,8 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Observability;
+using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Application.OpsTriage;
 
@@ -19,11 +21,19 @@ public sealed class OpsTriageAgent : IOpsTriageAgent
     };
 
     private readonly IFoundryAgentFactory _agentFactory;
+    private readonly IOpsTriageInvocationBudget _budget;
+    private readonly OpsTriageOptions _options;
     private readonly ILogger<OpsTriageAgent> _logger;
 
-    public OpsTriageAgent(IFoundryAgentFactory agentFactory, ILogger<OpsTriageAgent> logger)
+    public OpsTriageAgent(
+        IFoundryAgentFactory agentFactory,
+        IOpsTriageInvocationBudget budget,
+        IOptions<OpsTriageOptions> options,
+        ILogger<OpsTriageAgent> logger)
     {
         _agentFactory = agentFactory;
+        _budget = budget;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -31,12 +41,20 @@ public sealed class OpsTriageAgent : IOpsTriageAgent
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(alertContextJson);
 
+        if (!_budget.TryAcquire(out var denyReason))
+        {
+            throw new InvalidOperationException(denyReason ?? "Ops Triage diagnosis budget exhausted.");
+        }
+
         var agent = _agentFactory.GetAgent(AgentName.OpsTriage);
         var prompt =
             "Diagnose this Azure Monitor / ops alert. Return ONLY the JSON object from your instructions.\n\n"
             + alertContextJson;
 
-        var response = await agent.RunAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.DiagnosisTimeoutSeconds, 5, 300)));
+
+        var response = await agent.RunAsync(prompt, cancellationToken: timeoutCts.Token).ConfigureAwait(false);
         var text = response.Text ?? string.Empty;
         try
         {
