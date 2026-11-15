@@ -23,7 +23,7 @@ public sealed class CgcMenuClientTests
         // canonical machines plus /update and /update/mac sub-pages, plus external
         // and non-coinop links. Modelled on the retired /coinop/ index (#967); the
         // live-shape equivalent against the current source is
-        // CgcMenuClientLiveShapeTests, which uses a captured fixture.
+        // ParseMachineLinks_CapturedSiteRoot_ReturnsEveryCoinOpMachine.
         const string html = """
             <html><body>
               <a href="/coinop/attack-from-mars">AFM</a>
@@ -49,6 +49,45 @@ public sealed class CgcMenuClientTests
         Assert.Contains(urls, u => u.AbsolutePath == "/coinop/pulp-fiction");
         Assert.DoesNotContain(urls, u => u.AbsolutePath.Contains("/update", StringComparison.Ordinal));
         Assert.DoesNotContain(urls, u => u.Host == "example.com");
+    }
+
+    [Fact]
+    public void ParseMachineLinks_CapturedSiteRoot_ReturnsEveryCoinOpMachine()
+    {
+        var html = CgcCapturedFixtures.Home();
+
+        var urls = CgcMenuClient.ParseMachineLinks(html, BaseUrl, Prefix);
+
+        // Literals, not derived from the fixture: a parser bug must not satisfy both sides.
+        string[] expected =
+        [
+            "https://www.chicago-gaming.com/coinop/attack-from-mars",
+            "https://www.chicago-gaming.com/coinop/cactus-canyon",
+            "https://www.chicago-gaming.com/coinop/medieval-madness",
+            "https://www.chicago-gaming.com/coinop/monster-bash",
+            "https://www.chicago-gaming.com/coinop/pulp-fiction",
+        ];
+        Assert.Equal(expected, urls.Select(u => u.AbsoluteUri).OrderBy(u => u, StringComparer.Ordinal).ToArray());
+
+        // The captured menu also links the upgrade sub-page and the home-arcade line.
+        Assert.Contains("/coinop/cactus-canyon/upgrade", html, StringComparison.Ordinal);
+        Assert.Contains("/arcade/foosball", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(urls, u => u.AbsolutePath.EndsWith("/upgrade", StringComparison.Ordinal));
+        Assert.DoesNotContain(urls, u => u.AbsolutePath.StartsWith("/arcade/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CapturedSitemap_Snapshot_OmitsCactusCanyonAndPulpFiction()
+    {
+        // Documents the captured evidence, not production code: discovery
+        // reads the site root instead of the machine-consumer sitemap
+        // because the sitemap is a 2019 snapshot that lists only three of
+        // the five machines the site sells.
+        var sitemap = CgcCapturedFixtures.Sitemap();
+
+        Assert.Contains("<loc>https://www.chicago-gaming.com/coinop/medieval-madness</loc>", sitemap, StringComparison.Ordinal);
+        Assert.DoesNotContain("/coinop/cactus-canyon<", sitemap, StringComparison.Ordinal);
+        Assert.DoesNotContain("/coinop/pulp-fiction<", sitemap, StringComparison.Ordinal);
     }
 
     [Fact]
