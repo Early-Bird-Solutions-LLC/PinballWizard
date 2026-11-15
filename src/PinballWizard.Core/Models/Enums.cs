@@ -80,6 +80,10 @@ public enum DocumentType
     // Per ADR-0043, access granted by Colin Alsheimer / Kineticist.
     NewsDigest,
 
+    // A short community play tip from the Match Play PinTips daily export,
+    // keyed by OPDB id. Indexed so a machine-scoped question can cite the tip.
+    PlayTip,
+
     // Multimorphic P3 SDK developer guide: per-module UsageInstructions,
     // INSTALL.txt, and ReleaseNotes.txt. Synthesized directly from the local
     // SDK zip via --sync-p3-sdk-docs; not PDF-derived and not change-feed

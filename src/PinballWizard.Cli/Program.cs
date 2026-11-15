@@ -32,6 +32,7 @@ using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
 using PinballWizard.Infrastructure.Integrations.Opdb;
+using PinballWizard.Infrastructure.Integrations.PinTips;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Catalog;
@@ -195,6 +196,11 @@ var syncTiltForumsRulesheetsOption = new Option<bool>("--sync-tiltforums-ruleshe
     Description = "Fetch and index Tilt Forums community rulesheets as Rulesheet documents in AI Search (ADR-0050 / Domain-2). Discovers rulesheets from the manufacturer-grouped master list wiki page, resolves each to a catalog machine scoped to its manufacturer (never guessing on cross-manufacturer title collisions), and indexes the wiki post content. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
 };
 
+var syncPinTipsOption = new Option<bool>("--sync-pintips")
+{
+    Description = "Fetch the Match Play PinTips daily export and index each tip as a PlayTip document in AI Search, keyed by OPDB id. Idempotent. Requires Cosmos, AI Search, and AI Foundry.",
+};
+
 var syncTwipNewsletterOption = new Option<bool>("--sync-twip-newsletter")
 {
     Description = "Fetch and index recent TWIP (This Week in Pinball) newsletter issues as NewsDigest documents in AI Search. Discovers articles from twip.kineticist.com/sitemap.xml, extracts content via AngleSharp (JSON-LD + body), and synthesizes chunks for indexing. Idempotent: safe to re-run. Use --twip-since to control the lookback window. Requires Cosmos, AI Search, and AI Foundry to be configured. ADR-0043.",
@@ -328,6 +334,7 @@ rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
 rootCommand.Options.Add(syncKineticistTutorialsOption);
 rootCommand.Options.Add(syncTiltForumsRulesheetsOption);
+rootCommand.Options.Add(syncPinTipsOption);
 rootCommand.Options.Add(syncTwipNewsletterOption);
 rootCommand.Options.Add(twipSinceOption);
 rootCommand.Options.Add(syncPbFreshdeskArticlesOption);
@@ -374,6 +381,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
     var syncKineticistTutorials = parseResult.GetValue(syncKineticistTutorialsOption);
     var syncTiltForumsRulesheets = parseResult.GetValue(syncTiltForumsRulesheetsOption);
+    var syncPinTips = parseResult.GetValue(syncPinTipsOption);
     var syncTwipNewsletter = parseResult.GetValue(syncTwipNewsletterOption);
     var twipSince = parseResult.GetValue(twipSinceOption);
     var syncPbFreshdeskArticles = parseResult.GetValue(syncPbFreshdeskArticlesOption);
@@ -1488,6 +1496,76 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    if (syncPinTips)
+    {
+        var pinTipsClient = host.Services.GetService<PinballWizard.Infrastructure.Integrations.PinTips.PinTipsClient>();
+        var pinTipsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer>();
+        var pinTipsIndexer = host.Services.GetService<IRagIndexer>();
+        if (pinTipsClient is null || pinTipsSynthesizer is null || pinTipsIndexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-pintips requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var pinTipsRawDocs = host.Services.GetService<IRawDocumentRepository>();
+        var tips = await pinTipsClient.FetchAsync(cancellationToken);
+        Console.WriteLine($"PinTips: {tips.Count} tip(s) to index.");
+        var pinTipsIndexed = 0;
+        var pinTipsFailed = 0;
+        var pinTipsRawFailed = 0;
+        var pinTipsOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
+        var pinTipsSource = SynthesizedSourceDescriptors.PinTips;
+        var exportUrl = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.PinTipsOptions>>().Value.ExportUrl;
+
+        foreach (var tip in tips)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+            var documentId = $"pintips_{tip.TipId}";
+            var title = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.TitleFor(tip);
+            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                MachineId: tip.OpdbId,
+                MachineTitle: tip.OpdbId,
+                Manufacturer: "PinTips",
+                DocumentId: documentId,
+                DocumentUrl: exportUrl,
+                DocumentType: PinballWizard.Core.Models.DocumentType.PlayTip,
+                LastScrapedUtc: DateTimeOffset.UtcNow);
+            var chunks = pinTipsSynthesizer.Synthesize(tip, exportUrl, chunkRequest);
+            if (chunks.Count == 0) continue;
+
+            try
+            {
+                var result = await pinTipsIndexer.UpsertAsync(chunkRequest, chunks, pinTipsOptions, cancellationToken);
+                if (result.Failures.Count > 0)
+                {
+                    pinTipsFailed++;
+                    continue;
+                }
+
+                pinTipsIndexed++;
+                var synDoc = SynthesizedDocumentRecordFactory.Create(
+                    documentId, title, exportUrl, pinTipsSource.DiscoveryContext,
+                    pinTipsSource.DocumentType, pinTipsSource.FileFormat, pinTipsSource.ManufacturerOverride!,
+                    null, null, DateTimeOffset.UtcNow);
+                if (!await SynthesizedRawDocWriter.TryPersistAsync(pinTipsRawDocs, synDoc, cancellationToken))
+                {
+                    pinTipsRawFailed++;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"  Failed to index PinTips tip {tip.TipId}: {ex.Message}");
+                pinTipsFailed++;
+            }
+        }
+
+        Console.WriteLine($"--sync-pintips complete: indexed={pinTipsIndexed} failed={pinTipsFailed} raw_doc_write_failed={pinTipsRawFailed}");
+        if (pinTipsFailed > 0) Environment.ExitCode = 1;
+        return;
+    }
+
     // Handle --sync-twip-newsletter (Domain-2 — index TWIP newsletter issues as
     // NewsDigest docs in AI Search, ADR-0043). Discovers articles from the TWIP
     // sitemap (twip.kineticist.com/sitemap.xml) filtered by --twip-since date.
@@ -2156,6 +2234,7 @@ static IHost CreateHost(string[] args)
         // Inside the RAG gate because TwipNewsletterSynthesizer depends on
         // IChunker, which AddHybridChunker() registers (line above).
         builder.Services.AddTwipScraping(builder.Configuration);
+        builder.Services.AddPinTips(builder.Configuration);
 
         // P3 SDK docs synthesizer — indexes Multimorphic P3 SDK developer guides
         // (UsageInstructions + INSTALL.txt + ReleaseNotes.txt) as SdkGuide chunks

@@ -62,6 +62,14 @@ public static class SynthesizedSourceDescriptors
         ManufacturerOverride: "Kineticist",
         ContentTitleSuffixToStrip: null);
 
+    public static readonly SynthesizedSourceDescriptor PinTips = new(
+        DocumentIdPrefix: "pintips_",
+        DiscoveryContext: "PinTips",
+        DocumentType: DocumentType.PlayTip,
+        FileFormat: "md",
+        ManufacturerOverride: "PinTips",
+        ContentTitleSuffixToStrip: null);
+
     public static readonly SynthesizedSourceDescriptor PbFreshdesk = new(
         DocumentIdPrefix: "pb_freshdesk_",
         DiscoveryContext: "Pinball Brothers Freshdesk Article",
@@ -71,7 +79,7 @@ public static class SynthesizedSourceDescriptors
         ContentTitleSuffixToStrip: null);
 
     public static readonly IReadOnlyList<SynthesizedSourceDescriptor> All =
-        [Kineticist, TiltForums, Twip, PbFreshdesk];
+        [Kineticist, TiltForums, Twip, PinTips, PbFreshdesk];
 
     // Synthetic machine ids the synthesizers use for content that is NOT specific to
     // a single machine (TWIP weekly news → "pinball_news"; Pinball Brothers
