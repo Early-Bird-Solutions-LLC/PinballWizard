@@ -291,9 +291,9 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
             Arg.Any<DateTimeOffset?>(), 2000, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
-    // Fix 1: search box must reappear once the cleared search's refetch actually runs.
+    // #899: search box stays visible across clear — no 400ms debounce gap.
     [Fact]
-    public async Task Admin_Search_ClearAfterNoMatch_SearchBoxReappearsAfterDebouncedRefetch()
+    public async Task Admin_Search_ClearAfterNoMatch_SearchBoxStaysVisible()
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
@@ -310,16 +310,8 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         await cut.WaitForAssertionAsync(() => cut.Find("[data-testid='exec-log-nomatch']"), TimeSpan.FromSeconds(3));
         await cut.InvokeAsync(() => input.Input(""));
 
-        // The search box's visibility condition is Lines.Count > 0 || HasSearch || _logBusy.
-        // Clearing the input sets HasSearch=false with the stale zero-result Lines still
-        // empty, so the box is genuinely absent for ~400ms until MudTextField's
-        // DebounceInterval elapses and OnSearchAsync sets _logBusy=true — a real UI
-        // flicker, tracked as a product decision in #899, not something this test fix
-        // should paper over. This assertion documents that actual behavior (matching the
-        // 3s margin used two lines above for the same debounce) rather than asserting the
-        // continuous visibility a plain Find here used to race (#898).
-        await cut.WaitForAssertionAsync(
-            () => cut.Find("[data-testid='exec-log-search']"), TimeSpan.FromSeconds(3));
+        // Immediate assertion — box must not disappear during the debounce window.
+        Assert.NotNull(cut.Find("[data-testid='exec-log-search']"));
     }
 
     // Fix 5a: truncation banner text — no-search case says "output was truncated".
