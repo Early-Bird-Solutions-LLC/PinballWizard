@@ -75,6 +75,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<MarketValueTool>();
         services.TryAddSingleton<KineticistGuideLinkTool>();
         services.TryAddSingleton<MatchPlayTournamentTool>();
+        services.TryAddSingleton<MatchPlayRatingsTool>();
         services.TryAddSingleton<IfpaWpprTool>();
         services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.TryAddSingleton<ITokenUsageReader, NullTokenUsageReader>();
