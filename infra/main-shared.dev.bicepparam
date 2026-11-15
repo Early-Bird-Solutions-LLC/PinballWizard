@@ -6,8 +6,11 @@
 // identifiers, not credentials. They are committed deliberately so the
 // Bicep is reproducible from a fresh clone.
 //
-// To override values without committing changes, copy this file to
-// `main-shared.dev.local.bicepparam` (gitignored) and edit there.
+// Personal overlays: create a MINIMAL `main-shared.dev.local.bicepparam`
+// (gitignored) with only `param developerObjectId = '…'`. Deploy scripts
+// always load THIS committed file and layer allowlisted local values via
+// --parameters (#400). Do not copy this whole file into .local — that used
+// to silently drop committed param additions.
 // =============================================================================
 
 using 'main-shared.bicep'
