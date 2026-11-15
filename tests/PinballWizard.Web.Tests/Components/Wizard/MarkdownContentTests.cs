@@ -329,4 +329,26 @@ public sealed class MarkdownContentTests
         Assert.Equal(2, ols[0].QuerySelectorAll("ul").Length);
         Assert.Equal(3, ols[0].QuerySelectorAll("ul li").Length);
     }
+
+    [Fact]
+    public void Blank_line_after_ordered_list_starts_sibling_ul()
+    {
+        // #786 Bugbot: blank then "- tip" must NOT nest under the last <li>.
+        using var ctx = BuildCtx();
+        var text =
+            "1. First step\n" +
+            "2. Second step\n" +
+            "\n" +
+            "- Tip one\n" +
+            "- Tip two";
+        var cut = ctx.Render<MarkdownContent>(p => p.Add(c => c.Text, text));
+
+        Assert.Single(cut.FindAll("ol"));
+        var uls = cut.FindAll("ul").ToList();
+        Assert.Single(uls);
+        // Sibling <ul> is not under the <ol>.
+        Assert.Empty(cut.Find("ol").QuerySelectorAll("ul"));
+        Assert.Equal(2, uls[0].QuerySelectorAll("li").Length);
+        Assert.Contains("Tip one", uls[0].TextContent, StringComparison.Ordinal);
+    }
 }

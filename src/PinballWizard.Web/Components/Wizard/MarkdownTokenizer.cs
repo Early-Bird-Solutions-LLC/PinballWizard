@@ -134,14 +134,15 @@ internal static class MarkdownTokenizer
                 {
                     if (string.IsNullOrWhiteSpace(lines[i]))
                     {
-                        // Blank inside a list: peek — continue if next non-blank
-                        // is still a list item (OL or nested UL); else end list.
+                        // Blank inside a list: peek — continue only if the next
+                        // non-blank is still an ordered item. A blank line then
+                        // "- tip" starts a sibling <ul>, not a nest under the
+                        // last <li> (#786 Bugbot). Nested bullets stay attached
+                        // when they immediately follow an item (no blank).
                         var peek = i + 1;
                         while (peek < lines.Length && string.IsNullOrWhiteSpace(lines[peek]))
                             peek++;
-                        if (peek < lines.Length
-                            && (IsOrderedListItem(lines[peek], out _)
-                                || IsUnorderedListItem(lines[peek], out _)))
+                        if (peek < lines.Length && IsOrderedListItem(lines[peek], out _))
                         {
                             i++;
                             continue;
