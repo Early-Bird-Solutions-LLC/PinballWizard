@@ -76,13 +76,11 @@ public static class FollowUpCitationInheritance
             }
         }
 
-        foreach (var token in normalized.Split(' '))
+        if (normalized.Split(' ')
+            .Select(static token => token.TrimEnd('?', '.', '!', ',', ';', ':'))
+            .Any(static bare => bare.Length > 0 && NewIntentWords.Contains(bare)))
         {
-            var bare = token.TrimEnd('?', '.', '!', ',', ';', ':');
-            if (bare.Length > 0 && NewIntentWords.Contains(bare))
-            {
-                return false;
-            }
+            return false;
         }
 
         return true;
