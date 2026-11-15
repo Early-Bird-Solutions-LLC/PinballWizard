@@ -133,9 +133,9 @@ public sealed class StandardsConformanceTests
         // references a real rule ID or carries the pending marker. The prefix
         // set is explicit so an ADR link (e.g. ADR-0012) is NOT mistaken for a
         // rule reference — only a genuine PROV-/POLITE-/COSMOS-/OBS-/TEST-/DLV-
-        // reference counts as "links a rule".
+        // /AGENT- reference counts as "links a rule".
         var entryStart = new Regex(@"^\d+\.\s", RegexOptions.Compiled);
-        var ruleRef = new Regex(@"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV|RAG|FE|COMM|IAC)-\d{2}\b", RegexOptions.Compiled);
+        var ruleRef = new Regex(@"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV|RAG|FE|COMM|IAC|AGENT)-\d{2}\b", RegexOptions.Compiled);
 
         var untracked = invariants
             .Where(l => entryStart.IsMatch(l))

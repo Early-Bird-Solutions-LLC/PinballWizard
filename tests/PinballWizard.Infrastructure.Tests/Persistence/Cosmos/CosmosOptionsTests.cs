@@ -128,8 +128,9 @@ public sealed class CosmosOptionsTests
         // (per-manufacturer rollup, /manufacturer) + catalog_stats_leases
         // (Change Feed lease container for the second consumer, /id).
         // Scrape-run history 5a: adds scrape_runs (per-run history, /source_id).
+        // Ops Triage ADR-0064: adds ops_triage_runs (alert triage history, /alert_day).
         var options = new CosmosOptions();
-        Assert.Equal(15, options.Containers.Count);
+        Assert.Equal(16, options.Containers.Count);
 
         var settings = Assert.Single(options.Containers, c => c.Name == "admin_settings");
         Assert.Equal("/key", settings.PartitionKeyPath);
@@ -144,6 +145,11 @@ public sealed class CosmosOptionsTests
         Assert.Equal("/source_id", runs.PartitionKeyPath);
         Assert.Null(runs.DefaultTtlSeconds);    // full run history is the feature's value — no auto-expiry
         Assert.NotNull(runs.IndexingPolicy);    // selective index (source_id + run_at + succeeded)
+
+        var triage = Assert.Single(options.Containers, c => c.Name == "ops_triage_runs");
+        Assert.Equal("/alert_day", triage.PartitionKeyPath);
+        Assert.Null(triage.DefaultTtlSeconds);  // admin history retained; AGENT-07 TTL is app-layer if needed
+        Assert.NotNull(triage.IndexingPolicy);  // selective index (alert_day + status + created_at_utc)
     }
 
     [Fact]
