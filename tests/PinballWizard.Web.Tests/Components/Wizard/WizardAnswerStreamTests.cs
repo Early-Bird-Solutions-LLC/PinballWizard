@@ -117,6 +117,62 @@ public sealed class WizardAnswerStreamTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // Idle_state_has_visually_hidden_h1 (#789)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Idle_state_has_exactly_one_visually_hidden_h1()
+    {
+        await using var ctx = BuildCtx();
+        var cut = ctx.Render<WizardAnswerStream>();
+
+        var headings = cut.FindAll("h1");
+        Assert.Single(headings);
+        Assert.Contains("pw-visually-hidden", headings[0].ClassList);
+        Assert.Equal("Ask the Wizard", headings[0].TextContent.Trim());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Submitted_question_is_visible_h1 (#789)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Submitted_question_is_the_visible_page_h1()
+    {
+        var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => NeverYieldsAsync());
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(
+            p => p.Add(c => c.Question, "what are the rules for Medieval Madness"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='submitted-question']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        var headings = cut.FindAll("h1");
+        Assert.Single(headings);
+        Assert.DoesNotContain("pw-visually-hidden", headings[0].ClassList);
+        Assert.Equal(
+            "what are the rules for Medieval Madness",
+            headings[0].TextContent.Trim());
+        Assert.Equal(
+            "what are the rules for Medieval Madness",
+            cut.Find("[data-testid='submitted-question']").TextContent.Trim());
+
+        static async IAsyncEnumerable<AnswerChunk> NeverYieldsAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            yield break;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // Submitted_state_renders_thinking_indicator
     // ──────────────────────────────────────────────────────────────────────
 

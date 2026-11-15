@@ -26,6 +26,10 @@
     color: var(--pw-accent-grounded);
     text-decoration: none;
     transition: opacity 0.15s ease;
+    /* 44×44 hit area (#789) — text stays 11px; flex box grows the target. */
+    min-block-size: 44px;
+    display: inline-flex;
+    align-items: center;
 }
 
 .partners-strip__attribution-link:hover {

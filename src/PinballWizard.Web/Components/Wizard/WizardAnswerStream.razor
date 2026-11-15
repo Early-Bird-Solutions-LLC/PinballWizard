@@ -38,6 +38,14 @@
 
 <div class="wizard-answer-stream" data-testid="wizard-answer-stream">
 
+    @* Document outline (#789): Idle → one visually-hidden <h1>; after submit
+       the live question is the visible <h1>. Prior thread turns use <h2> so
+       the page never has two <h1>s and screen readers get a real outline. *@
+    @if (_state == AnswerState.Idle)
+    {
+        <h1 class="pw-visually-hidden">Ask the Wizard</h1>
+    }
+
     @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
        Lives in component state only — circuit lifetime, no persistence
        (ADR-0027: the ban is on PERSISTENT session history; a page refresh
@@ -49,7 +57,7 @@
             @foreach (var turn in _thread)
             {
                 <div class="wizard-thread__turn" data-testid="conversation-turn">
-                    <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
+                    <MudText Typo="Typo.h2" Class="wizard-answer-stream__question"
                              data-testid="turn-question">
                         @turn.Question
                     </MudText>
@@ -74,11 +82,11 @@
     }
     else if (_state is not AnswerState.Complete and not AnswerState.Refusal and not AnswerState.Error)
     {
-        @* Submitted question header + Cancel while the answer streams.
+        @* Submitted question is the page <h1> (#789) + Cancel while streaming.
            Terminal-state follow-up controls render BELOW the answer (#787) —
            never between the question and the body. *@
         <MudStack Spacing="1" Class="mb-3">
-            <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
+            <MudText Typo="Typo.h1" Class="wizard-answer-stream__question"
                      data-testid="submitted-question">
                 @_submittedQuestion
             </MudText>
@@ -93,9 +101,9 @@
     }
     else
     {
-        @* Terminal states still show the question heading above the answer. *@
+        @* Terminal states: live question remains the visible <h1> above the answer. *@
         <MudStack Spacing="1" Class="mb-3">
-            <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
+            <MudText Typo="Typo.h1" Class="wizard-answer-stream__question"
                      data-testid="submitted-question">
                 @_submittedQuestion
             </MudText>
