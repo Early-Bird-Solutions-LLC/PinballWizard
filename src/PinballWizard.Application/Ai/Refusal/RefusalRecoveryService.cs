@@ -311,6 +311,15 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
             related = null;
         }
 
+        // #784 Bugbot Medium: token-overlap QueryByTitleAsync exact-matches
+        // each question token to the full title, so multi-word CTAs never
+        // place the pinned machineId in RelatedMachines. Resolve by OPDB
+        // group siblings when overlap missed — we already know the id.
+        if (known is null)
+        {
+            known = await TryResolveKnownMachineByIdAsync(machineId, ct).ConfigureAwait(false);
+        }
+
         var missingWhat = known is not null
             ? MissingWhatMachineKnownNoDocs(known.Title)
             : MissingWhat_MachineKnownNoDocsGeneric;
@@ -405,6 +414,46 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
         }
 
         return cards.Count > 0 ? cards.AsReadOnly() : null;
+    }
+
+    // Point-read substitute when we have machineId but not manufacturer:
+    // ADR-0029 group siblings share the leading OPDB segment; filter to id.
+    private async Task<RelatedMachine?> TryResolveKnownMachineByIdAsync(
+        string machineId,
+        CancellationToken ct)
+    {
+        var dash = machineId.IndexOf('-');
+        var groupId = dash > 0 ? machineId[..dash] : machineId;
+        if (string.IsNullOrWhiteSpace(groupId))
+        {
+            return null;
+        }
+
+        try
+        {
+            await foreach (var machine in _machines
+                .GetSiblingsByGroupIdAsync(groupId, ct)
+                .ConfigureAwait(false))
+            {
+                if (string.Equals(machine.Id, machineId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new RelatedMachine(
+                        MachineId: machine.Id,
+                        Title: machine.Title,
+                        OpdbUrl: machine.OpdbSourceUrl);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort — keep the generic MissingWhat rather than fail the gate.
+            _logger.LogWarning(
+                ex,
+                "RefusalRecoveryService: failed resolving known machine {MachineId} via group siblings.",
+                machineId);
+        }
+
+        return null;
     }
 
     private async Task<IReadOnlyList<RelatedMachine>> FindRelatedMachinesAsync(
