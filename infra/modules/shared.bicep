@@ -173,6 +173,9 @@ param kineticistSyncCronExpression string = '0 11 * * 0'
 @description('Cron schedule expression (UTC) for the weekly TWIP newsletter sync ACA Job. Default is 8 am Sunday (between OPDB sync at 3 am and Stern refresh at 10 am). TWIP is published Friday; Sunday gives a buffer for Beehiiv publishing lag. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param twipNewsletterCronExpression string = '0 8 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly PinTips sync ACA Job. Default is 5 pm Sunday, after the 3 am OPDB sync and clear of the 10 am Stern refresh. --sync-pintips re-embeds every tip (no content-hash skip); the 2026-11-15 run took about 71 minutes for 5542 documents. Has no effect when deployPhase2=false or deployAiSearch=false.')
+param pinTipsCronExpression string = '0 17 * * 0'
+
 @description('Cron schedule expression (UTC) for the weekly Multimorphic scraper ACA Job. Default is 4 am Sunday. Runs --source multimorphic. Has no effect when deployPhase2=false.')
 param multimorphicCronExpression string = '0 4 * * 0'
 
@@ -2699,6 +2702,7 @@ module acaJobs 'aca-jobs.bicep' = if (deployPhase2 && manageAcaJobs) {
     sternRefreshCronExpression: sternRefreshCronExpression
     kineticistSyncCronExpression: kineticistSyncCronExpression
     twipNewsletterCronExpression: twipNewsletterCronExpression
+    pinTipsCronExpression: pinTipsCronExpression
     multimorphicCronExpression: multimorphicCronExpression
     cgcCronExpression: cgcCronExpression
     barrelsOfFunCronExpression: barrelsOfFunCronExpression
