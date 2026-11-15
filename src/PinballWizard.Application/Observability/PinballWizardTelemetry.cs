@@ -118,6 +118,11 @@ public static class PinballWizardTelemetry
         unit: "{citation}",
         description: "Citations carried forward from a prior conversation turn because the current turn answered from conversation context without firing a retrieval tool. A high ratio of inherited-to-extracted suggests follow-ups rarely re-ground — expected for clarifying questions, worth investigating if it dominates.");
 
+    public static readonly Counter<long> AiCitationsDroppedUnusedSubject = Meter.CreateCounter<long>(
+        "pinwiz.ai.citations.dropped_unused_subject_total",
+        unit: "{citation}",
+        description: "Citations dropped by AnswerCitedSubjectFilter because their machine subject never appeared in the answer prose (ADR-0062 / #783). A sustained rate means retrieval is returning unused hits — expected on broad recommendations; investigate if it dominates single-machine rules answers.");
+
     public static readonly Counter<long> AiCostUsdCents = Meter.CreateCounter<long>(
         "pinwiz.ai.cost_usd_cents",
         unit: "USD-cents",
