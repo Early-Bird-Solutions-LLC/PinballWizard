@@ -12,8 +12,11 @@ namespace PinballWizard.Application.Findability;
 //   2. When more than one token remains, also strip question-intent words
 //      (strategy, tips, rules, …) so they cannot outrank short machine names
 //      like Jaws / Tron. A bare name query "strategy" keeps that sole token.
-//   3. Post-filter hits: title must share a remaining token (exact or prefix
-//      ≥3 chars) so typing "transform…" still surfaces Transformers.
+//      If stripping intent would empty the query (e.g. "pinball wizard"),
+//      keep the intent tokens — they are the name (#780 Bugbot Medium).
+//   3. Post-filter hits with TitleMatchesQuery ONLY when fluff was stripped
+//      (question-shaped). Bare / synonym / phonetic name typing must not
+//      require lexical title overlap (#780 Bugbot High).
 //
 // Stopword list mirrors MachineGroundingTool.TokenStopWords (canonical
 // machine-title vocabulary) plus typeahead-specific question contractions
@@ -56,37 +59,67 @@ public static class MachineSuggestQueryNormalizer
     // the entity word ("transform" → Transformers).
     internal const int MinPrefixMatchLength = 3;
 
-    // Tokenizes free text for suggest: lowercase, split on whitespace /
-    // punctuation, drop single-char tokens and stopwords, then (when the
-    // query is question-shaped) drop question-intent words. Numerics kept.
-    public static IReadOnlyList<string> Tokenize(string text)
+    // Result of normalizing a suggest query: tokens for AI Search, plus
+    // whether lexical title overlap must be enforced on hits.
+    public readonly record struct NormalizedSuggestQuery(
+        IReadOnlyList<string> Tokens,
+        bool RequireTitleTokenOverlap);
+
+    // Full normalize path used by MachineSuggestService.
+    public static NormalizedSuggestQuery Normalize(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return [];
+            return new([], RequireTitleTokenOverlap: false);
 
         var lower = text.ToLowerInvariant();
         var raw = lower.Split(
             [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
             StringSplitOptions.RemoveEmptyEntries);
 
-        var result = new List<string>(raw.Length);
+        var afterStopwords = new List<string>(raw.Length);
+        var removedStopwords = false;
         foreach (var tok in raw)
         {
-            if (tok.Length <= 1) continue;
-            if (StopWords.Contains(tok)) continue;
-            result.Add(tok);
+            if (tok.Length <= 1)
+                continue;
+            if (StopWords.Contains(tok))
+            {
+                removedStopwords = true;
+                continue;
+            }
+
+            afterStopwords.Add(tok);
         }
 
-        // Multi-token (question-shaped): strip intent fluff so it cannot
-        // compete with short machine names on length. Sole remaining token
-        // is kept even if it is also an intent word (name typing).
-        if (result.Count > 1)
+        var removedIntent = false;
+        var tokens = afterStopwords;
+        if (afterStopwords.Count > 1)
         {
-            result.RemoveAll(static t => QuestionIntentWords.Contains(t));
+            var withoutIntent = afterStopwords
+                .Where(static t => !QuestionIntentWords.Contains(t))
+                .ToList();
+
+            // If every remaining token is also an intent word (e.g. "pinball
+            // wizard"), keep them — they are the machine name, not fluff.
+            if (withoutIntent.Count > 0)
+            {
+                if (withoutIntent.Count < afterStopwords.Count)
+                    removedIntent = true;
+                tokens = withoutIntent;
+            }
         }
 
-        return result;
+        // Post-filter only when we actually stripped question fluff. Bare
+        // name / abbreviation / typo queries rely on synonym + phonetic
+        // index fields and must not demand lexical title overlap.
+        var requireOverlap = (removedStopwords || removedIntent) && tokens.Count > 0;
+        return new(tokens, requireOverlap);
     }
+
+    // Tokenizes free text for suggest (tokens only). Prefer Normalize when
+    // the caller also needs the post-filter gate.
+    public static IReadOnlyList<string> Tokenize(string text)
+        => Normalize(text).Tokens;
 
     // Search text sent to AI Search. Empty when every token was a stopword —
     // caller should return no suggestions (honest empty, no I/O).
@@ -132,14 +165,8 @@ public static class MachineSuggestQueryNormalizer
             [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
             StringSplitOptions.RemoveEmptyEntries);
 
-        var result = new List<string>(raw.Length);
-        foreach (var tok in raw)
-        {
-            if (tok.Length <= 1) continue;
-            if (StopWords.Contains(tok)) continue;
-            result.Add(tok);
-        }
-
-        return result;
+        return raw
+            .Where(static tok => tok.Length > 1 && !StopWords.Contains(tok))
+            .ToList();
     }
 }

@@ -140,6 +140,25 @@ public sealed class MachineSuggestServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SuggestAsync_BareAbbreviation_KeepsSynonymHitWithoutTitleOverlap()
+    {
+        // Index resolved AFM via synonym → Attack from Mars. Title has no "afm"
+        // token — post-filter must not drop it (Bugbot High).
+        var hits = new List<MachineSearchHit>
+        {
+            BuildHit("G-afm", "Attack from Mars", "Bally", 1995, groupId: null, score: 9.0),
+        };
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync("afm", top: 8, CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal("Attack from Mars", result[0].Title);
+    }
+
     // ── Unconfigured index ────────────────────────────────────────────────────
 
     [Fact]

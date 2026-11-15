@@ -50,6 +50,35 @@ public sealed class MachineSuggestQueryNormalizerTests
         Assert.Equal(["jaws"], tokens);
     }
 
+    [Fact]
+    public void Tokenize_NameMadeOfIntentWords_KeepsTokens()
+    {
+        // "pinball wizard" is only QuestionIntentWords — stripping would empty
+        // the query and never hit the index (Bugbot Medium).
+        Assert.Equal(["pinball", "wizard"], MachineSuggestQueryNormalizer.Tokenize("pinball wizard"));
+    }
+
+    [Fact]
+    public void Normalize_BareAbbreviation_DoesNotRequireTitleOverlap()
+    {
+        // Synonym / phonetic hits (AFM → Attack from Mars) have no lexical
+        // overlap with the typed token — post-filter must stay off (Bugbot High).
+        var normalized = MachineSuggestQueryNormalizer.Normalize("afm");
+
+        Assert.Equal(["afm"], normalized.Tokens);
+        Assert.False(normalized.RequireTitleTokenOverlap);
+    }
+
+    [Fact]
+    public void Normalize_QuestionShaped_RequiresTitleOverlap()
+    {
+        var normalized = MachineSuggestQueryNormalizer.Normalize(
+            "whats a good strategy for transformers");
+
+        Assert.Equal(["transformers"], normalized.Tokens);
+        Assert.True(normalized.RequireTitleTokenOverlap);
+    }
+
     [Theory]
     [InlineData("Transformers", true)]
     [InlineData("Transformers: More Than Meets the Eye", true)]

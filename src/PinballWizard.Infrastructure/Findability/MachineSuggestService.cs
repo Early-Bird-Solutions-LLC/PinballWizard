@@ -70,7 +70,8 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         // Strip question stopwords before hitting the index (#785). A full
         // sentence like "whats a good strategy for transformers" otherwise
         // BM25-matches Fore / No Good Gofers / Invasion Strategy on fluff.
-        var queryTokens = MachineSuggestQueryNormalizer.Tokenize(query);
+        var normalized = MachineSuggestQueryNormalizer.Normalize(query);
+        var queryTokens = normalized.Tokens;
         var searchText = MachineSuggestQueryNormalizer.BuildSearchText(queryTokens);
         if (searchText.Length == 0)
             return [];
@@ -96,15 +97,21 @@ internal sealed class MachineSuggestService : IMachineSuggestService
             var hits = await _index.SearchAsync(
                 searchText, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
 
-            // Post-filter: keep only titles that share a remaining query token
-            // (exact or prefix ≥3). Always applied — after intent stripping a
-            // question often collapses to one entity token, and BM25 may still
-            // return fluff hits from the pre-normalized query shape.
-            var filtered = hits
+            // Title post-filter (#785 Bugbot High):
+            // - Question-shaped (fluff stripped): always require lexical overlap
+            //   so BM25 noise on stopwords/intent cannot survive.
+            // - Bare typing: if any hit overlaps the typed token(s), keep only
+            //   those; if none overlap, keep all — synonym / title_phonetic
+            //   resolutions (e.g. AFM → Attack from Mars) have no lexical
+            //   title overlap and must not be wiped.
+            IReadOnlyList<MachineSearchHit> forCollapse = hits;
+            var lexical = hits
                 .Where(h => MachineSuggestQueryNormalizer.TitleMatchesQuery(h.Title, queryTokens))
                 .ToList();
+            if (normalized.RequireTitleTokenOverlap || lexical.Count > 0)
+                forCollapse = lexical;
 
-            return CollapseEditions(filtered, top);
+            return CollapseEditions(forCollapse, top);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
