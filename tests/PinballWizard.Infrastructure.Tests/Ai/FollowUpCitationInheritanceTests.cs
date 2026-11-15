@@ -30,6 +30,11 @@ public sealed class FollowUpCitationInheritanceTests
     [InlineData("What are alternatives to Medieval Madness?")]
     [InlineData("Compare Medieval Madness vs Attack from Mars")]
     [InlineData("games like Medieval Madness")]
+    // Sentence-edge / "?"-attached compare-family markers (#780 Bugbot).
+    [InlineData("How do they compare?")]
+    [InlineData("Compare Medieval Madness and Attack from Mars?")]
+    [InlineData("vs Attack from Mars")]
+    [InlineData("Medieval Madness versus?")]
     public void ShouldInherit_NewIntentFollowUps_ReturnsFalse(string followUp)
     {
         Assert.False(FollowUpCitationInheritance.ShouldInherit(followUp, [Prior]));
