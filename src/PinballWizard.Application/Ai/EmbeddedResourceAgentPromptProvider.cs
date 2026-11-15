@@ -59,9 +59,11 @@ namespace PinballWizard.Application.Ai;
 // the Wizard-injected <kineticist_guides> block (mirror Valuation.md's
 // <market_value> pattern) so thin-corpus Rules answers deep-link instead of
 // OPDB-only refusing.
-// Bumped to "v11.2026.11" (ADR-0067): Wizard.md Step 3.10 + tools list wire
-// searchIfpaPlayers / getIfpaPlayer for IFPA WPPR routing — distinct from
-// Match Play live-event tools. Cache key bump evicts pre-IFPA answers.
+// Bumped to "v11.2026.11" (ADR-0064 + ADR-0067): adds OpsTriage.md (Foundry
+// ops diagnosis for alert enrichment + gated remediation) and Wizard.md
+// Step 3.10 + tools list wire searchIfpaPlayers / getIfpaPlayer for IFPA
+// WPPR routing — distinct from Match Play live-event tools. Cache key bump
+// evicts pre-OpsTriage / pre-IFPA answers.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
     public const string CurrentPromptVersion = "v11.2026.11";

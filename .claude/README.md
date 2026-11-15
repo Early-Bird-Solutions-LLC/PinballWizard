@@ -7,7 +7,7 @@ This directory configures how [Claude Code](https://claude.ai/code) assists with
 | File / folder | Purpose |
 |---|---|
 | `../CLAUDE.md` | Project-level instructions loaded into every Claude session — the "constitution" for how Claude behaves in this repo |
-| `INVARIANTS.md` | Index of 18 locked architectural decisions — converted domains link to the canonical standards rules; wave-2 entries carry prose stubs marked `→ standard pending`. |
+| `INVARIANTS.md` | Index of locked architectural decisions — converted domains link to the canonical standards rules (includes AGENT-* lifecycle kit, ADR-0066). |
 | `standards/` | Machine-checkable, enforcement-first domain standards (RULE blocks + per-domain REQUIREMENTS index) governed by `pinball-standards-protocol.md`. The canonical home for converted invariants; `/standards-audit` runs them. |
 | `PR-AUDIT.md` | Pre-push self-audit checklist run before every non-trivial PR. Step 0 is a qualitative `/local-review`; Steps 1–12 are mechanical invariant checks. |
 | `settings.json` | Shared permission allowlist — `dotnet build/test/restore` are pre-approved; everything else requires per-session confirmation |

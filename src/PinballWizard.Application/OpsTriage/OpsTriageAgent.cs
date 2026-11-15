@@ -1,0 +1,141 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PinballWizard.Application.Ai;
+using PinballWizard.Application.Observability;
+using PinballWizard.Core.Configuration;
+
+namespace PinballWizard.Application.OpsTriage;
+
+public sealed class OpsTriageAgent : IOpsTriageAgent
+{
+    // OpsTriage.md requires snake_case JSON (likely_cause, remediation_reasonable).
+    // JsonSerializerDefaults.Web is camelCase and does not bridge underscores even
+    // with PropertyNameCaseInsensitive — bind with SnakeCaseLower (ADR-0064).
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    private readonly IFoundryAgentFactory _agentFactory;
+    private readonly IOpsTriageInvocationBudget _budget;
+    private readonly OpsTriageOptions _options;
+    private readonly ILogger<OpsTriageAgent> _logger;
+
+    public OpsTriageAgent(
+        IFoundryAgentFactory agentFactory,
+        IOpsTriageInvocationBudget budget,
+        IOptions<OpsTriageOptions> options,
+        ILogger<OpsTriageAgent> logger)
+    {
+        _agentFactory = agentFactory;
+        _budget = budget;
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public async Task<OpsTriageDiagnosis> DiagnoseAsync(string alertContextJson, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(alertContextJson);
+
+        if (!_budget.TryAcquire(out var denyReason))
+        {
+            throw new InvalidOperationException(denyReason ?? "Ops Triage diagnosis budget exhausted.");
+        }
+
+        var agent = _agentFactory.GetAgent(AgentName.OpsTriage);
+        var prompt =
+            "Diagnose this Azure Monitor / ops alert. Return ONLY the JSON object from your instructions.\n\n"
+            + alertContextJson;
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.DiagnosisTimeoutSeconds, 5, 300)));
+
+        var response = await agent.RunAsync(prompt, cancellationToken: timeoutCts.Token).ConfigureAwait(false);
+        var text = response.Text ?? string.Empty;
+        try
+        {
+            return ParseDiagnosisJson(text);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "OpsTriage agent returned unusable diagnosis: {Response}",
+                LogSanitizer.ForLog(text));
+            throw;
+        }
+    }
+
+    /// <summary>Parses OpsTriage.md snake_case JSON. Internal for unit tests.</summary>
+    internal static OpsTriageDiagnosis ParseDiagnosisJson(string text)
+    {
+        var json = ExtractJson(text);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new InvalidOperationException("OpsTriage agent returned non-JSON diagnosis.");
+        }
+
+        var dto = JsonSerializer.Deserialize<DiagnosisDto>(json, JsonOptions)
+            ?? throw new InvalidOperationException("OpsTriage agent JSON deserialized to null.");
+
+        if (string.IsNullOrWhiteSpace(dto.Summary) || string.IsNullOrWhiteSpace(dto.LikelyCause))
+        {
+            throw new InvalidOperationException("OpsTriage agent JSON missing required summary/likely_cause.");
+        }
+
+        OpsTriageRemediationPlan? plan = null;
+        if (dto.RemediationReasonable && dto.RemediationPlan is not null)
+        {
+            plan = new OpsTriageRemediationPlan(
+                dto.RemediationPlan.FailingTestSketch ?? string.Empty,
+                dto.RemediationPlan.FixSketch ?? string.Empty,
+                dto.RemediationPlan.RiskNotes ?? string.Empty);
+        }
+
+        return new OpsTriageDiagnosis(
+            Summary: Truncate(dto.Summary.Trim(), 160),
+            LikelyCause: dto.LikelyCause.Trim(),
+            Evidence: dto.Evidence ?? [],
+            RemediationReasonable: dto.RemediationReasonable,
+            RemediationPlan: plan,
+            SkipRemediationReason: dto.SkipRemediationReason);
+    }
+
+    private static string ExtractJson(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        return start >= 0 && end > start
+            ? text[start..(end + 1)]
+            : string.Empty;
+    }
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : value[..max];
+
+    private sealed class DiagnosisDto
+    {
+        public string? Summary { get; set; }
+        public string? LikelyCause { get; set; }
+        public List<string>? Evidence { get; set; }
+        public bool RemediationReasonable { get; set; }
+        public RemediationPlanDto? RemediationPlan { get; set; }
+        public string? SkipRemediationReason { get; set; }
+    }
+
+    private sealed class RemediationPlanDto
+    {
+        public string? FailingTestSketch { get; set; }
+        public string? FixSketch { get; set; }
+        public string? RiskNotes { get; set; }
+    }
+}

@@ -15,7 +15,8 @@ control. Posture and shared rules: [`pinball-standards-protocol.md`](pinball-sta
 | [frontend-blazor](frontend-blazor/STANDARD.md) | `FE-` | active | `src/PinballWizard.Web(.Client)/**`, `*.razor` |
 | [community-posture](community-posture/STANDARD.md) | `COMM-` | active | community_resources seed, agent prompts, destination resolver |
 | [iac-deploy](iac-deploy/STANDARD.md) | `IAC-` | active | `infra/**` |
+| [agent-lifecycle](agent-lifecycle/STANDARD.md) | `AGENT-` | active | Foundry/CI/hybrid agents, OpsTriage, agent workflows, `data/eval/**` |
 
-**Wave 2 complete.** All converted domains are active; future domains will follow the same structure. Full invariant index: [`../INVARIANTS.md`](../INVARIANTS.md).
+**Wave 2 complete; agent-lifecycle is the first post-wave domain** (ADR-0066). Full invariant index: [`../INVARIANTS.md`](../INVARIANTS.md).
 
 Run [`/standards-audit`](../skills/standards-audit/SKILL.md) (mechanical) and `/local-review` (qualitative) before any push.
