@@ -476,6 +476,59 @@ public sealed class AiRouterStreamingTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // #781 — chunks must arrive BEFORE AggregateStreamAsync finishes
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AnswerStreamingAsync_EmitsChunksBeforeAgentStreamCompletes()
+    {
+        // Gate blocks the fake agent after the first update. If AiRouter still
+        // buffered until end-of-run (#781), the consumer would never see a
+        // chunk while the gate is closed. Live Channel emission must deliver
+        // the first ToolCallCompleted before we open the gate.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var updates = new[]
+        {
+            MakeToolResultUpdate("GRBE-MJL05", "Godzilla (Premium)"),
+            MakeTextUpdate("Stern made it."),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(
+            agentUpdates: updates,
+            pauseAfterFirstUpdate: gate.Task);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        AnswerChunk? firstLive = null;
+        var consume = Task.Run(async () =>
+        {
+            await foreach (var chunk in router.AnswerStreamingAsync("Who made it?", CancellationToken.None))
+            {
+                firstLive ??= chunk;
+                if (firstLive is not null && !gate.Task.IsCompleted)
+                {
+                    // Prove we observed a chunk while the agent is still paused.
+                    Assert.False(gate.Task.IsCompleted,
+                        "First chunk arrived only after the agent stream finished — buffering regressed (#781).");
+                    gate.TrySetResult();
+                }
+            }
+        });
+
+        // Safety: if emission never unblocks us, fail rather than hang the suite.
+        var completed = await Task.WhenAny(consume, Task.Delay(TimeSpan.FromSeconds(5)));
+        if (completed != consume)
+        {
+            gate.TrySetResult();
+            await consume;
+            Assert.Fail("Timed out waiting for live chunk emission while agent was paused (#781).");
+        }
+
+        await consume;
+        Assert.NotNull(firstLive);
+        Assert.IsType<AnswerChunk.ToolCallCompleted>(firstLive);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // T12 — Post-guardrails reconciler rewrites [[cite:k]] → [[cite:N]]
     //       using the searchCorpus source index.
     // ─────────────────────────────────────────────────────────────────────
@@ -768,7 +821,8 @@ public sealed class AiRouterStreamingTests
         ITokenUsageReader tokenUsageReader)
         BuildRouter(
             IEnumerable<AgentResponseUpdate> agentUpdates,
-            bool throwOn429 = false)
+            bool throwOn429 = false,
+            Task? pauseAfterFirstUpdate = null)
     {
         var cache = Substitute.For<ISemanticAnswerCache>();
         var promptProvider = Substitute.For<IAgentPromptProvider>();
@@ -781,7 +835,7 @@ public sealed class AiRouterStreamingTests
         var costCalculator = Substitute.For<IAiCostCalculator>();
         costCalculator.ComputeUsdCents(Arg.Any<TokenUsage>()).Returns(0.0);
 
-        var fakeAgent = new FakeStreamingAgent(agentUpdates.ToList(), throwOn429);
+        var fakeAgent = new FakeStreamingAgent(agentUpdates.ToList(), throwOn429, pauseAfterFirstUpdate);
         var agentFactory = Substitute.For<IFoundryAgentFactory>();
         agentFactory.GetAgent(Arg.Any<string>()).Returns(fakeAgent);
 
@@ -842,11 +896,16 @@ public sealed class AiRouterStreamingTests
     {
         private readonly IReadOnlyList<AgentResponseUpdate> _updates;
         private readonly bool _throwOn429;
+        private readonly Task? _pauseAfterFirstUpdate;
 
-        public FakeStreamingAgent(IReadOnlyList<AgentResponseUpdate> updates, bool throwOn429 = false)
+        public FakeStreamingAgent(
+            IReadOnlyList<AgentResponseUpdate> updates,
+            bool throwOn429 = false,
+            Task? pauseAfterFirstUpdate = null)
         {
             _updates = updates;
             _throwOn429 = throwOn429;
+            _pauseAfterFirstUpdate = pauseAfterFirstUpdate;
         }
 
         protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
@@ -867,11 +926,17 @@ public sealed class AiRouterStreamingTests
                     innerException: null);
             }
 
+            var first = true;
             foreach (var update in _updates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 yield return update;
                 await Task.Yield(); // let the caller process
+                if (first && _pauseAfterFirstUpdate is not null)
+                {
+                    first = false;
+                    await _pauseAfterFirstUpdate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
         }
 
