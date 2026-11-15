@@ -296,7 +296,8 @@ public sealed class LandingHeroTests
         await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
             new MachineSuggestion("opdb-stern-godzilla-pro", "Godzilla Pro", "Stern", 2021)));
 
-        Assert.EndsWith("/wizard?q=Godzilla%20Pro", navMan.Uri, StringComparison.Ordinal);
+        Assert.Contains("/wizard?q=Godzilla%20Pro", navMan.Uri, StringComparison.Ordinal);
+        Assert.Contains("machineId=opdb-stern-godzilla-pro", navMan.Uri, StringComparison.Ordinal);
         Assert.Null(submitted); // machine jump only — never also a free-text submit
     }
 
@@ -330,7 +331,8 @@ public sealed class LandingHeroTests
         await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
             new MachineSuggestion("opdb-bally-addams-family", "The Addams Family", "Bally", 1992)));
 
-        Assert.EndsWith("/wizard?q=The%20Addams%20Family", navMan.Uri, StringComparison.Ordinal);
+        Assert.Contains("/wizard?q=The%20Addams%20Family", navMan.Uri, StringComparison.Ordinal);
+        Assert.Contains("machineId=opdb-bally-addams-family", navMan.Uri, StringComparison.Ordinal);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -379,10 +381,13 @@ public sealed class LandingHeroTests
         await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
             new MachineSuggestion("opdb-stern-stranger-things", "Stranger Things", "Stern", 2019)));
 
-        // The literal question flows through the free-text submit path...
-        Assert.Equal(question, submitted);
-        // ...and the machine title is NOT used as the query.
+        // Question text stays in ?q= (never replaced by the machine title)...
+        Assert.Contains($"q={Uri.EscapeDataString(question)}", navMan.Uri, StringComparison.Ordinal);
         Assert.DoesNotContain("q=Stranger%20Things", navMan.Uri, StringComparison.Ordinal);
+        // ...and the selected suggestion's OpdbId is bound (#782).
+        Assert.Contains("machineId=opdb-stern-stranger-things", navMan.Uri, StringComparison.Ordinal);
+        // NavigateTo handles this path — QuestionSubmitted must not also fire.
+        Assert.Null(submitted);
     }
 
     // ──────────────────────────────────────────────────────────────────────
