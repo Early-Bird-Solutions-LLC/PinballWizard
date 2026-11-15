@@ -702,7 +702,7 @@ public sealed class WizardAnswerStreamTests
             timeout: TimeSpan.FromSeconds(3));
 
         // Input exists in the DOM immediately — no "Ask a follow-up" reveal.
-        cut.Find("[data-testid='question-input']");
+        var input = cut.Find("[data-testid='question-input'] input, [data-testid='follow-up-composer'] input");
         Assert.Empty(cut.FindAll("[data-testid='new-question-button']"));
 
         // Composer is after the answer body in document order.
@@ -711,6 +711,14 @@ public sealed class WizardAnswerStreamTests
         var composerIdx = markup.IndexOf("data-testid=\"follow-up-composer\"", StringComparison.Ordinal);
         Assert.True(answerIdx >= 0 && composerIdx > answerIdx,
             "Follow-up composer must render after the answer body (#787).");
+
+        // Bugbot: prior question must not linger in the follow-up field.
+        Assert.True(
+            string.IsNullOrEmpty(input.GetAttribute("value")),
+            "Follow-up composer must start empty after Complete (#787 Bugbot).");
+        Assert.True(
+            cut.Find("[data-testid='ask-button']").HasAttribute("disabled"),
+            "Ask must stay disabled until the user types a new follow-up.");
     }
 
     [Fact]

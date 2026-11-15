@@ -328,6 +328,11 @@
             return;
 
         _submittedQuestion = _question.Trim();
+        // Clear the composer immediately so the always-visible follow-up
+        // field (#787) is empty when Complete/Refusal/Error renders —
+        // otherwise AutoFocus lands at the end of the prior question and
+        // Ask stays enabled (Bugbot).
+        _question = string.Empty;
         _textDeltas.Clear();
         _citations.Clear();
         _currentToolCallName = null;
