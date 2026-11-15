@@ -42,6 +42,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
     private readonly SearchCorpusTool _searchCorpusTool;
     private readonly MarketValueTool _marketValueTool;
     private readonly KineticistGuideLinkTool _kineticistGuideLinkTool;
+    private readonly MatchPlayTournamentTool _matchPlayTournamentTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
@@ -63,6 +64,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         SearchCorpusTool searchCorpusTool,
         MarketValueTool marketValueTool,
         KineticistGuideLinkTool kineticistGuideLinkTool,
+        MatchPlayTournamentTool matchPlayTournamentTool,
         ILogger<FoundryAgentFactory> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -71,6 +73,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         ArgumentNullException.ThrowIfNull(searchCorpusTool);
         ArgumentNullException.ThrowIfNull(marketValueTool);
         ArgumentNullException.ThrowIfNull(kineticistGuideLinkTool);
+        ArgumentNullException.ThrowIfNull(matchPlayTournamentTool);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options.Value;
@@ -79,6 +82,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         _searchCorpusTool = searchCorpusTool;
         _marketValueTool = marketValueTool;
         _kineticistGuideLinkTool = kineticistGuideLinkTool;
+        _matchPlayTournamentTool = matchPlayTournamentTool;
         _logger = logger;
         _initLock = new Lock();
     }
@@ -194,6 +198,12 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         // with no scrape fallback when the keyed API misses.
         var getKineticistGuideLinks = AIFunctionFactory.Create(
             _kineticistGuideLinkTool.GetKineticistGuideLinksAsync);
+        // Match Play live tournament tools (ADR-0061) — Wizard-only; return null
+        // when MatchPlay/Opdb API token is absent.
+        var searchMatchPlayTournaments = AIFunctionFactory.Create(
+            _matchPlayTournamentTool.SearchMatchPlayTournamentsAsync);
+        var getMatchPlayTournamentStandings = AIFunctionFactory.Create(
+            _matchPlayTournamentTool.GetMatchPlayTournamentStandingsAsync);
 
         // Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
@@ -205,12 +215,14 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         // Connected sub-agents are the ones the Wizard dispatches to.
         string[] connectedSubAgentNames = [AgentName.Valuation, AgentName.Rules, AgentName.Repair];
         
-        var wizardTools = new List<AITool>(connectedSubAgentNames.Length + 4)
+        var wizardTools = new List<AITool>(connectedSubAgentNames.Length + 6)
         {
             getMachineByTitle,
             searchCorpus,
             getMarketValue,
             getKineticistGuideLinks,
+            searchMatchPlayTournaments,
+            getMatchPlayTournamentStandings,
         };
 
         foreach (var name in connectedSubAgentNames)
