@@ -545,6 +545,8 @@ public sealed class AiRouterStreamingTests
         {
             await foreach (var _ in router.AnswerStreamingAsync("Who made it?", CancellationToken.None))
             {
+                // Drain until the channel faults — body intentionally unused.
+                _ = _;
             }
         });
 
