@@ -130,10 +130,15 @@ name: Renovate lockfiles
 #   suffice — "expected" because that is reasoning about how GitHub evaluates the
 #   check for a fast-forward, not something verified.
 #
-# It fails loudly rather than skipping when either credential is absent or
-# unusable. A
-# silent skip would leave every Renovate PR red with NU1004 and nothing saying why
-# the regeneration never ran. (The governing rule is the user-global
+# Credentials are required ONLY when regeneration is required. The job first
+# checks out the branch and runs `dotnet restore --locked-mode`. If that succeeds,
+# the committed graph already matches Directory.Packages.props and the job exits
+# green without minting an App token — that is what unblocks Renovate PRs that
+# already ship correct lock files (or that never touched NuGet, e.g. Terraform-only
+# lock-file maintenance). If locked-mode fails, the job then demands the App
+# credentials and fails loudly when they are absent or unusable. A silent skip on
+# that path would leave every version-bump PR red with NU1004 and nothing saying
+# why the regeneration never ran. (The governing rule is the user-global
 # `no-masking-skips.md`, not a file in this repo: a job that cannot do its work
 # must fail, never report green having done nothing. The repo-local expression of
 # the same idea is invariant #17 / OBS-01.)
@@ -210,13 +215,113 @@ jobs:
       LOCKFILE_PATHSPEC: '*packages.lock.json'
 
     steps:
+      - name: Checkout the Renovate branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref_name }}
+          # No `token:` input and persist-credentials: false, together, so NO
+          # credential is on disk while `dotnet restore` runs. That matters because
+          # restore evaluates Directory.Build.props, custom targets and NuGet.Config
+          # FROM THE CHECKED-OUT BRANCH, and Renovate edits .github/workflows/** on
+          # renovate/** branches (pinDigests + the github-actions manager) — branch
+          # content is not inert. With the default this step would persist
+          # GITHUB_TOKEN; passing the App token here instead would persist a
+          # WRITE-scoped credential, which is strictly worse. The push step supplies
+          # auth explicitly, once, after every restore has finished — and only when
+          # regeneration is required.
+          #
+          # Checkout still needs read access to fetch: that comes from the job's
+          # read-only GITHUB_TOKEN, which is also what creates the
+          # refs/remotes/origin/<branch> ref that --force-with-lease resolves against.
+          persist-credentials: false
+
+      - name: Set up .NET
+        # global-json-file, not a literal version: Renovate's dotnet-monorepo group
+        # also bumps global.json (it moved the pin 10.0.200 -> 10.0.401 on #936), so
+        # the SDK installed must come from the branch's own global.json or the
+        # restore fails with "A compatible .NET SDK was not found" (exit 155,
+        # reproduced locally). Identical action, SHA and input as ci.yml, so the SDK
+        # that writes the lock files is the one that later verifies them.
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.nuget/packages
+          # The primary key is stale by definition when we are about to rewrite the
+          # files it hashes — so restore-keys is what actually does the work on the
+          # regen path. On the already-correct path the primary key often hits.
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Assert the lock-file pathspec still describes this repo
+        id: scope
+        # The positive control for the whole workflow. Everything downstream decides
+        # "was there work to do?" from a diff, and `git diff --quiet` exits 0 when
+        # its pathspec matches NOTHING - verified: `git diff --quiet --
+        # '**/packages.lock.jsonx'` returns 0. So a pathspec that stops matching is
+        # indistinguishable from a graph that was already correct: the job goes
+        # green forever while every Renovate PR stays red, and the summary actively
+        # asserts the graph was fine. Anchor it to a measured count first.
+        #
+        # This also catches the git pathspec trap that bit the first version of this
+        # file: a default pathspec needs a literal '/', so '**/packages.lock.json'
+        # silently excludes a repo-root lock file. Verified in this repo:
+        # `git ls-files -- '**/global.json'` returns 0 while global.json IS tracked
+        # at the root. Hence LOCKFILE_PATHSPEC is '*packages.lock.json'.
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOUND=$(git ls-files -- "${LOCKFILE_PATHSPEC}" | wc -l | tr -d ' ')
+          if [ "${FOUND}" -lt 1 ]; then
+            echo "::error::The pathspec '${LOCKFILE_PATHSPEC}' matches no tracked files."
+            echo "::error::"
+            echo "::error::A 'no changes' result from this workflow would therefore be"
+            echo "::error::meaningless - git diff exits 0 for a pathspec that matches nothing,"
+            echo "::error::so the job would report success having regenerated nothing, forever."
+            echo "::error::"
+            echo "::error::The lock files have been moved, renamed, or untracked. Fix the"
+            echo "::error::LOCKFILE_PATHSPEC env value before trusting this workflow again."
+            exit 1
+          fi
+          echo "found=${FOUND}" >> "$GITHUB_OUTPUT"
+          echo "Tracked lock files matching '${LOCKFILE_PATHSPEC}': ${FOUND}"
+
+      - name: Probe whether the committed lock graph already matches
+        id: probe
+        # Gate for the App token. Renovate PRs that already ship correct
+        # packages.lock.json (or never touched NuGet) must not go red solely
+        # because LOCKFILE_APP_* are unset — that is a credential gap for the
+        # push path, not a graph problem. Fail the probe step only for
+        # infrastructure errors (missing SDK); a locked-mode mismatch sets
+        # needs_regen=true and continues.
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          dotnet restore --locked-mode PinballWizard.slnx
+          rc=$?
+          set -e
+          if [ "${rc}" -eq 0 ]; then
+            echo "needs_regen=false" >> "$GITHUB_OUTPUT"
+            echo "Locked-mode restore succeeded — committed lock graph already matches."
+            exit 0
+          fi
+          echo "needs_regen=true" >> "$GITHUB_OUTPUT"
+          echo "Locked-mode restore failed (exit ${rc}); regeneration required."
+
       - name: Verify the App credentials are configured
-        # Checked before minting so an absent credential names ITSELF — and names it
-        # in terms of the repository-level identifiers an operator has to go and
-        # create. The action's own error is specific enough ("The 'private-key'
-        # input must be set to a non-empty string..."), so this step earns its place
-        # by naming LOCKFILE_APP_CLIENT_ID / LOCKFILE_APP_KEY and carrying the
+        # Only reached when regeneration must push. Checked before minting so an
+        # absent credential names ITSELF — and names it in terms of the
+        # repository-level identifiers an operator has to go and create. The
+        # action's own error is specific enough ("The 'private-key' input must be
+        # set to a non-empty string..."), so this step earns its place by naming
+        # LOCKFILE_APP_CLIENT_ID / LOCKFILE_APP_KEY and carrying the
         # don't-reach-for-GITHUB_TOKEN warning, not by being more legible.
+        if: steps.probe.outputs.needs_regen == 'true'
         shell: bash
         env:
           APP_CLIENT_ID: ${{ vars.LOCKFILE_APP_CLIENT_ID }}
@@ -229,9 +334,10 @@ jobs:
           if [ -n "${missing}" ]; then
             echo "::error::Missing GitHub App credentials:${missing}"
             echo "::error::"
-            echo "::error::Without them the lock files cannot be pushed back to the Renovate"
-            echo "::error::branch, so Renovate PRs that move package versions stay red with"
-            echo "::error::NU1004."
+            echo "::error::Locked-mode restore failed on this branch, so lock files must be"
+            echo "::error::regenerated and pushed. Without the App credentials that push"
+            echo "::error::cannot happen, and Renovate PRs that moved package versions stay"
+            echo "::error::red with NU1004."
             echo "::error::"
             echo "::error::Do NOT 'fix' this by switching to GITHUB_TOKEN. Every required"
             echo "::error::check on main comes from a pull_request-triggered workflow, and a"
@@ -247,6 +353,7 @@ jobs:
 
       - name: Mint a short-lived App installation token
         id: app-token
+        if: steps.probe.outputs.needs_regen == 'true'
         # `owner` and `repositories` are BOTH omitted on purpose, and the omission is
         # load-bearing. Per the action's own input docs, `repositories` "defaults to
         # current repository **if owner is unset**" — so the two defaults are coupled.
@@ -307,80 +414,8 @@ jobs:
           private-key: ${{ secrets.LOCKFILE_APP_KEY }}
           permission-contents: write
 
-      - name: Checkout the Renovate branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.ref_name }}
-          # No `token:` input and persist-credentials: false, together, so NO
-          # credential is on disk while `dotnet restore` runs. That matters because
-          # restore evaluates Directory.Build.props, custom targets and NuGet.Config
-          # FROM THE CHECKED-OUT BRANCH, and Renovate edits .github/workflows/** on
-          # renovate/** branches (pinDigests + the github-actions manager) — branch
-          # content is not inert. With the default this step would persist
-          # GITHUB_TOKEN; passing the App token here instead would persist a
-          # WRITE-scoped credential, which is strictly worse. The push step supplies
-          # auth explicitly, once, after every restore has finished.
-          #
-          # Checkout still needs read access to fetch: that comes from the job's
-          # read-only GITHUB_TOKEN, which is also what creates the
-          # refs/remotes/origin/<branch> ref that --force-with-lease resolves against.
-          persist-credentials: false
-
-      - name: Set up .NET
-        # global-json-file, not a literal version: Renovate's dotnet-monorepo group
-        # also bumps global.json (it moved the pin 10.0.200 -> 10.0.401 on #936), so
-        # the SDK installed must come from the branch's own global.json or the
-        # restore fails with "A compatible .NET SDK was not found" (exit 155,
-        # reproduced locally). Identical action, SHA and input as ci.yml, so the SDK
-        # that writes the lock files is the one that later verifies them.
-        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.nuget/packages
-          # The primary key is stale by definition here — we are about to change the
-          # very files it hashes — so restore-keys is what actually does the work.
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Assert the lock-file pathspec still describes this repo
-        id: scope
-        # The positive control for the whole workflow. Everything downstream decides
-        # "was there work to do?" from a diff, and `git diff --quiet` exits 0 when
-        # its pathspec matches NOTHING - verified: `git diff --quiet --
-        # '**/packages.lock.jsonx'` returns 0. So a pathspec that stops matching is
-        # indistinguishable from a graph that was already correct: the job goes
-        # green forever while every Renovate PR stays red, and the summary actively
-        # asserts the graph was fine. Anchor it to a measured count first.
-        #
-        # This also catches the git pathspec trap that bit the first version of this
-        # file: a default pathspec needs a literal '/', so '**/packages.lock.json'
-        # silently excludes a repo-root lock file. Verified in this repo:
-        # `git ls-files -- '**/global.json'` returns 0 while global.json IS tracked
-        # at the root. Hence LOCKFILE_PATHSPEC is '*packages.lock.json'.
-        shell: bash
-        run: |
-          set -euo pipefail
-          FOUND=$(git ls-files -- "${LOCKFILE_PATHSPEC}" | wc -l | tr -d ' ')
-          if [ "${FOUND}" -lt 1 ]; then
-            echo "::error::The pathspec '${LOCKFILE_PATHSPEC}' matches no tracked files."
-            echo "::error::"
-            echo "::error::A 'no changes' result from this workflow would therefore be"
-            echo "::error::meaningless - git diff exits 0 for a pathspec that matches nothing,"
-            echo "::error::so the job would report success having regenerated nothing, forever."
-            echo "::error::"
-            echo "::error::The lock files have been moved, renamed, or untracked. Fix the"
-            echo "::error::LOCKFILE_PATHSPEC env value before trusting this workflow again."
-            exit 1
-          fi
-          echo "found=${FOUND}" >> "$GITHUB_OUTPUT"
-          echo "Tracked lock files matching '${LOCKFILE_PATHSPEC}': ${FOUND}"
-
       - name: Regenerate lock files
+        if: steps.probe.outputs.needs_regen == 'true'
         # --force-evaluate re-resolves and rewrites packages.lock.json.
         # RestorePackagesWithLockFile=true in Directory.Build.props opts the tree in
         # (six projects opt back out in their own csproj), and a committed lock file
@@ -394,6 +429,7 @@ jobs:
           dotnet restore --force-evaluate PinballWizard.slnx
 
       - name: Sanity-check the regenerated graph in locked mode
+        if: steps.probe.outputs.needs_regen == 'true'
         # Deliberately modest about what this proves. It runs in the same tree the
         # previous step just wrote, so locked mode agrees largely by construction -
         # it is a cheap sanity check, NOT the guarantee. The real guarantee is
@@ -409,6 +445,7 @@ jobs:
 
       - name: Commit and push if the graph changed
         id: commit
+        if: steps.probe.outputs.needs_regen == 'true'
         shell: bash
         env:
           TOKEN: ${{ steps.app-token.outputs.token }}
@@ -507,6 +544,7 @@ jobs:
         env:
           CHANGED: ${{ steps.commit.outputs.changed }}
           FOUND: ${{ steps.scope.outputs.found }}
+          NEEDS_REGEN: ${{ steps.probe.outputs.needs_regen }}
           OUTCOME: ${{ job.status }}
         run: |
           set -euo pipefail
@@ -515,14 +553,20 @@ jobs:
               echo "### Lock-file regeneration FAILED (${OUTCOME})"
               echo ""
               echo "Likely causes, in the order they occur:"
-              echo "- App credentials missing, the App not installed on this"
-              echo "  repository, or the App lacks Contents: write. Mint fails for all"
-              echo "  three; the not-installed case shows only a bare Not Found."
+              echo "- locked-mode restore failed AND App credentials are missing, the"
+              echo "  App is not installed on this repository, or the App lacks"
+              echo "  Contents: write. Mint fails for the last three; the not-installed"
+              echo "  case shows only a bare Not Found."
               echo "- the lock-file pathspec no longer matches this repo"
               echo "- \`dotnet restore\` failed for this branch's package versions"
               echo "- the push was rejected because Renovate force-pushed concurrently"
               echo ""
               echo "See the failing step's annotations - each names its own cause."
+            elif [ "${NEEDS_REGEN}" != "true" ]; then
+              echo "### Lock graph already matches"
+              echo ""
+              echo "\`dotnet restore --locked-mode\` succeeded against ${FOUND} tracked"
+              echo "lock file(s). No App token was minted."
             elif [ "${CHANGED}" = "true" ]; then
               echo "### Lock files regenerated"
               echo ""
