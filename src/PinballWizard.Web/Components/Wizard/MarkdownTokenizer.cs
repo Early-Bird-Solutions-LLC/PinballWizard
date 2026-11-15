@@ -219,10 +219,27 @@ internal static class MarkdownTokenizer
             return false;
 
         level = hashes;
-        text = trimmed[hashes..].Trim();
-        // Strip optional trailing closing hashes ("### Title ###").
-        text = text.TrimEnd('#').TrimEnd();
+        text = StripClosingAtxHashes(trimmed[hashes..].Trim());
         return true;
+    }
+
+    // CommonMark optional closing sequence: trailing '#' only when preceded
+    // by whitespace ("### Title ###"). Content that ends in '#' (C#, Issue#)
+    // must be preserved (#786 Bugbot).
+    private static string StripClosingAtxHashes(string text)
+    {
+        var end = text.Length;
+        while (end > 0 && text[end - 1] == '#')
+            end--;
+
+        if (end == text.Length)
+            return text;
+        if (end == 0)
+            return string.Empty;
+        if (!char.IsWhiteSpace(text[end - 1]))
+            return text;
+
+        return text[..end].TrimEnd();
     }
 
     private static bool IsThematicBreak(string line)

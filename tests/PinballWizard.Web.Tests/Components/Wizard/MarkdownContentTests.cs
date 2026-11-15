@@ -267,6 +267,19 @@ public sealed class MarkdownContentTests
         Assert.Equal("Top-level title", cut.Find("h2").TextContent.Trim());
     }
 
+    [Theory]
+    [InlineData("## C#", "C#")]
+    [InlineData("## Issue#", "Issue#")]
+    [InlineData("## Title ###", "Title")]
+    public void Atx_heading_preserves_content_hashes_strips_closing_sequence(
+        string markdown, string expectedText)
+    {
+        using var ctx = BuildCtx();
+        var cut = ctx.Render<MarkdownContent>(p => p.Add(c => c.Text, markdown));
+
+        Assert.Equal(expectedText, cut.Find("h2").TextContent.Trim());
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // #786: thematic breaks render <hr>, not literal ---
     // ──────────────────────────────────────────────────────────────────────
