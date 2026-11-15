@@ -123,8 +123,8 @@ Run `dotnet run --project src/PinballWizard.Cli -- --help` for all options. `Sou
 Converted domains are canonical, machine-checkable standards under
 [`.claude/standards/`](.claude/standards/README.md), governed by
 [`pinball-standards-protocol.md`](.claude/standards/pinball-standards-protocol.md)
-(posture: **verify before done**). The full invariant index — all ten domains
-(wave-1 + wave-2) fully converted — is [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md).
+(posture: **verify before done**). The full invariant index — all ten wave-1 + wave-2
+domains fully converted, plus the post-wave `agent-lifecycle` domain (ADR-0066) — is [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md).
 
 Key invariants to keep top-of-mind:
 
