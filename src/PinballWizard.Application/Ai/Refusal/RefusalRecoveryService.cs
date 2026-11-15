@@ -105,6 +105,20 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
     internal const string SuggestedRephrase_NoCitation =
         "Try asking about a topic that appears in manufacturer documentation — rules, repair procedures, or machine specifications are most reliably sourced.";
 
+    // ADR-0053 / #784 — machine pinned via machineId, zero indexed chunks.
+    // Distinct from MissingWhat_NoCitation so the UI does not imply the
+    // catalog machine is unknown / unsourced as a catalog entry.
+    internal const string MissingWhat_MachineKnownNoDocsGeneric =
+        "I know this machine in the catalog, but have no rules or service documentation indexed for it yet. " +
+        "The community links below will have more.";
+
+    internal const string SuggestedRephrase_MachineKnownNoDocs =
+        "For machines without manufacturer docs in the index, forums and reference sites below are the best next stop — or ask about a machine with rulesheets / manuals indexed.";
+
+    internal static string MissingWhatMachineKnownNoDocs(string title) =>
+        $"I know {title}, but have no rules or service documentation indexed for it yet. " +
+        "The community links below will have more.";
+
     internal const string MissingWhat_UpstreamThrottled =
         "The AI service is temporarily rate-limited. This is a transient condition — no content is missing from the corpus.";
 
@@ -264,6 +278,50 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
             CommunityResources: await communityResourcesTask,
             MissingWhat: missingWhat,
             SuggestedRephrase: suggestedRephrase);
+    }
+
+    public async Task<RefusalDetail?> BuildMachineKnownNoDocsRecoveryAsync(
+        string normalizedQuestion,
+        string machineId,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+
+        var baseRecovery = await BuildRecoveryAsync(
+                normalizedQuestion, RefusalCategory.NoCitation, ct)
+            .ConfigureAwait(false);
+
+        RelatedMachine? known = null;
+        IReadOnlyList<RelatedMachine>? related = baseRecovery?.RelatedMachines;
+
+        if (related is { Count: > 0 })
+        {
+            known = related.FirstOrDefault(m =>
+                string.Equals(m.MachineId, machineId, StringComparison.OrdinalIgnoreCase));
+
+            var others = related
+                .Where(m => !string.Equals(m.MachineId, machineId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            related = others.Count > 0 ? others : null;
+        }
+        else
+        {
+            // FindRelatedMachinesAsync returns [] on miss — normalize to null
+            // so the panel does not render an empty "related" section.
+            related = null;
+        }
+
+        var missingWhat = known is not null
+            ? MissingWhatMachineKnownNoDocs(known.Title)
+            : MissingWhat_MachineKnownNoDocsGeneric;
+
+        return new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: related,
+            CommunityResources: baseRecovery?.CommunityResources,
+            MissingWhat: missingWhat,
+            SuggestedRephrase: SuggestedRephrase_MachineKnownNoDocs,
+            KnownMachineWithoutIndexedDocs: known);
     }
 
     // Best-effort related-machines lookup. Degrades to null on failure
