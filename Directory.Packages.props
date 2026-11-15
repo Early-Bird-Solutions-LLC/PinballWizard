@@ -36,20 +36,22 @@
     <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
   </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.3" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.3" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.5.3" />
+    <!--
+      Aspire 13.6.5 clears GHSA-4g86-54fm-h9h8 (Dashboard.Sdk NU1904) and
+      GHSA-f7vh-h5g3-7jrh (Hosting / AppHost NU1903) that break restore under
+      warn-as-error on every PR while 13.5.3 remains pinned.
+    -->
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.6.5" />
     <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
     <!--
-      MessagePack arrives transitively through Aspire.Hosting 13.5.3
-      (via StreamJsonRpc 2.25.29) at 2.5.302. GHSA-qhrr-8q5h-9q3h
-      (CVE-2026-92707, moderate) marks < 2.5.303 vulnerable and names 2.5.303
-      as the first patched 2.x version. PinballWizard.AppHost references it
-      without a version to lift the transitive resolution; staying on 2.x
-      keeps StreamJsonRpc on the major it was built against. Remove once
-      Aspire.Hosting resolves >= 2.5.303 itself.
+      MessagePack arrives transitively through Aspire.Hosting (via StreamJsonRpc).
+      Aspire 13.6.5 already resolves >= 2.5.307 (above GHSA-qhrr-8q5h-9q3h's
+      2.5.303 floor); keep the direct AppHost reference so CPM pins the floor
+      explicitly. Remove the direct reference once we stop needing the pin.
     -->
-    <PackageVersion Include="MessagePack" Version="2.5.303" />
+    <PackageVersion Include="MessagePack" Version="2.5.307" />
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
@@ -70,28 +72,34 @@
     <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.5.0" />
     <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.5.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
+    <!-- Aspire.Microsoft.Azure.Cosmos 13.6.5 requires Microsoft.Azure.Cosmos >= 3.63.1. -->
+    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.63.1" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.5.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Foundry" Version="1.5.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions.* — Hosting / DI / Configuration / Logging / Options">
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <!--
+      10.0.14 floor required by Aspire.Microsoft.Azure.Cosmos 13.6.5
+      (Configuration / DI / Logging / Options / HealthChecks). Keep the
+      Extensions.* family aligned at the same patch.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
     <!-- Microsoft.Extensions.Logging — concrete LoggerFactory.Create used by the
          PerfMetrics console tool. Abstractions alone don't ship LoggerFactory. Verified via
          `dotnet package search Microsoft.Extensions.Logging` on 2026-07-09. -->
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.9.0" />
   </ItemGroup>
   <ItemGroup Label="Phase 4 RAG pipeline — chunking + PDF extraction">

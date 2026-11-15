@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -26,12 +26,12 @@
 
     <!--
       ASPIRE010 - "configured with AspireUseCliBundle=false."
-                  DELIBERATE. Aspire 13.5.3 defaults AspireUseCliBundle to false
-                  itself (Aspire.Hosting.AppHost.props:7 and
-                  Aspire.AppHost.Sdk/Sdk.targets:25) and then warns about its own
+                  DELIBERATE. Aspire 13.6.5 defaults AspireUseCliBundle to false
+                  itself (Aspire.Hosting.AppHost.props and
+                  Aspire.AppHost.Sdk/Sdk.targets) and then warns about its own
                   default, so the diagnostic fires on every AppHost that has not
                   opted in. CI builds with /warnaserror, which escalates it to a
-                  build error. Opting IN is not a no-op: Sdk.targets:76 skips
+                  build error. Opting IN is not a no-op: Sdk.targets skips
                   AddReferenceToDashboardAndDCP when the bundle is enabled, so the
                   Dashboard/DCP packages stop being referenced and are sourced from
                   a downloaded CLI bundle instead - a change to local orchestration
@@ -49,7 +49,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.5.3 -->
+    <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.6.5 -->
     <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" />
     <PackageReference Include="Aspire.Hosting.Azure.Storage" />
     <!--
