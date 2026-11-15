@@ -1367,6 +1367,70 @@ public sealed class ToolTraceCitationExtractorTests
             c.SourceType == CitationSourceType.CorpusChunk);
     }
 
+    // ── getMatchPlayTournamentStandings (ADR-0061) — typed + JSON arms ──
+
+    [Fact]
+    public void Extract_MatchPlayStandingsDto_AsTyped_ProducesCitation()
+    {
+        var dto = SampleMatchPlayStandingsDto();
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentStandings", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://app.matchplay.events/tournaments/99", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.MatchPlayTournament, citation.SourceType);
+        Assert.Contains("INDISC", citation.Title, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);
+    }
+
+    [Fact]
+    public void Extract_MatchPlayStandingsDto_AsTyped_EmptyPublicUrl_NoCitation()
+    {
+        var dto = SampleMatchPlayStandingsDto() with { PublicUrl = "" };
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentStandings", dto);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void Extract_MatchPlayStandingsDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        var dto = SampleMatchPlayStandingsDto();
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentStandings", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://app.matchplay.events/tournaments/99", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.MatchPlayTournament, citation.SourceType);
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_MatchPlayStandingsDto_NotInSourceIndex()
+    {
+        var dto = SampleMatchPlayStandingsDto();
+        var response = BuildAgentResponseWithToolResult("getMatchPlayTournamentStandings", dto);
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        Assert.Single(citations);
+        Assert.Empty(sourceIndex);
+    }
+
+    private static MatchPlayTournamentStandingsDto SampleMatchPlayStandingsDto() =>
+        new(
+            TournamentId: 99,
+            Name: "INDISC 2026",
+            Status: "started",
+            StartUtc: "2026-11-01T12:00:00.0000000Z",
+            PublicUrl: "https://app.matchplay.events/tournaments/99",
+            Attribution: "Match Play Events — https://app.matchplay.events/tournaments/99",
+            Standings:
+            [
+                new MatchPlayStandingRowDto(1, "Ada", 10, "12.00", 5, 123),
+            ]);
+
     private static MarketValueDto SampleMarketValueDto(string opdbId) =>
         new(MachineTitle: "Medieval Madness",
             MedianPrice: 5500m,

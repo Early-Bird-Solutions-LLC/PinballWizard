@@ -84,7 +84,7 @@ This category is structurally different from everything above — see §5.
 | Source | Data | Access |
 |---|---|---|
 | **IFPA (ifpapinball.com)** | World rankings, player profiles, tournament history, WPPR points | Public API |
-| **Match Play Events (matchplay.events)** | Live tournament brackets and standings | API on active tournaments |
+| **Match Play Events (matchplay.events)** | Live tournament brackets and standings | API on active tournaments — Wizard tools `searchMatchPlayTournaments` / `getMatchPlayTournamentStandings` (ADR-0061); not RAG-indexed |
 | **Brackelope** | Alternative tournament platform with live data | API |
 | **Stern Army / Insider Connected** | Stern's official league rankings, machine-tied leaderboards, achievements | Investigate API surface |
 | **PAPA archive** | Historical tournament results | Mostly static, scrape once |
@@ -235,7 +235,7 @@ This is a hobbyist project, but it interacts with third-party content. The ethic
 
 **Phase 3b — Reference databases.** IPDB cross-reference fields (`Machine.IpdbId` + `Machine.IpdbReferenceUrl`) are now populated from OPDB sync (commit `11a3a8d`); IPDB returns HTTP 403 to scrapers so full content ingestion is not planned without an access path. PinWiki scrape for technical content and manual glossary remain future work.
 
-**Phase 3c — Live competitive agent.** IFPA + Match Play tool integrations. Player registry curated manually for the top tier. ADR for the hybrid architecture (§5).
+**Phase 3c — Live competitive agent.** Match Play tournament search + standings tools shipped (ADR-0061). IFPA tool integrations remain. Player registry curated manually for the top tier. Hybrid architecture (§5) applies.
 
 **Phase 3d — Educational corpus.** Bowen Kerins / PAPA tutorial transcripts, podcast transcripts, technique videos. Audio pipeline (Whisper) added.
 

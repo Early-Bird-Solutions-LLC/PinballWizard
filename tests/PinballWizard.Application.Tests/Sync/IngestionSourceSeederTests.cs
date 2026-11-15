@@ -213,7 +213,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         var seeds = JsonSerializer.Deserialize<List<IngestionSourceSeed>>(json);
 
         Assert.NotNull(seeds);
-        Assert.Equal(22, seeds!.Count);
+        Assert.Equal(23, seeds!.Count);
 
         // Canonical manufacturer keys per ScraperManufacturerKey,
         // OpdbMachineMapper normalization, and ScraperOrchestrator.SourceAliases.
@@ -238,6 +238,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
             "twip",
             "pb_freshdesk",
             "tiltforums_rulesheets",
+            "matchplay",
         };
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }
