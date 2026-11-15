@@ -81,18 +81,25 @@ pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev -WhatIf
 pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev
 ```
 
-## Local parameter overrides
+## Local parameter overlays (#400)
 
-To override committed parameters without committing the change, copy the
-environment's `.bicepparam` to a `.local.bicepparam` neighbor:
+A `.bicepparam` file is a **complete replacement**, not a merge. Deploy scripts
+always load the **committed** `main-shared.<env>.bicepparam` (or
+`main-jobs.<env>.bicepparam`). A gitignored `*.local.bicepparam` may only
+overlay allowlisted personal values — today that is `developerObjectId` for
+the shared stack — via extra `az --parameters name=value` args.
 
 ```powershell
-Copy-Item infra/main-shared.dev.bicepparam infra/main-shared.dev.local.bicepparam
-# edit the .local file
+# Minimal local overlay (do NOT copy the whole committed file):
+@(
+  "using 'main-shared.bicep'"
+  "param developerObjectId = '<your az ad signed-in-user object id>'"
+) | Set-Content infra/main-shared.dev.local.bicepparam
 ```
 
-`*.local.bicepparam` is `.gitignore`d. The deploy script auto-detects the
-local override file when present and uses it instead of the committed one.
+Any other params declared in the local file are **ignored** with a yellow
+warning so committed additions (e.g. `cicdDeployPrincipalId`) cannot silently
+no-op. Put durable environment facts in the committed file.
 
 ## Cost expectations
 
