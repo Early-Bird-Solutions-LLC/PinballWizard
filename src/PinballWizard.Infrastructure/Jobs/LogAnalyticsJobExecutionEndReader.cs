@@ -1,6 +1,6 @@
 using System.Globalization;
 using Azure.Identity;
-using Azure.Monitor.Query;
+using Azure.Monitor.Query.Logs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Jobs;
@@ -51,7 +51,7 @@ internal sealed class LogAnalyticsJobExecutionEndReader : IJobExecutionEndReader
         {
             var response = await _client.QueryWorkspaceAsync(
                 _options.LogAnalyticsWorkspaceId, kql,
-                new QueryTimeRange(startUtc, endUtc),
+                new LogsQueryTimeRange(startUtc, endUtc),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             var ends = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);

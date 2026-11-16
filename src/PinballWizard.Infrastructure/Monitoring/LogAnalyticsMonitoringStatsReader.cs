@@ -1,6 +1,6 @@
 using System.Globalization;
 using Azure.Identity;
-using Azure.Monitor.Query;
+using Azure.Monitor.Query.Logs;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,12 +29,12 @@ namespace PinballWizard.Infrastructure.Monitoring;
 // pattern). This means N concurrent requests after a TTL expiry trigger exactly
 // one Log Analytics round-trip.
 //
-// SDK verification (Azure.Monitor.Query 1.7.1, 2026-07-01):
+// SDK verification (Azure.Monitor.Query.Logs 1.0.0, 2026-07-01):
 //   QueryWorkspaceAsync(workspaceId, kql, range, options = null, ct = default)
 //   options has HasDefaultValue=True so can be skipped with named cancellationToken arg.
 //   response.Value.Table.Rows — confirmed via XML doc P:LogsQueryResult.Table / P:LogsTable.Rows.
 //   row[0] — confirmed via P:LogsTableRow.Item(System.Int32) returning object.
-//   new QueryTimeRange(TimeSpan) — confirmed via M:QueryTimeRange.#ctor(System.TimeSpan).
+//   new LogsQueryTimeRange(TimeSpan) — confirmed via M:LogsQueryTimeRange.#ctor(System.TimeSpan).
 internal class LogAnalyticsMonitoringStatsReader : IMonitoringStatsReader, IDisposable
 {
     private readonly MonitoringOptions _options;
@@ -135,7 +135,7 @@ internal class LogAnalyticsMonitoringStatsReader : IMonitoringStatsReader, IDisp
     internal virtual async Task<(MonitoringSnapshot Snapshot, bool HadFailure)> FetchSnapshotAsync(
         MonitoringWindow window, DateTimeOffset generatedAt, CancellationToken cancellationToken)
     {
-        var range = new QueryTimeRange(MonitoringKql.ToTimeSpan(window));
+        var range = new LogsQueryTimeRange(MonitoringKql.ToTimeSpan(window));
 
         // Each section is loaded independently: a failing query degrades only
         // its own tile (Invariant #17 — visible unavailable, never a fake 0).
@@ -202,7 +202,7 @@ internal class LogAnalyticsMonitoringStatsReader : IMonitoringStatsReader, IDisp
         return (snapshot, hadFailure);
     }
 
-    // SDK: Azure.Monitor.Query 1.7.1
+    // SDK: Azure.Monitor.Query.Logs 1.0.0
     // QueryWorkspaceAsync(workspaceId, kql, range, options=null, cancellationToken=default)
     // response.Value.Table.Rows — IReadOnlyList<LogsTableRow>
     // row[0] — object (Item(int) indexer on LogsTableRow)
@@ -211,7 +211,7 @@ internal class LogAnalyticsMonitoringStatsReader : IMonitoringStatsReader, IDisp
     // that is a legitimate empty result, not a failure. Returns (null, true)
     // only when an exception is caught (Failed=true → do not cache snapshot).
     private async Task<(double? Value, bool Failed)> SafeScalarAsync(
-        string kql, QueryTimeRange range, string label, CancellationToken ct)
+        string kql, LogsQueryTimeRange range, string label, CancellationToken ct)
     {
         try
         {
@@ -233,7 +233,7 @@ internal class LogAnalyticsMonitoringStatsReader : IMonitoringStatsReader, IDisp
     // that is a legitimate empty result, not a failure. Returns (null, true)
     // only when an exception is caught (Failed=true → do not cache snapshot).
     private async Task<(IReadOnlyList<KeyValuePair<string, long>>? Value, bool Failed)> SafeGroupedAsync(
-        string kql, QueryTimeRange range, string label, CancellationToken ct)
+        string kql, LogsQueryTimeRange range, string label, CancellationToken ct)
     {
         try
         {

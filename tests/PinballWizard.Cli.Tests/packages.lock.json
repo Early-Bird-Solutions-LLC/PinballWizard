@@ -841,7 +841,7 @@
           "Azure.Communication.Email": "[1.1.0, )",
           "Azure.Developer.Playwright": "[1.0.0, )",
           "Azure.Identity": "[1.21.0, )",
-          "Azure.Monitor.Query": "[1.7.1, )",
+          "Azure.Monitor.Query.Logs": "[1.0.0, )",
           "Azure.ResourceManager.AppContainers": "[1.6.0, )",
           "Azure.ResourceManager.CosmosDB": "[1.5.0, )",
           "Azure.Search.Documents": "[12.0.0, )",
@@ -993,14 +993,13 @@
           "OpenTelemetry.PersistentStorage.FileSystem": "1.1.1"
         }
       },
-      "Azure.Monitor.Query": {
+      "Azure.Monitor.Query.Logs": {
         "type": "CentralTransitive",
-        "requested": "[1.7.1, )",
-        "resolved": "1.7.1",
-        "contentHash": "HJnal+BIaBiuiba1p2X5lNyx6I+CnqcjEMNv19R1jtjas5hk9sdUcPmZOLaECFRExFBxLDc2xuLJkXmglFXQbg==",
+        "requested": "[1.0.0, )",
+        "resolved": "1.0.0",
+        "contentHash": "ADXClIhgWGwPFBo3ijOix34lSedWZGWwKD+j3zhJQ1/qeDguKv1jRd+WhtJKmun0887orR9aImbWg0mIb6sIDg==",
         "dependencies": {
-          "Azure.Core": "1.47.1",
-          "System.ClientModel": "1.6.0"
+          "Azure.Core": "1.49.0"
         }
       },
       "Azure.ResourceManager.AppContainers": {
