@@ -1120,8 +1120,14 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
    also stamps aria-current="page"). Caption-scale text collapses the hit box
    below SC 2.5.8's 24×24 floor — surfaced on /engineering/docs/glossary at
    375×812 after the 9.14 bump (main CI UI tests on #1104). Same 24px floor as
-   .pw-doc-links; breadcrumbs are horizontal so neighbour spacing stays fine. */
+   .pw-doc-links; breadcrumbs are horizontal so neighbour spacing stays fine.
+
+   box-sizing + padding-block: Mud's flex child can still compute under 24px
+   tall from line-box alone under some font metrics; padding makes the floor
+   robust when the snapshot gate races stylesheet application (#1106 flake). */
 .mud-breadcrumb-item > a {
+    box-sizing: border-box;
     min-block-size: 24px;
     min-inline-size: 24px;
+    padding-block: 4px;
 }
