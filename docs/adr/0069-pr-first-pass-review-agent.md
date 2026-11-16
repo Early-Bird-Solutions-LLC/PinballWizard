@@ -47,8 +47,11 @@ Ship a **PR first-pass review** agent:
 - Fork PRs: skipped (`head.repo.full_name == github.repository`).
 - Checkout is **`pull_request.base.sha` only** (not the Actions default merge
   commit), so head-tree `CLAUDE.md` / `.claude` never enter the action cwd.
-- Versioned prompt is fetched via Contents API for the head blob into `/tmp`
-  and injected as the action `prompt:` input — not loaded from a head checkout.
+- Versioned prompt is copied from that **trusted base tree** into `/tmp` and
+  injected as the action `prompt:` input — never fetched from the head blob
+  (a same-repo PR must not rewrite its own reviewer instructions). Missing
+  prompt on base fails with a clear error; the run skeleton is written before
+  prompt load so failure handlers do not mask the root cause.
 - Bot-authored PRs (`user.type == Bot`) are skipped so Renovate / docs-agent
   runs do not hard-fail on `allowed_bots` defaults.
 - Permissions: `contents: read` only (no `actions: write`) so artifact upload
@@ -80,11 +83,13 @@ events from same repo).
 
 | Finding | Severity | Mitigation in v1 |
 | --- | --- | --- |
-| Prompt injection via adversarial PR description/diff / head-tree CLAUDE.md | P0 | Checkout `base.sha` only; prompt via `/tmp` API blob; comment-only tools; never mutate; enablement off until monitored |
+| Prompt injection via adversarial PR description/diff / head-tree CLAUDE.md | P0 | Checkout `base.sha` only; comment-only tools; never mutate; enablement off until monitored |
+| Same-repo PR rewrites reviewer prompt on head | P0 | Prompt loaded only from trusted base tree into `/tmp` (never head Contents API); random `GITHUB_OUTPUT` delimiter |
 | Token scope escalation (`actions:write` + `gh api`) → `workflow_dispatch` | P0 | No `actions: write`; artifact upload with `contents: read` only |
 | Cost amplification via force-push spam | P1 | Concurrency group per PR + cancel-in-progress; idempotent per head SHA |
 | Leaking secrets from diff into public comment | P0 | Prompt forbids quoting secret-shaped strings; redact in artifact |
 | Bot PRs hard-fail the check | P1 | Skip `user.type == Bot` (neutral) |
+| Missing prompt / early failure masks root cause | P1 | Skeleton written before prompt load; missing base prompt → clear `::error::`; fail handler checks file exists |
 | Confused with Bugbot / 0041 loops | P1 | Distinct HTML marker; ignore own comments; complementary scope documented |
 
 ## Alternatives considered

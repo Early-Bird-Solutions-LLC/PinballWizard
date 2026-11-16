@@ -11,8 +11,11 @@ name: PR first-pass review
 # Security (Bugbot / ADR-0069):
 #  - Checkout is the PR *base* SHA only (not the merge commit) so CLAUDE.md /
 #    .claude from the head never land in the action cwd.
-#  - Prompt file is fetched via API into /tmp and injected as action input —
-#    never relied on from a head/merge working tree.
+#  - Prompt is copied from that trusted base tree into /tmp and injected as
+#    action input — never loaded from head (a same-repo PR must not rewrite
+#    its own reviewer instructions). Random GITHUB_OUTPUT delimiter.
+#  - Run skeleton is written before prompt load so failure paths never hit a
+#    missing artifact JSON.
 #  - No actions:write (artifact upload works with contents:read; write would
 #    allow workflow_dispatch via gh api).
 #  - Bot-authored PRs are skipped (neutral) so Renovate/docs-agent do not
@@ -48,24 +51,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
-      - name: Load versioned prompt from head blob into /tmp
-        id: agent_prompt
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROMPT_PATH: .github/agents/pr-first-pass-review.md
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          # Isolate prompt bytes outside the base checkout so Claude Code does
-          # not treat head-tree CLAUDE.md / .claude as project settings.
-          gh api "repos/${GITHUB_REPOSITORY}/contents/${PROMPT_PATH}?ref=${HEAD_SHA}" \
-            --jq .content | base64 -d > /tmp/pr-first-pass-review.md
-          {
-            echo 'text<<PROMPT_EOF'
-            cat /tmp/pr-first-pass-review.md
-            echo 'PROMPT_EOF'
-          } >> "$GITHUB_OUTPUT"
-
       - name: Write run skeleton (outcome slots)
         run: |
           set -euo pipefail
@@ -92,6 +77,29 @@ jobs:
             "kit_expires": "2026-12-31"
           }
           EOF
+
+      - name: Load versioned prompt from trusted base tree into /tmp
+        id: agent_prompt
+        env:
+          PROMPT_PATH: .github/agents/pr-first-pass-review.md
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # Prompt must come from the checked-out base tree (already merged /
+          # trusted). Never fetch the head blob — a same-repo PR could rewrite
+          # reviewer instructions in the same diff under review.
+          if [[ ! -f "${PROMPT_PATH}" ]]; then
+            echo "::error::Trusted prompt missing on base ${BASE_SHA}: ${PROMPT_PATH}"
+            exit 1
+          fi
+          cp "${PROMPT_PATH}" /tmp/pr-first-pass-review.md
+          # Random delimiter so a literal PROMPT_EOF line cannot truncate outputs.
+          delim="PROMPT_$(openssl rand -hex 16)"
+          {
+            echo "text<<${delim}"
+            cat /tmp/pr-first-pass-review.md
+            echo "${delim}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: First-pass review (comment only)
         uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1
@@ -139,6 +147,10 @@ jobs:
           python3 - <<'PY'
           import json, pathlib
           p = pathlib.Path("artifacts/pr-first-pass-review-run.json")
+          if not p.is_file():
+              raise SystemExit(
+                  "run skeleton missing — checkout or Write run skeleton step failed before prompt load"
+              )
           data = json.loads(p.read_text())
           data["status"] = "failed"
           p.write_text(json.dumps(data, indent=2) + "\n")
