@@ -1123,8 +1123,13 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
 
    Use the 44px chrome floor (nav-rail / footer), not 24px: CI font metrics
    still flaked glossary target-size at exactly 24px even after waiting for
-   app.css (#1106/#1107). Mud's 12px separator padding keeps neighbour spacing. */
+   app.css (#1106/#1107). inline-flex so min-block-size actually grows the
+   hit box (inline <a> ignored min-height under some font metrics). Mud's
+   12px separator padding keeps neighbour spacing. */
 .mud-breadcrumb-item > a {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
     min-block-size: 44px;
-    min-inline-size: 24px;
+    min-inline-size: 44px;
 }
