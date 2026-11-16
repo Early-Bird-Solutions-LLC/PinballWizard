@@ -1129,6 +1129,8 @@ Six metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phas
 | `pinwiz-alert-availability` | Availability test success rate < 99.5% over rolling 7-day window | Sev 1 | Email notify; investigate per runbook `01-incident-response.md` |
 | `pinwiz-alert-aca-job-failure` | Any `pinwiz-job-*` ACA Job logs `Saw completed job … condition: Failed`; evaluated daily over a matching 1-day window with `autoMitigate: false`, split by `JobName_s`, so a job failing nightly yields one email per failing night naming the job | Sev 2 | Email notify; `az containerapp job execution list -n <job>` |
 
+**Missing-run coverage (#856 / ADR-0068):** Azure Monitor log alerts cannot look back more than 48 h, so a Log Analytics dead-man's-switch cannot cover weekly/monthly cadences. Instead, daily ACA job `pinwiz-job-schedule-watchdog` runs `--check-job-schedules` (ARM last *scheduled* success vs seeded MaxGapHours) and exits non-zero when overdue — which this failure alert already surfaces. Manual starts do not reset the schedule clock.
+
 **Alert-proven requirement (pre-launch gate item):** before launch, each alert is proven to fire by inducing a synthetic condition in a dev environment. The proof is recorded as a dated comment in `docs/decision-log.md` per the DR drill procedure.
 
 > **Why this gate is not optional — a worked example.** `pinwiz-alert-aca-job-failure`

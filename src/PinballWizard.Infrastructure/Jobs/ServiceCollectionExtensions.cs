@@ -14,7 +14,7 @@ namespace PinballWizard.Infrastructure.Jobs;
 // DI registration for the ARM-backed jobs admin service.
 public static class ServiceCollectionExtensions
 {
-    // Registers IJobAdminService.
+    // Registers IJobAdminService + IJobScheduleObserver (#856 / ADR-0068).
     // Auth: uses the shared TokenCredential singleton (DefaultAzureCredential) already registered
     // by AddCosmosPersistence — same as ArmCosmosProvisioner.
     // Sub + RG are parsed from Cosmos:AccountResourceId to avoid requiring two additional
@@ -53,6 +53,24 @@ public static class ServiceCollectionExtensions
 
             var endTimes = sp.GetService<IJobExecutionEndReader>();
             return new ArmJobAdminService(armClient, subscriptionId, resourceGroupName, logger, endTimes);
+        });
+
+        services.AddSingleton<IJobScheduleObserver>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<ArmJobScheduleObserver>>();
+            var credential = sp.GetRequiredService<TokenCredential>();
+            var armClient = new ArmClient(credential);
+            var cosmosOptions = sp.GetRequiredService<IOptions<CosmosOptions>>().Value;
+            var (subscriptionId, resourceGroupName) = ParseSubAndRg(cosmosOptions.AccountResourceId);
+
+            if (string.IsNullOrWhiteSpace(subscriptionId) || string.IsNullOrWhiteSpace(resourceGroupName))
+            {
+                throw new InvalidOperationException(
+                    "IJobScheduleObserver was registered but could not resolve SubscriptionId / ResourceGroup " +
+                    "from Cosmos:AccountResourceId.");
+            }
+
+            return new ArmJobScheduleObserver(armClient, subscriptionId, resourceGroupName, logger);
         });
 
         return true;

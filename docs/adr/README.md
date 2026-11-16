@@ -78,6 +78,7 @@ negative) it carries.
 | [0065](0065-matchplay-ratings-cdn-tools.md) | Match Play Ratings CDN Wizard tools (search / compare; not API bulk) | Accepted |
 | [0066](0066-agent-lifecycle-kit.md) | Agent Lifecycle Kit — closed loop for every Foundry / CI / hybrid agent (amends 0051, 0016) | Accepted |
 | [0067](0067-ifpa-wppr-tools.md) | IFPA WPPR live player tools (search + profile; not RAG) | Accepted |
+| [0068](0068-aca-job-schedule-watchdog.md) | ACA job schedule watchdog via ARM (not Log Analytics) | Accepted |
 
 ## Conventions
 
