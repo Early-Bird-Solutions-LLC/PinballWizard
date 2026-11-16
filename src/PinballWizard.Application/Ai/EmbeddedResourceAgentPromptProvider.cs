@@ -64,9 +64,14 @@ namespace PinballWizard.Application.Ai;
 // Step 3.10 + tools list wire searchIfpaPlayers / getIfpaPlayer for IFPA
 // WPPR routing — distinct from Match Play live-event tools. Cache key bump
 // evicts pre-OpsTriage / pre-IFPA answers.
+// Bumped to "v12.2026.11" (#718): Wizard.md Step 2 TitleCollisions clarify
+// takes precedence over Step 3.5 R1 "answer title-level / never ask which
+// edition" — that R1 rule covers Siblings (same-group editions) only, not
+// cross-group remakes (e.g. bare Cactus Canyon → Bally 1998 vs CGC remake).
+// Cache key bump evicts answers that skipped the collision clarify gate.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v11.2026.11";
+    public const string CurrentPromptVersion = "v12.2026.11";
 
     private readonly Dictionary<string, string> _prompts;
 

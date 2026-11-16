@@ -88,4 +88,21 @@ public sealed class EmbeddedResourceAgentPromptProviderTests
         Assert.Contains("Rules(question)", wizardPrompt);
         Assert.Contains("Repair(question)", wizardPrompt);
     }
+
+    // #718 — bare "Cactus Canyon" collided Bally 1998 vs CGC remake, but the
+    // live Wizard answered without clarifying. Root cause: Step 3.5's
+    // "title-level → answer directly / never ask which edition" rule was
+    // easy to mis-apply to TitleCollisions (cross-group distinct machines).
+    // Pin the precedence language so a future prompt edit cannot drop it.
+    [Fact]
+    public void WizardPrompt_TitleCollisionsClarifyPrecedesEditionR1()
+    {
+        var provider = new EmbeddedResourceAgentPromptProvider();
+        var wizardPrompt = provider.GetPrompt(AgentName.Wizard);
+
+        Assert.Contains("TitleCollisions clarify gate", wizardPrompt);
+        Assert.Contains("Cactus Canyon", wizardPrompt);
+        Assert.Contains("does **not** waive Step 2's TitleCollisions clarify", wizardPrompt);
+        Assert.Equal("v12.2026.11", EmbeddedResourceAgentPromptProvider.CurrentPromptVersion);
+    }
 }
