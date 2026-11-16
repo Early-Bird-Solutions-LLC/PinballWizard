@@ -18,6 +18,8 @@ name: PR first-pass review
 #    missing artifact JSON.
 #  - No actions:write (artifact upload works with contents:read; write would
 #    allow workflow_dispatch via gh api).
+#  - Agent tool allowlist has NO Bash(gh api:*) — only gh pr view/diff/comment.
+#    Idempotency check uses gh api in a trusted workflow step (not the model).
 #  - Bot-authored PRs are skipped (neutral) so Renovate/docs-agent do not
 #    hard-fail on allowed_bots defaults.
 #
@@ -58,7 +60,7 @@ jobs:
           cat > artifacts/pr-first-pass-review-run.json <<EOF
           {
             "agent": "pr-first-pass-review",
-            "prompt_version": "v1.2026.11",
+            "prompt_version": "v1.2026.11.1",
             "adr": "0069",
             "trust_tier": "Propose",
             "category": "claude-code-ci",
@@ -78,8 +80,42 @@ jobs:
           }
           EOF
 
+      # Idempotency in a trusted shell — keeps Bash(gh api:*) out of the model
+      # allowlist (Bugbot: broad gh api + PR/issues write enables close/delete/lock).
+      - name: Check existing first-pass comment for this head SHA
+        id: existing_review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # gh api --jq does not accept jq --arg; filter bodies in a pipe.
+          bodies="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '.[] | select(.body | contains("<!-- pr-first-pass-review -->")) | .body' || true)"
+          if printf '%s\n' "${bodies}" | grep -Fq "<!-- head_sha: ${HEAD_SHA} -->"; then
+            echo "already_reviewed=true" >> "$GITHUB_OUTPUT"
+            echo "Idempotent no-op: first-pass comment already present for ${HEAD_SHA}"
+          else
+            echo "already_reviewed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mark run completed (idempotent skip)
+        if: steps.existing_review.outputs.already_reviewed == 'true'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("artifacts/pr-first-pass-review-run.json")
+          data = json.loads(p.read_text())
+          data["status"] = "completed"
+          data["skip_reason"] = "idempotent_head_sha"
+          p.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
       - name: Load versioned prompt from trusted base tree into /tmp
         id: agent_prompt
+        if: steps.existing_review.outputs.already_reviewed != 'true'
         env:
           PROMPT_PATH: .github/agents/pr-first-pass-review.md
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -102,6 +138,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: First-pass review (comment only)
+        if: steps.existing_review.outputs.already_reviewed != 'true'
         uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1
         with:
           anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
@@ -126,10 +163,10 @@ jobs:
           claude_args: |
             --max-turns 12
             --model claude-sonnet-4-6
-            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(gh pr comment:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
 
       - name: Mark run completed (best-effort)
-        if: success()
+        if: success() && steps.existing_review.outputs.already_reviewed != 'true'
         run: |
           set -euo pipefail
           python3 - <<'PY'
