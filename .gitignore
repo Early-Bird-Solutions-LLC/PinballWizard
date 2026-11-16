@@ -76,6 +76,8 @@ data/*
 !data/seeds/**
 !data/eval/
 !data/eval/**
+!data/agent-kb/
+!data/agent-kb/**
 !data/phase4/
 !data/phase4/**
 

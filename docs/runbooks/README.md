@@ -15,6 +15,7 @@ Read alongside [`docs/observability.md`](../observability.md) (metric and instru
 | [`05-secret-rotation.md`](05-secret-rotation.md) | Rotate AI keys, Cosmos keys, Cloudflare token, OPDB token | 90-day rotation cadence or key compromise |
 | [`06-source-site-outage.md`](06-source-site-outage.md) | Upstream scraper source returns 403/429/5xx or changes `robots.txt` | Source error rate spike or `robots.txt` change detected |
 | [`07-ops-triage.md`](07-ops-triage.md) | Foundry Ops Triage — alert diagnosis, enriched email, remediation PR | Monitor webhook / Admin → Ops Triage |
+| [`08-pr-first-pass-review.md`](08-pr-first-pass-review.md) | CI Propose first-pass PR diff review (ADR-0069) | Repo var `ENABLE_PR_FIRST_PASS_REVIEW=true` |
 | [`migrate-aca-jobs-to-workload-stack.md`](migrate-aca-jobs-to-workload-stack.md) | Hand ACA jobs from `pinwiz-shared-{env}` to `pinwiz-jobs-{env}` with `detachResources` (ADR-0060 / #966); post-cutover emergency hatch | Cutover done 2026-11-15; Deploy defaults to workload when var unset |
 
 ## Freshness requirement

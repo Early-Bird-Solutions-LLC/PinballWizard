@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pinwiz.ai/schemas/pr-first-pass-review-lesson.json",
+  "title": "PrFirstPassReviewLesson",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "trust",
+    "content",
+    "promoted_by",
+    "promoted_at",
+    "source_run_id",
+    "content_hash"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "trust": { "enum": ["playbook", "promoted_lesson"] },
+    "content": { "type": "string", "minLength": 1 },
+    "promoted_by": { "type": "string", "minLength": 1 },
+    "promoted_at": { "type": "string", "format": "date-time" },
+    "source_run_id": { "type": "string", "minLength": 1 },
+    "content_hash": { "type": "string", "minLength": 8 },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" },
+    "themes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

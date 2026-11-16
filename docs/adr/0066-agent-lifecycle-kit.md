@@ -159,7 +159,7 @@ not only agent JSON.
 | Wizard (+ sub-agents) | Foundry | Observe | Eval (0016) shipped; deepen outcome/KB as product needs |
 | Ops Triage | Hybrid (0064) | Act | Diagnose+act shipped `enableOpsTriage=false`; transitional until act-gate, budget, outcomes, eval, KB close |
 | PR feedback triage | CI (0041) | Propose | Comment-only; add outcome + eval when extended |
-| PR first-pass review (planned) | CI | Propose | Full kit from day one — do not open-loop |
+| PR first-pass review | CI ([0069](0069-pr-first-pass-review-agent.md)) | Propose | Workflow + eval + KB schema shipped; `enable` via `ENABLE_PR_FIRST_PASS_REVIEW` default off; transitional until durable outcomes + KB retrieval (expires 2026-12-31) |
 | Docs-agent (planned) | CI | Propose/Act per ADR | Full kit |
 
 ## Alternatives considered

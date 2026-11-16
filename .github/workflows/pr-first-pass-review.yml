@@ -1,0 +1,131 @@
+name: PR first-pass review
+
+# Claude Code CI Propose agent (ADR-0069 / ADR-0066 / ADR-0051).
+# First-pass review of the PR *diff* — complementary to pr-feedback-triage.yml
+# (ADR-0041), which classifies *reviewer* feedback.
+#
+# Comment-only: contents:read, no Edit/Write/git push, never approve/request-changes.
+# Enablement: repository variable ENABLE_PR_FIRST_PASS_REVIEW must be the string
+# "true". Default is off (AGENT-08 adversary gate).
+#
+# NOTE: pull_request workflows that need repo vars/secrets run in the base-branch
+# context for forks; same-repo PRs use this file from the merge ref. Prefer merging
+# this workflow to main before flipping the enablement variable.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: pr-first-pass-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: write   # upload run artifact (outcomes slots)
+
+jobs:
+  first-pass-review:
+    runs-on: ubuntu-latest
+    if: >-
+      vars.ENABLE_PR_FIRST_PASS_REVIEW == 'true' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout base (never untrusted head)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Load versioned prompt
+        id: agent_prompt
+        run: |
+          set -euo pipefail
+          {
+            echo 'text<<PROMPT_EOF'
+            cat .github/agents/pr-first-pass-review.md
+            echo 'PROMPT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write run skeleton (outcome slots)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cat > artifacts/pr-first-pass-review-run.json <<EOF
+          {
+            "agent": "pr-first-pass-review",
+            "prompt_version": "v1.2026.11",
+            "adr": "0069",
+            "trust_tier": "Propose",
+            "category": "claude-code-ci",
+            "repo": "${{ github.repository }}",
+            "pr_number": ${{ github.event.pull_request.number }},
+            "head_sha": "${{ github.event.pull_request.head.sha }}",
+            "base_sha": "${{ github.event.pull_request.base.sha }}",
+            "status": "started",
+            "outcome": {
+              "rating": null,
+              "rated_by": null,
+              "rated_at": null,
+              "notes": null
+            },
+            "kit_status": "transitional",
+            "kit_expires": "2026-12-31"
+          }
+          EOF
+
+      - name: First-pass review (comment only)
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1
+        with:
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR: ${{ github.event.pull_request.number }}
+            HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+            BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+            Follow the agent instructions below exactly.
+
+            ${{ steps.agent_prompt.outputs.text }}
+          claude_args: |
+            --max-turns 12
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(gh pr comment:*)"
+
+      - name: Mark run completed (best-effort)
+        if: success()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("artifacts/pr-first-pass-review-run.json")
+          data = json.loads(p.read_text())
+          data["status"] = "completed"
+          p.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Mark run failed (best-effort)
+        if: failure()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("artifacts/pr-first-pass-review-run.json")
+          data = json.loads(p.read_text())
+          data["status"] = "failed"
+          p.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Upload run artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pr-first-pass-review-run-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: artifacts/pr-first-pass-review-run.json
+          retention-days: 90
+          if-no-files-found: warn
