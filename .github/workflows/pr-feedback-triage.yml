@@ -34,11 +34,19 @@ jobs:
     #  - issue_comment also fires on plain issues — require a PR association
     #  - loop guard: never react to our own triage comment (marker)
     #  - fork/secret safety on review events: same-repo head only
+    #  - skip dependency/CI bots that comment on PRs but are not review bots.
+    #    Renovate's "Edited/Blocked" notice and github-actions coverage badges
+    #    would otherwise hard-fail allowed_bots (run 43790824402 on #1072).
+    #    Do NOT add them to allowed_bots — #998: that list is a trust boundary;
+    #    skip here so absence of triage is a neutral job skip, not a red check.
     if: >-
       (github.event_name != 'issue_comment' || github.event.issue.pull_request != null) &&
       !contains(github.event.comment.body, '<!-- claude-triage -->') &&
       (github.event_name == 'issue_comment' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      github.actor != 'renovate[bot]' &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]'
     steps:
       # Base ref only (no ref:) — untrusted PR head code is NEVER checked out or run,
       # which is the real mitigation that makes comment-only safe even for fork PRs.
