@@ -113,11 +113,20 @@ public sealed class ResponsiveSnapshotTests(PlaywrightWebApplicationFactory fact
 
         // DOMContentLoaded is not enough for CSS-dependent gates. When app.css /
         // MudBlazor.min.css arrive a tick late, target-size sees caption-scale
-        // breadcrumb <a href="#"> boxes (~14–16px) and fails — then the same
-        // case passes on retry once styles apply (#1105 CSS floor + #1106 flake
-        // on engineering-glossary). --pw-bg-base lives only in app.css.
+        // breadcrumb <a href="#"> boxes (~14–16px) and fails (#1105/#1106/#1107).
+        // --pw-bg-base lives only in app.css; also wait until any breadcrumb
+        // link has actually received the 44px floor (not just that the sheet
+        // parsed — CI font metrics still failed at a bare 24px min).
         await page.WaitForFunctionAsync(
-            "() => getComputedStyle(document.documentElement).getPropertyValue('--pw-bg-base').trim() !== ''");
+            """
+            () => {
+              if (!getComputedStyle(document.documentElement).getPropertyValue('--pw-bg-base').trim())
+                return false;
+              const a = document.querySelector('.mud-breadcrumb-item > a');
+              if (!a) return true;
+              return a.getBoundingClientRect().height >= 44;
+            }
+            """);
 
         Directory.CreateDirectory(ScreenshotRoot);
 
