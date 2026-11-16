@@ -49,6 +49,9 @@ public sealed class TiltErrorBoundaryTests : AsyncBunitContext
         // Assert — "TILT" heading is rendered.
         Assert.Contains("TILT", cut.Markup, StringComparison.OrdinalIgnoreCase);
 
+        // Stable hook for discovery/overflow gates (must not rely on /error's tilt-heading).
+        cut.Find("[data-testid='tilt-boundary-fallback']");
+
         // Assert — request-id span is present (may read "no-trace" in test context
         // since Activity.Current is null without OTel pipeline, which is expected).
         cut.Find("[data-testid='tilt-request-id']");
