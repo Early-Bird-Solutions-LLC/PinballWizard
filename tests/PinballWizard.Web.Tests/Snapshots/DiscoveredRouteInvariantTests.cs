@@ -129,6 +129,7 @@ public sealed class DiscoveredRouteInvariantTests
 
         Assert.Contains("/admin", routes);
         Assert.Contains("/admin/jobs", routes);
+        Assert.Contains("/admin/monitoring", routes);
         Assert.Contains("/admin/ops-triage", routes);
 
         var failures = new List<string>();
@@ -152,13 +153,30 @@ public sealed class DiscoveredRouteInvariantTests
                     """
                     () => {
                       const doc = document.documentElement;
+                      // TILT means DI/render failed — measuring that page is not an overflow gate.
+                      // Prefer the in-layout TiltErrorBoundary hook; also accept the
+                      // dedicated /error|/tilt page heading (Bugbot #1077).
+                      const tilt = !!(
+                        document.querySelector('[data-testid="tilt-boundary-fallback"]')
+                        || document.querySelector('[data-testid="tilt-heading"]')
+                      );
                       return {
                         scrollWidth: doc.scrollWidth,
                         clientWidth: doc.clientWidth,
                         h1Count: document.querySelectorAll('h1').length,
+                        isTilt: tilt,
                       };
                     }
                     """);
+
+                if (metrics.IsTilt)
+                {
+                    failures.Add(
+                        $"tilt-fallback {route} @{w}×{h}: page DI/render failed — "
+                        + "overflow would measure TILT, not the admin layout "
+                        + "(register the missing AdminTestDoubles stub)");
+                    continue;
+                }
 
                 if (metrics.ScrollWidth > metrics.ClientWidth + OverflowSlackPx)
                 {
@@ -185,5 +203,6 @@ public sealed class DiscoveredRouteInvariantTests
         public double ScrollWidth { get; set; }
         public double ClientWidth { get; set; }
         public int H1Count { get; set; }
+        public bool IsTilt { get; set; }
     }
 }

@@ -45,5 +45,6 @@ public sealed class AdminTestDoublesTests
         Assert.NotNull(sp.GetService<IAgentPromptOverrideRepository>());
         Assert.NotNull(sp.GetService<PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider>());
         Assert.NotNull(sp.GetService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.AiFoundryOptions>>());
+        Assert.NotNull(sp.GetService<PinballWizard.Application.Monitoring.IMonitoringStatsReader>());
     }
 }
