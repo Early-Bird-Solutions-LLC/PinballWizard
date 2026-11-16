@@ -52,11 +52,12 @@ intact: no bot commits, no invariant amendment required.
 **Negative / watch points:**
 
 - API usage is billed separately from the Claude subscription; bounded by `--max-turns
-  16` and a tight tool scope, but the `issue_comment` trigger fires on any PR comment
+  24` and a tight tool scope, but the `issue_comment` trigger fires on any PR comment
   (not only bot reviews). A cheap no-op path in the prompt keeps cost low, but first-
-  month API spend should be monitored. Raised from 8 after Bugbot multi-finding
-  reviews on #1089 exhausted the budget (successful Claude result at 10–11 turns
-  with permission denials still failed the job).
+  month API spend should be monitored. Raised 8→16 after Bugbot multi-finding reviews
+  on #1089 (#1092); then 16→24 and skip `Fixed:` review-comment replies / empty-body
+  review wrappers after those events still burned 10+ permission denials and failed
+  the required check.
 - Live verification is post-merge: `pull_request_review` / `issue_comment` workflows
   run the copy of the workflow file on the default branch, so the action takes effect
   after merge rather than from the PR branch itself.
