@@ -30,14 +30,13 @@ public static class FunctionalChecks
                 $"Navigated to {url} but ended on {page.Url}. A Blazor render exception was thrown."));
         }
 
-        // 2. Tilt error heading visible
-        var tiltHeading = page.Locator("[data-testid='tilt-heading']");
-        if (await tiltHeading.CountAsync() > 0 && await tiltHeading.IsVisibleAsync()
-            && !url.Contains("/error") && !url.Contains("/tilt"))
+        // 2. In-layout TiltErrorBoundary fallback (not the dedicated /error|/tilt pages)
+        var tiltBoundary = page.Locator("[data-testid='tilt-boundary-fallback']");
+        if (await tiltBoundary.CountAsync() > 0 && await tiltBoundary.IsVisibleAsync())
         {
             findings.Add(new BugFinding(url, BugSeverity.Critical, BugSource.Functional,
                 "Global Tilt error surface rendered instead of page content",
-                "data-testid='tilt-heading' is visible — the TiltErrorBoundary caught an unhandled exception."));
+                "data-testid='tilt-boundary-fallback' is visible — TiltErrorBoundary caught an unhandled exception."));
         }
 
         // 3. Load time
