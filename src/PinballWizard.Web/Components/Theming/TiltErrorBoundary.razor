@@ -27,8 +27,12 @@
 }
 else
 {
-    @* TILT fallback — intentionally minimal so it looks engineered, not broken. *@
-    <MudPaper Class="tilt-boundary pa-6 ma-4" Elevation="4">
+    @* TILT fallback — intentionally minimal so it looks engineered, not broken.
+       data-testid="tilt-boundary-fallback" is the stable hook for discovery /
+       overflow gates (#790 / #1077 Bugbot): route pages use tilt-heading;
+       this in-layout boundary must be distinguishable from a healthy Body. *@
+    <MudPaper Class="tilt-boundary pa-6 ma-4" Elevation="4"
+              data-testid="tilt-boundary-fallback">
         <MudStack Spacing="2" AlignItems="AlignItems.Center">
             <MudText Typo="Typo.h4" Class="tilt-title" Align="Align.Center">
                 TILT

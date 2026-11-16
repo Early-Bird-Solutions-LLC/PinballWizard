@@ -154,7 +154,12 @@ public sealed class DiscoveredRouteInvariantTests
                     () => {
                       const doc = document.documentElement;
                       // TILT means DI/render failed — measuring that page is not an overflow gate.
-                      const tilt = !!document.querySelector('[data-testid="tilt-heading"]');
+                      // Prefer the in-layout TiltErrorBoundary hook; also accept the
+                      // dedicated /error|/tilt page heading (Bugbot #1077).
+                      const tilt = !!(
+                        document.querySelector('[data-testid="tilt-boundary-fallback"]')
+                        || document.querySelector('[data-testid="tilt-heading"]')
+                      );
                       return {
                         scrollWidth: doc.scrollWidth,
                         clientWidth: doc.clientWidth,
