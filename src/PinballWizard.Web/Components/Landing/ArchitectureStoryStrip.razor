@@ -24,15 +24,14 @@
                     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="arch-card__desc">
                         @card.Description
                     </MudText>
-                    @* Visible link text must appear in aria-label (axe
-                       label-content-name-mismatch / WCAG 2.5.3). Arrow is
-                       decorative. *@
+                    @* Accessible name must include painted link text + ↗ (axe
+                       label-content-name-mismatch / WCAG 2.5.3). *@
                     <MudLink Href="@card.Href"
                              Target="_blank"
                              Typo="Typo.caption"
                              Color="Color.Inherit"
                              Class="arch-card__link"
-                             aria-label="@($"{card.LinkText} — {card.Label}")">
+                             aria-label="@($"{card.LinkText} \u2197 — {card.Label}")">
                         @card.LinkText<span aria-hidden="true"> ↗</span>
                     </MudLink>
                 </MudCardContent>
