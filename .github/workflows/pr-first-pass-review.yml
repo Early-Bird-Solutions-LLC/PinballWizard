@@ -90,10 +90,13 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # gh api --jq does not accept jq --arg; filter bodies in a pipe.
-          bodies="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
-            --jq '.[] | select(.body | contains("<!-- pr-first-pass-review -->")) | .body' || true)"
-          if printf '%s\n' "${bodies}" | grep -Fq "<!-- head_sha: ${HEAD_SHA} -->"; then
+          # Fail loud on API errors (no || true). Only trust comments posted by
+          # github-actions[bot] whose body *starts with* the marker (collaborator
+          # paste of the strings must not skip the agent).
+          # HEAD_SHA is a 40-char hex from the event payload — safe in the filter.
+          ids="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"<!-- pr-first-pass-review -->\")) and (.body | contains(\"<!-- head_sha: ${HEAD_SHA} -->\"))) | .id")"
+          if [[ -n "${ids}" ]]; then
             echo "already_reviewed=true" >> "$GITHUB_OUTPUT"
             echo "Idempotent no-op: first-pass comment already present for ${HEAD_SHA}"
           else

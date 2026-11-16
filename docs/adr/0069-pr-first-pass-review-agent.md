@@ -89,6 +89,8 @@ events from same repo).
 | Prompt injection via adversarial PR description/diff / head-tree CLAUDE.md | P0 | Checkout `base.sha` only; comment-only tools; never mutate; enablement off until monitored |
 | Same-repo PR rewrites reviewer prompt on head | P0 | Prompt loaded only from trusted base tree into `/tmp` (never head Contents API); random `GITHUB_OUTPUT` delimiter |
 | Broad `gh api:*` + PR/issues write → close/delete/lock via injection | P0 | Model allowlist omits `gh api`; only `gh pr view` / `diff` / `comment`; idempotency `gh api` stays in trusted workflow shell |
+| Collaborator spoofs marker strings to skip review | P1 | Skip only when comment author is `github-actions[bot]` and body *starts with* the marker + matching `head_sha` |
+| Comment-list API failure treated as “no review yet” | P1 | Idempotency step fails the job on `gh api` errors (no `\|\| true`) |
 | Token scope escalation (`actions:write` + `gh api`) → `workflow_dispatch` | P0 | No `actions: write`; artifact upload with `contents: read` only |
 | Cost amplification via force-push spam | P1 | Concurrency group per PR + cancel-in-progress; idempotent per head SHA |
 | Leaking secrets from diff into public comment | P0 | Prompt forbids quoting secret-shaped strings; redact in artifact |
