@@ -160,7 +160,7 @@
       tests/PinballWizard.Web.Tests/A11y/ to assert WCAG 2.1 AA compliance
       on every public route via a real Chromium browser.
     -->
-    <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.13.0" />
+    <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.14.0" />
   </ItemGroup>
   <ItemGroup Label="Tests — xUnit + NSubstitute + bUnit + test SDK">
     <!-- 2.15.2+ required for AngleSharp ≥1.10 (HtmlAnchorElement.BeforeToggle). -->
@@ -189,7 +189,7 @@
       ASP.NET Core / .NET 10 GA train.
     -->
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
