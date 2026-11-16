@@ -27,16 +27,15 @@ public sealed class ContentLoadTests(PlaywrightWebApplicationFactory factory)
     // Interactive pages (Index, Wizard) set fallback content before the
     // IsInteractive guard so the SSR HTML is always populated.
     //
-    // /settings is excluded: it injects IUserPreferencesService (LocalStorage-
-    // backed) which is not registered in the minimal test factory — the page
-    // returns empty HTML. The axe suite has the same exclusion.
     [Theory]
-    [InlineData("/",       "landing-hero", "landing page hero always renders")]
-    [InlineData("/wizard", "wizard-page",  "wizard page shell renders")]
-    [InlineData("/about",  "about-page",   "about page renders")]
-    [InlineData("/status", "status-page",  "status page renders")]
-    [InlineData("/error",  "tilt-heading", "error page renders")]
-    [InlineData("/tilt",   "tilt-heading", "tilt page renders")]
+    [InlineData("/",          "landing-hero",   "landing page hero always renders")]
+    [InlineData("/wizard",    "wizard-page",    "wizard page shell renders")]
+    [InlineData("/about",     "about-page",     "about page renders")]
+    [InlineData("/status",    "status-page",    "status page renders")]
+    [InlineData("/settings",  "settings-page",  "settings page renders")]
+    [InlineData("/documents", "doc-list-grid",  "documents browse renders")]
+    [InlineData("/error",     "tilt-heading",   "error page renders")]
+    [InlineData("/tilt",      "tilt-heading",   "tilt page renders")]
     public async Task ContentLoad_PublicRoute_RendersRequiredTestId(string path, string testId, string description)
     {
         _ = description;

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Catalog;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Jobs;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
@@ -175,7 +176,21 @@ internal static class AdminTestDoubles
             .Returns(Task.CompletedTask);
         repo.StreamByRunIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Stream<RawDocumentRecord>());
+        // Public /documents browse (#790 discovery gate) — empty corpus is fine;
+        // without this stub the page DI-fails and SSR emits no <h1>.
+        repo.StreamDocumentsAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(),
+                Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<DocumentListItem>());
         return repo;
+    }
+
+    // Public-browse subset: enough for /documents SSR in PlaywrightWebApplicationFactory
+    // without pulling the full admin double graph into anonymous mode.
+    public static IServiceCollection AddPublicBrowseTestDoubles(this IServiceCollection services)
+    {
+        services.AddSingleton(RawDocs());
+        return services;
     }
 
     // ── IDocumentLinker (Relink returns Linked so the row resolves) ──────────
