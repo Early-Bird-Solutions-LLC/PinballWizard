@@ -30,11 +30,14 @@
                 var slug = machine.MachineId;
                 <div class="featured-strip__cell"
                      data-testid="@($"featured-machine-{slug}")">
+                    @* No aria-label: let the accessible name come from painted
+                       Title+Tagline content. Axe 4.14 label-content-name-mismatch
+                       kept failing when an aria-label re-stated the same strings
+                       (and earlier when line-clamp painted an ellipsis). *@
                     <MudCard Class="featured-card mud-clickable" Elevation="1"
                              @onclick="@(() => OnMachineClick(machine))"
                              role="button"
-                             tabindex="0"
-                             aria-label="@($"Ask about {machine.Title}")">
+                             tabindex="0">
                         <MudCardContent Class="featured-card__content">
                             <MudText Typo="Typo.subtitle2" Class="featured-card__title">
                                 @machine.Title
