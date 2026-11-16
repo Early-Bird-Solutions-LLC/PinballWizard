@@ -59,6 +59,8 @@ internal sealed class IfpaPlayerProvider : IIfpaPlayerProvider
 
         var id = (int)wire.PlayerId.Value;
         var systems = wire.PlayerStats?.System;
+        // Live API keys are `open` / `womens`; Application + Wizard.md still
+        // speak MAIN / WOMEN. Prefer live keys, fall back to historical names.
         return new IfpaPlayerProfile(
             id,
             wire.FirstName ?? string.Empty,
@@ -70,8 +72,8 @@ internal sealed class IfpaPlayerProvider : IIfpaPlayerProvider
             NullIfWhiteSpace(wire.CountryCode),
             wire.IfpaRegistered,
             PublicPlayerUrl(id),
-            MapStanding("MAIN", systems?.Main),
-            MapStanding("WOMEN", systems?.Women));
+            MapStanding("MAIN", systems?.Open ?? systems?.Main),
+            MapStanding("WOMEN", systems?.Womens ?? systems?.Women));
     }
 
     internal static string PublicPlayerUrl(int playerId) =>

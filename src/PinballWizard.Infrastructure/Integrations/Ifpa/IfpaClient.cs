@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
@@ -18,10 +19,20 @@ namespace PinballWizard.Infrastructure.Integrations.Ifpa;
 // in IfpaWpprTool never interpolates the secret.
 public sealed class IfpaClient : IIfpaClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    private static JsonSerializerOptions CreateJsonOptions()
     {
-        PropertyNameCaseInsensitive = true,
-    };
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            // Live IFPA payloads encode many numerics as strings ("46").
+            NumberHandling = JsonNumberHandling.AllowReadingFromString,
+        };
+        // "Not Ranked" / other sentinels → null rather than failing the payload.
+        options.Converters.Add(new FlexibleNullableDoubleConverter());
+        return options;
+    }
 
     private readonly HttpClient _http;
     private readonly IOptions<IfpaOptions> _options;
@@ -140,29 +151,6 @@ public sealed class IfpaClient : IIfpaClient
             statusCode: response.StatusCode);
     }
 
-    private static IfpaPlayerWireDto? ParsePlayer(JsonElement player)
-    {
-        if (player.ValueKind == JsonValueKind.Object)
-        {
-            return player.Deserialize<IfpaPlayerWireDto>(JsonOptions);
-        }
-
-        if (player.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in player.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                return item.Deserialize<IfpaPlayerWireDto>(JsonOptions);
-            }
-        }
-
-        return null;
-    }
-
     private static List<IfpaPlayerSearchHitWireDto> ParseSearchResults(JsonElement results)
     {
         if (results.ValueKind == JsonValueKind.Array)
@@ -177,5 +165,34 @@ public sealed class IfpaClient : IIfpaClient
         }
 
         return [];
+    }
+
+    // Live GET /player/{id} returns `player: [ {...} ]`; OpenAPI documents an
+    // object. Accept either shape; prefer the first array element.
+    private static IfpaPlayerWireDto? ParsePlayer(JsonElement player)
+    {
+        if (player.ValueKind == JsonValueKind.Object)
+        {
+            return player.Deserialize<IfpaPlayerWireDto>(JsonOptions);
+        }
+
+        if (player.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in player.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var parsed = element.Deserialize<IfpaPlayerWireDto>(JsonOptions);
+                if (parsed is not null)
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        return null;
     }
 }

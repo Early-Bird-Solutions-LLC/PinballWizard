@@ -3,8 +3,13 @@ using System.Text.Json.Serialization;
 
 namespace PinballWizard.Infrastructure.Integrations.Ifpa;
 
-// Wire DTOs for IFPA OpenAPI 2.1 player endpoints (ADR-0067).
+// Wire DTOs for IFPA player endpoints (ADR-0067).
 // Property names match the API's snake_case JSON.
+//
+// Live-API quirks validated 2026-11-16 against api.ifpapinball.com:
+// - GET /player/{id} returns `player` as a 1-element array (OpenAPI says object).
+// - Ranking systems use keys `open` (overall WPPR) and `womens` (not MAIN/WOMEN).
+// - Many numeric fields arrive as strings. See FlexibleNullableDoubleConverter.
 
 public sealed class IfpaPlayerSearchResponseDto
 {
@@ -52,8 +57,8 @@ public sealed class IfpaPlayerSearchHitWireDto
 
 public sealed class IfpaPlayerEnvelopeDto
 {
-    // OpenAPI types this as one object. The live profile endpoint returns
-    // a one-element array, the same mismatch search results already normalize.
+    // Live API returns a 1-element array; OpenAPI documents an object.
+    // Deserialize as JsonElement and normalize in IfpaClient.ParsePlayer.
     [JsonPropertyName("player")]
     public JsonElement Player { get; set; }
 }
@@ -99,9 +104,20 @@ public sealed class IfpaPlayerStatsWireDto
 
 public sealed class IfpaRankingSystemsWireDto
 {
+    // Live overall WPPR standing (2026-11). Prefer this over Main.
+    [JsonPropertyName("open")]
+    public IfpaRankingStandingWireDto? Open { get; set; }
+
+    // Historical / OpenAPI name — retained so fixtures and any residual
+    // MAIN payloads still bind.
     [JsonPropertyName("MAIN")]
     public IfpaRankingStandingWireDto? Main { get; set; }
 
+    // Live women's WPPR standing (key is lowercase plural "womens").
+    [JsonPropertyName("womens")]
+    public IfpaRankingStandingWireDto? Womens { get; set; }
+
+    // Historical / OpenAPI name.
     [JsonPropertyName("WOMEN")]
     public IfpaRankingStandingWireDto? Women { get; set; }
 }

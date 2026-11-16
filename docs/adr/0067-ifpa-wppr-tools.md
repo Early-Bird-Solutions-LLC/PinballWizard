@@ -62,3 +62,17 @@ Ratings CDN, Foundry agent lifecycle). This decision is **0067**.
   Rules/Repair/Valuation sub-agent; Match Play remains the path for live event
   standings/floor.
 - Prompt version bumps so cached pre-IFPA answers do not linger.
+
+## Live wire notes (2026-11-16)
+
+Validated against `api.ifpapinball.com` with a real partner key. The shipped
+OpenAPI 2.1 sketch drifts from production JSON in three ways the client now
+tolerates:
+
+1. `GET /player/{id}` returns `player` as a **1-element array**, not an object.
+2. Ranking systems use keys **`open`** (overall WPPR) and **`womens`** — not
+   `MAIN` / `WOMEN`. The provider still exposes Application-layer `Main` /
+   `Women` (RankingSystem labels `"MAIN"` / `"WOMEN"`) so Wizard.md routing
+   stays stable.
+3. Many numeric fields arrive as **strings** (and search may use `"Not Ranked"`);
+   `FlexibleNullableDoubleConverter` coerces or nulls them.
