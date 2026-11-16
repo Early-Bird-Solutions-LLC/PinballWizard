@@ -840,7 +840,7 @@
       "pinballwizard.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "AngleSharp": "[1.7.3, )",
+          "AngleSharp": "[1.10.3, )",
           "Aspire.Microsoft.Azure.Cosmos": "[13.6.5, )",
           "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
@@ -874,9 +874,9 @@
       },
       "AngleSharp": {
         "type": "CentralTransitive",
-        "requested": "[1.7.3, )",
-        "resolved": "1.7.3",
-        "contentHash": "I8TpSvgOPAVQHjVvXaROZOkIGZdX0tn+e9CUix6mv5pMqfyKO+/zm/dofsXgsxVTJl/sSTnEMFwrdnqxTt2axQ=="
+        "requested": "[1.10.3, )",
+        "resolved": "1.10.3",
+        "contentHash": "HF2owdhRhy84PJ7dk6e7Olc8D3S8RhU+BSXgCpTcafODrHzUUqUquCUWrM81/PeKHKlFA86LCdZBAQCQRK2y7w=="
       },
       "Aspire.Microsoft.Azure.Cosmos": {
         "type": "CentralTransitive",
