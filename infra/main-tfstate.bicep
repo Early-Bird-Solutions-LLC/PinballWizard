@@ -54,7 +54,7 @@ param tags object = {
 // Resource group
 // -----------------------------------------------------------------------------
 
-resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   name: 'rg-pinball-tfstate'
   location: location
   tags: tags
