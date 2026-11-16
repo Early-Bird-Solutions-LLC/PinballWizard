@@ -56,9 +56,35 @@ public sealed class AiSearchRagIndexer : IRagIndexer
         _logger = logger;
     }
 
-    public async Task<IndexUpsertResult> UpsertAsync(
+    public Task<IndexUpsertResult> UpsertAsync(
         ChunkRequest request,
         IReadOnlyList<Chunk> chunks,
+        RagIndexerOptions options,
+        CancellationToken cancellationToken) =>
+        UpsertCoreAsync(request, chunks, preparedEmbeddings: null, options, cancellationToken);
+
+    public Task<IndexUpsertResult> UploadEmbeddedAsync(
+        ChunkRequest request,
+        IReadOnlyList<Chunk> chunks,
+        IReadOnlyList<ReadOnlyMemory<float>> embeddings,
+        RagIndexerOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(embeddings);
+        if (embeddings.Count != chunks.Count)
+        {
+            throw new ArgumentException(
+                $"Expected {chunks.Count} embedding(s) for {chunks.Count} chunk(s); got {embeddings.Count}.",
+                nameof(embeddings));
+        }
+
+        return UpsertCoreAsync(request, chunks, embeddings, options, cancellationToken);
+    }
+
+    private async Task<IndexUpsertResult> UpsertCoreAsync(
+        ChunkRequest request,
+        IReadOnlyList<Chunk> chunks,
+        IReadOnlyList<ReadOnlyMemory<float>>? preparedEmbeddings,
         RagIndexerOptions options,
         CancellationToken cancellationToken)
     {
@@ -131,6 +157,15 @@ public sealed class AiSearchRagIndexer : IRagIndexer
                 // network timeout (AB#259). Sub-batches embed in seconds and are
                 // concatenated back in order so the per-range contract holds.
                 var vectors = new ReadOnlyMemory<float>[count];
+                if (preparedEmbeddings is not null)
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        vectors[i] = preparedEmbeddings[start + i];
+                    }
+                }
+                else
+                {
                 await embedGate.WaitAsync(workToken).ConfigureAwait(false);
                 try
                 {
@@ -158,6 +193,7 @@ public sealed class AiSearchRagIndexer : IRagIndexer
                 finally
                 {
                     embedGate.Release();
+                }
                 }
 
                 for (int i = 0; i < count; i++)

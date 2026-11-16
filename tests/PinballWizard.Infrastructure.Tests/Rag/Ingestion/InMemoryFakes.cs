@@ -39,6 +39,14 @@ internal sealed class InMemoryRagIndexer : IRagIndexer
         return Task.FromResult(ResultFactory(request, chunks));
     }
 
+    public Task<IndexUpsertResult> UploadEmbeddedAsync(
+        ChunkRequest request,
+        IReadOnlyList<Chunk> chunks,
+        IReadOnlyList<ReadOnlyMemory<float>> embeddings,
+        RagIndexerOptions options,
+        CancellationToken cancellationToken) =>
+        UpsertAsync(request, chunks, options, cancellationToken);
+
     public Task<int> DeleteByDocumentAndMachineAsync(
         string documentId, string machineId, CancellationToken cancellationToken)
     {

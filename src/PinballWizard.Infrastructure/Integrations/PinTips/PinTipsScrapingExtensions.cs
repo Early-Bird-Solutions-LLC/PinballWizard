@@ -30,6 +30,7 @@ public static class PinTipsScrapingExtensions
         });
 
         services.AddTransient<PinTipsSynthesizer>();
+        services.AddSingleton<PinTipsSync>();
         return services;
     }
 }
