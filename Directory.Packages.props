@@ -142,7 +142,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
   </ItemGroup>
   <ItemGroup Label="Scraping / parsing / browser automation">
-    <PackageVersion Include="AngleSharp" Version="1.7.3" />
+    <PackageVersion Include="AngleSharp" Version="1.10.3" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.62.0" />
     <!-- Azure.Developer.Playwright 1.0.0 (GA stable) — connects to a remote Chromium
          instance on Azure Playwright Workspaces via BrowserType.ConnectAsync, instead
