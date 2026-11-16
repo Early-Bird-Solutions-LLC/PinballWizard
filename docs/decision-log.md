@@ -32,7 +32,7 @@ Otherwise, this log is the right home.
 
 ## 2026-11-16 — ACA schedule watchdog uses ARM + existing failure alert
 
-**Decision:** Cover #856 missing-run detection with daily job `pinwiz-job-schedule-watchdog` (`--check-job-schedules`) rather than a seventh Log Analytics scheduledQueryRule.
+**Decision:** Cover #856 missing-run detection with daily job `pinwiz-job-watchdog` (`--check-job-schedules`) rather than a seventh Log Analytics scheduledQueryRule.
 
 **Alternatives considered:** (a) Re-land #863 with `windowSize P2D` — rejected: weekly/monthly cadences exceed the 48 h Azure Monitor cap and would silently go uncovered. (b) Custom metric heartbeats from every job — deferred; correct but touches every command surface. (c) `ago()` inside the LA query — measured ineffective; the alert window clamps the data plane.
 

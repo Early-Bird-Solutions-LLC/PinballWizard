@@ -97,7 +97,7 @@ public sealed class JobScheduleWatchdogTests
         Assert.Contains("pinwiz-job-pintips", bares);
         Assert.DoesNotContain("pinwiz-job-kineticist-sync", bares);
         Assert.DoesNotContain("pinwiz-job-relink-all", bares);
-        Assert.DoesNotContain("pinwiz-job-schedule-watchdog", bares);
+        Assert.DoesNotContain("pinwiz-job-watchdog", bares);
 
         Assert.Equal(
             ExpectedJobSchedules.MonthlyMaxGapHours,

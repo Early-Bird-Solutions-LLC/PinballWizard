@@ -1438,10 +1438,13 @@ resource pbFreshdeskJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/
 // pinwiz-alert-aca-job-failure rule. Auth: AZURE_CLIENT_ID pins to the shared
 // UAMI which already holds Container Apps Jobs Operator at RG scope.
 
+// Job resource name must be ≤32 chars (Microsoft.App/jobs). Bare
+// "pinwiz-job-watchdog" + "-" + 5-char uniqueString = 25 — Deploy 43784597251
+// rejected pinwiz-job-schedule-watchdog-* (34) with ContainerAppInvalidName.
 module scheduleWatchdogJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = {
   name: 'schedule-watchdog-job-${environment}'
   params: {
-    jobName: 'pinwiz-job-schedule-watchdog-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    jobName: 'pinwiz-job-watchdog-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
     location: location
     tags: tags
     containerImage: cliImageTag
