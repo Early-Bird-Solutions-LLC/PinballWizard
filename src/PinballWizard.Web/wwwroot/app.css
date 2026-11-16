@@ -1115,3 +1115,13 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
     display: inline-flex;
     align-items: center;
 }
+
+/* MudBreadcrumbs current/disabled items render as <a href="#"> (MudBlazor ≥9.14
+   also stamps aria-current="page"). Caption-scale text collapses the hit box
+   below SC 2.5.8's 24×24 floor — surfaced on /engineering/docs/glossary at
+   375×812 after the 9.14 bump (main CI UI tests on #1104). Same 24px floor as
+   .pw-doc-links; breadcrumbs are horizontal so neighbour spacing stays fine. */
+.mud-breadcrumb-item > a {
+    min-block-size: 24px;
+    min-inline-size: 24px;
+}
