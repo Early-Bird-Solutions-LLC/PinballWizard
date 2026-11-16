@@ -111,6 +111,14 @@ public sealed class ResponsiveSnapshotTests(PlaywrightWebApplicationFactory fact
             $"{factory.ServerAddress}{route}",
             new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
 
+        // DOMContentLoaded is not enough for CSS-dependent gates. When app.css /
+        // MudBlazor.min.css arrive a tick late, target-size sees caption-scale
+        // breadcrumb <a href="#"> boxes (~14–16px) and fails — then the same
+        // case passes on retry once styles apply (#1105 CSS floor + #1106 flake
+        // on engineering-glossary). --pw-bg-base lives only in app.css.
+        await page.WaitForFunctionAsync(
+            "() => getComputedStyle(document.documentElement).getPropertyValue('--pw-bg-base').trim() !== ''");
+
         Directory.CreateDirectory(ScreenshotRoot);
 
         // GetFileName + Path.Join: CodeQL flags Path.Combine when a later
