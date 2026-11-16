@@ -6,6 +6,7 @@ using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Jobs;
 using PinballWizard.Application.Linking;
+using PinballWizard.Application.Monitoring;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
@@ -44,6 +45,10 @@ internal static class AdminTestDoubles
         services.AddSingleton(CorpusStats());
         services.AddSingleton(ScrapeRuns());
         services.AddSingleton(Jobs());
+        // AdminMonitoring (#790 discovery gate / Bugbot): without this stub SSR
+        // throws and TiltErrorBoundary replaces the page — overflow then measures
+        // the TILT fallback, not the monitoring layout.
+        services.AddSingleton(Monitoring());
 
         // Concrete singleton — parameterless, loads embedded prompt .md resources.
         services.AddSingleton<EmbeddedResourceAgentPromptProvider>();
@@ -330,6 +335,23 @@ internal static class AdminTestDoubles
                     Succeeded = false, DocumentsDiscovered = 0, ErrorMessage = "timeout",
                 }));
         return repo;
+    }
+
+    // ── IMonitoringStatsReader ───────────────────────────────────────────────
+    private static IMonitoringStatsReader Monitoring()
+    {
+        var reader = Substitute.For<IMonitoringStatsReader>();
+        reader.GetSnapshotAsync(Arg.Any<MonitoringWindow>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(new MonitoringSnapshot
+            {
+                Window = MonitoringWindow.TwentyFourHours,
+                GeneratedAt = AsOf,
+                // Nulls → unavailable tiles (Invariant #17); enough for SSR chrome.
+                LatencyP95Ms = null,
+                FivexxRatePercent = null,
+                RefusalRatePercent = null,
+            }));
+        return reader;
     }
 
     // ── IJobAdminService ─────────────────────────────────────────────────────

@@ -55,6 +55,8 @@
     grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 20px;
+    min-width: 0;
+    width: 100%;
     /* Critical (ALERT) status reuses the theme's danger-red slot so it tracks
        the active site theme rather than an admin-only color. Distinct from the
        amber 'attention' accent used by eval/review/suppressed. */
@@ -70,6 +72,10 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    /* Grid/flex children default to min-width:auto; instrument+threshold
+       nowrap footers were expanding the ribbon past a 320px viewport. */
+    min-width: 0;
+    overflow-x: clip;
 }
 
 .mon-tile--ok    { border-top-color: var(--pw-accent-grounded); }
@@ -213,6 +219,8 @@
     border-top: 1px solid var(--pw-border-faint);
     padding-top: 8px;
     margin-top: 2px;
+    min-width: 0;
+    flex-wrap: wrap;
 }
 
 .mon-tile__instrument {
@@ -220,6 +228,8 @@
     font-size: 9px;
     color: var(--pw-text-faint);
     letter-spacing: 0.02em;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .mon-tile__threshold {
@@ -227,6 +237,9 @@
     font-size: 9px;
     color: var(--pw-text-secondary);
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ── Shared panel shell ──────────────────────────────────────────────── */
@@ -468,6 +481,21 @@
 }
 
 @media (max-width: 540px) {
+    /* Stamp ("Refreshed yyyy-MM-dd HH:mm UTC") + period buttons side-by-side
+       outgrow ~256px content (320 viewport − collapsed 64px rail). Stack so
+       the page never widens the document (#790 discovery gate). */
+    .mon-toolbar {
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .mon-toolbar__stamp {
+        flex: 1 1 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
     .mon-ribbon {
         grid-template-columns: 1fr;
     }
