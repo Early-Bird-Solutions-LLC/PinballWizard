@@ -52,8 +52,10 @@ public sealed class IfpaPlayerSearchHitWireDto
 
 public sealed class IfpaPlayerEnvelopeDto
 {
+    // OpenAPI types this as one object. The live profile endpoint returns
+    // a one-element array, the same mismatch search results already normalize.
     [JsonPropertyName("player")]
-    public IfpaPlayerWireDto? Player { get; set; }
+    public JsonElement Player { get; set; }
 }
 
 public sealed class IfpaPlayerWireDto
