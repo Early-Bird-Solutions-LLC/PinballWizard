@@ -65,9 +65,10 @@
 </AppPageShell>
 
 @code {
+    // Current page is the AppPageHeader <h1> — omit disabled current crumb
+    // (MudBlazor ≥9.14 renders it as <a href="#">; see EngineeringDoc.razor).
     private static readonly IReadOnlyList<BreadcrumbItem> _breadcrumbs = new[]
     {
         new BreadcrumbItem("Engineering", "/engineering"),
-        new BreadcrumbItem("Architecture Decision Records", href: null, disabled: true),
     };
 }

@@ -26,10 +26,13 @@
     var doc = Provider.BySlug(Slug);
     var crumbs = doc is null
         ? null
+        // Current page is the AppPageHeader <h1> — do NOT add a disabled
+        // BreadcrumbItem for it. MudBlazor ≥9.14 renders disabled crumbs as
+        // <a href="#" aria-current="page">, which axe target-size flakes on
+        // at mobile/narrow even with a 44px CSS floor (#1104–#1107).
         : (IReadOnlyList<BreadcrumbItem>)new[]
         {
             new BreadcrumbItem("Engineering", "/engineering"),
-            new BreadcrumbItem(doc.Title, href: null, disabled: true),
         };
 }
 

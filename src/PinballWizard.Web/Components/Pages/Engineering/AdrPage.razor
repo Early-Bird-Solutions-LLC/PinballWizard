@@ -21,11 +21,12 @@
     var adr = Provider.ByNumber(Number);
     var crumbs = adr is null
         ? null
+        // Omit disabled current crumb — AppPageHeader <h1> is the page name
+        // (MudBlazor ≥9.14 <a href="#"> target-size; see EngineeringDoc.razor).
         : (IReadOnlyList<BreadcrumbItem>)new[]
         {
             new BreadcrumbItem("Engineering", "/engineering"),
             new BreadcrumbItem("ADRs", "/engineering/adr"),
-            new BreadcrumbItem($"ADR-{adr.Number:D4}", href: null, disabled: true),
         };
 }
 
