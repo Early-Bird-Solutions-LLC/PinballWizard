@@ -16,9 +16,13 @@ on:
   issue_comment:
     types: [created]
 
-# One in-flight triage per PR; newer events supersede stale runs.
+# One in-flight triage per (PR × event type). Bugbot (and similar) often fire
+# pull_request_review and pull_request_review_comment nearly together; a single
+# PR-wide group with cancel-in-progress cancelled one run and left a red/cancelled
+# "triage" required check (#1077). Scope by event_name so those paths do not
+# cancel each other; same-event bursts still supersede.
 concurrency:
-  group: pr-triage-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: pr-triage-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
