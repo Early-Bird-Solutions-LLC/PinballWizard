@@ -14,14 +14,17 @@ namespace PinballWizard.Application.Ai.Tools;
 // null) when the machine has no group id or is the sole member of its
 // group. The primary resolved machine is NOT repeated in Siblings.
 //
-// TitleCollisions surfaces machines from DIFFERENT OPDB groups that
-// share the same franchise title (e.g. Sega Godzilla 1998 vs Stern
-// Godzilla 2021 — different GroupIds, same lookup-row). Unlike Siblings
-// (same-group, same manufacturer tier), TitleCollisions is cross-group
-// and cross-manufacturer. Populated only via the lookup-row path; the
-// cross-partition fallback path always yields an empty list. The
-// matched machine itself and any machine already present in Siblings
-// are excluded. Empty (not null) when there are no cross-group collisions.
+// TitleCollisions surfaces franchise-title collisions that are NOT
+// same-manufacturer edition siblings: (a) different OPDB groups
+// (Sega Godzilla 1998 vs Stern Godzilla 2021), and (b) same OPDB group
+// segment but a different manufacturer — remakes that reuse the group
+// key (Cactus Canyon Bally 1998 vs CGC 2022, both G4835 — #718).
+// Unlike Siblings (same-group, same manufacturer), TitleCollisions is
+// always cross-manufacturer (or subtitle-superset across groups).
+// Populated only via the lookup-row path; the cross-partition fallback
+// path always yields an empty list. The matched machine itself and any
+// machine already present in Siblings are excluded. Empty (not null)
+// when there are no collisions.
 public sealed record MachineGroundingDto(
     string OpdbId,
     string Title,

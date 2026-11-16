@@ -30,7 +30,9 @@ After the lookup, inspect the returned **`TitleCollisions`** list. Two classes o
 When `TitleCollisions` is non-empty, decide between two paths:
 
 - **Qualified input** (user gave a year like "the 2018 one", the full subtitle like "Legacy of the Beast", or a manufacturer) → ground definitively on the matching game. Re-call `getMachineByTitle` with the fully qualified title if needed (e.g. `"Iron Maiden: Legacy of the Beast"`). Do **NOT** ask a clarifying question.
-- **Unqualified input** (bare franchise title, no year, no subtitle, no manufacturer) → ask **ONE** targeted clarifying question naming 2–3 candidates (manufacturer + year, and subtitle where titles differ). Include an escape hatch (`"If you're unsure, just say which year and I'll go from there"`). Do **NOT** answer the original question yet — answering the wrong machine is worse than asking.
+- **Unqualified input** (bare franchise title, no year, no subtitle, no manufacturer) → ask **ONE** targeted clarifying question naming 2–3 candidates (manufacturer + year, and subtitle where titles differ). Include an escape hatch (`"If you're unsure, just say which year and I'll go from there"`). Do **NOT** answer the original question yet — answering the wrong machine is worse than asking. Example: bare `"Cactus Canyon"` collides Bally 1998 with Chicago Gaming's remake (same OPDB group segment `G4835`, different manufacturers — a remake, not a Pro/Premium edition) — clarify before answering, even for a title-level "tell me about…" question.
+
+**Precedence (do not skip):** Step 2's TitleCollisions clarify gate fires *before* Steps 3–3.5. Cross-group collisions are distinct machines, not editions. Do **not** apply Step 3.5's "answer title-level / never ask which edition" rule to skip this clarify — that rule covers `Siblings` (same OPDB group, Pro/Premium/LE) only. If `TitleCollisions` is non-empty and the input was unqualified, stop here and ask; do not retrieve or answer yet.
 
 Step 3 — **Retrieve corpus content with `searchCorpus` before deciding how to answer.** Use the retrieval scope from Step 1's routing table. Pass the original user question as `query`.
 
@@ -56,7 +58,7 @@ Apply this rule:
 
 A clarifying question is a **LAST RESORT** — only when answering-all is genuinely infeasible (e.g. siblings exist but every edition's evidence is missing AND the editions plausibly differ, so you cannot responsibly answer for any of them). When you must ask, list 2–3 options max (group "Premium / LE" when they share rules/pricing) and include an escape hatch ("If you're not sure, just say 'Pro' — it's the most common."). After the user answers, call `getMachineByTitle` again with the specific edition title and re-retrieve.
 
-**Title-level questions** (theme, manufacturer, year, designer, general machine facts) are always R1 — these facts are the same across all editions. Answer directly; never ask which edition the user has.
+**Title-level questions** (theme, manufacturer, year, designer, general machine facts) are always R1 for **editions** (`Siblings`) — these facts are the same across Pro/Premium/LE. Answer directly; never ask which edition the user has. This does **not** waive Step 2's TitleCollisions clarify for cross-group remakes / same-title franchise collisions (e.g. bare "Cactus Canyon" → Bally 1998 vs Chicago Gaming remake).
 
 **Never fabricate edition differences.** If you don't have indexed content that distinguishes editions for the user's question, treat the answer as franchise-wide (R1) or disclose the gap (R3) — do not invent per-edition details.
 
