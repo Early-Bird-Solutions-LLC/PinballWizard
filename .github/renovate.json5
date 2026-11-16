@@ -142,6 +142,14 @@
       groupName: "test dependencies",
     },
     {
+      // AngleSharp ≥1.10 adds HtmlAnchorElement.BeforeToggle; bunit wrappers
+      // must ship the matching event or Web.Tests TypeLoadException (#1072).
+      // Later packageRules win groupName — this pulls bunit out of "test
+      // dependencies" so AngleSharp bumps cannot land alone against stale bunit.
+      matchPackageNames: ["AngleSharp", "bunit"],
+      groupName: "AngleSharp + bunit (ABI)",
+    },
+    {
       // Group all GitHub Actions version + digest bumps into a single weekly PR.
       // SHA pinning (digest type) is auto-merged once required checks pass;
       // major action version bumps are held for explicit dashboard approval.
