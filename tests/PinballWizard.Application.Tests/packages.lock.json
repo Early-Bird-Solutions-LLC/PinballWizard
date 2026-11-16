@@ -485,18 +485,18 @@
       },
       "Microsoft.Identity.Client": {
         "type": "Transitive",
-        "resolved": "4.84.2",
-        "contentHash": "Va9FjmABSgj/lcUfHH0pBNQkmS7SNyepz2ERV7Yynp6QgEYpFdSqR6Vzy1WWipN8GS5pBHuXoZbqaDWuARCrHQ==",
+        "resolved": "4.92.0",
+        "contentHash": "mvzvyZ0pG8gODD8+76u1HfpHzHk/Df8ylLdrrJImWdbAcV0PUx41Q/S3eojIAhH9T+upRf2cxKRli9208GC3Bw==",
         "dependencies": {
           "Microsoft.IdentityModel.Abstractions": "8.14.0"
         }
       },
       "Microsoft.Identity.Client.Extensions.Msal": {
         "type": "Transitive",
-        "resolved": "4.84.2",
-        "contentHash": "+D98LaU3dOu/Nzs6kgbBJapMvH7iwYcAeC99XwSkpmEadsPv6rozecOl9P6m4A3RfpOuPt9e6J6TwwUUp3+M4w==",
+        "resolved": "4.92.0",
+        "contentHash": "dQm4p27eitqWdJiIMoqn043Yx19OiFpHqYZGrP3cW5Ew3h3dQSPwD0kLC6xPlzVCQPYuAaNDl6f0xh//uLFVDQ==",
         "dependencies": {
-          "Microsoft.Identity.Client": "4.84.2",
+          "Microsoft.Identity.Client": "4.92.0",
           "System.Security.Cryptography.ProtectedData": "4.5.0"
         }
       },
@@ -549,13 +549,13 @@
       },
       "System.ClientModel": {
         "type": "Transitive",
-        "resolved": "1.15.0",
-        "contentHash": "y6zQLInrpX+oGL1gXM04DrUSu1O1esWxt4rD/zrujTnzIFChn/noD1OiVVpTrU8ZvglwqO2Uw038svUR3SiAOg==",
+        "resolved": "1.17.0",
+        "contentHash": "Qosgq/NjCWa8PgZpPfglyR0D/7NvznGWVrIkKV+bAni/dq/GqiRA2/n3+p5y7Mtk7VXb6SABsc7TEAiJIROr4w==",
         "dependencies": {
-          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
-          "Microsoft.Extensions.Hosting.Abstractions": "10.0.9",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
-          "System.Memory.Data": "10.0.9"
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.10",
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.10",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.10",
+          "System.Memory.Data": "10.0.10"
         }
       },
       "System.Diagnostics.EventLog": {
@@ -631,7 +631,7 @@
       "pinballwizard.application": {
         "type": "Project",
         "dependencies": {
-          "Azure.Core": "[1.62.0, )",
+          "Azure.Core": "[1.65.0, )",
           "Microsoft.Agents.AI": "[1.5.0, )",
           "Microsoft.Bcl.Memory": "[10.0.15, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
@@ -648,16 +648,16 @@
       },
       "Azure.Core": {
         "type": "CentralTransitive",
-        "requested": "[1.62.0, )",
-        "resolved": "1.62.0",
-        "contentHash": "C0ijs91ZW2uhF/VwGLXeayb+RwTWhDxKnrsmqPWg5HkYtPQ93mzaydyMCjAzE0AG5yHc1bpaPc+NPlZUgz3w8g==",
+        "requested": "[1.65.0, )",
+        "resolved": "1.65.0",
+        "contentHash": "NSC9y45rNoR7KTIjlbDtxAoadOVzi+rEOEFQXZHclJehB9/N8aesJOY0r1Kj2xxyzHSm+SzeOIHGMsRG/Klu2Q==",
         "dependencies": {
           "Microsoft.Bcl.AsyncInterfaces": "10.0.10",
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.10",
           "Microsoft.Extensions.Hosting.Abstractions": "10.0.10",
-          "Microsoft.Identity.Client": "4.84.2",
-          "Microsoft.Identity.Client.Extensions.Msal": "4.84.2",
-          "System.ClientModel": "1.15.0",
+          "Microsoft.Identity.Client": "4.92.0",
+          "Microsoft.Identity.Client.Extensions.Msal": "4.92.0",
+          "System.ClientModel": "1.17.0",
           "System.Memory.Data": "10.0.10"
         }
       },
