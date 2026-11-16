@@ -110,8 +110,8 @@
       cl100k_base is the BPE tokenizer used by `text-embedding-3-large`
       (ADR-0020).
     -->
-    <PackageVersion Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
-    <PackageVersion Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.0" />
+    <PackageVersion Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
+    <PackageVersion Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.1" />
     <!--
       Microsoft.ML.Tokenizers 2.0.0 transitively pulls Microsoft.Bcl.Memory
       9.0.4, which has a high-severity vuln (GHSA-73j8-2gch-69rq).
