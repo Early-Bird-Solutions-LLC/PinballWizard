@@ -1,0 +1,150 @@
+@namespace PinballWizard.Web.Components.Shared
+@typeparam T
+@implements IDisposable
+
+@*
+  MudDataGridPager fork: MudBlazor ≥9.6 renders the page-size MudSelect as
+  role="combobox" without an accessible name (aria-input-field-name). Upstream
+  fixed this on MudBlazor `dev` via aria-labelledby; until that ships we own
+  the labelled select here so AppDataGrid stays WCAG 2.1 AA.
+*@
+<MudToolBar Class="mud-table-pagination-toolbar">
+    <div class="mud-table-pagination-spacer"></div>
+    @if (PageSizeSelector)
+    {
+        <MudText Typo="Typo.body2" Class="mud-table-pagination-caption" id="@_rowsPerPageLabelId">
+            @RowsPerPageLabel
+        </MudText>
+        <MudSelect T="int"
+                   Value="@(DataGrid?.RowsPerPage ?? 0)"
+                   ValueChanged="SetRowsPerPageAsync"
+                   Class="mud-table-pagination-select"
+                   Underline="false"
+                   Dense="true"
+                   Disabled="@Disabled"
+                   SelectionOnEnter="true"
+                   aria-labelledby="@_rowsPerPageLabelId"
+                   aria-label="@RowsPerPageLabel">
+            @foreach (var pageSize in PageSizeOptions)
+            {
+                if (pageSize == int.MaxValue)
+                {
+                    <MudSelectItem T="int" Value="@pageSize">@AllItemsText</MudSelectItem>
+                }
+                else
+                {
+                    <MudSelectItem T="int" Value="@pageSize">@pageSize.ToString()</MudSelectItem>
+                }
+            }
+        </MudSelect>
+    }
+
+    @if (ShowPageNumber)
+    {
+        <MudText Typo="Typo.body2" Class="mud-table-pagination-caption">
+            @Info
+        </MudText>
+    }
+
+    @if (ShowNavigation)
+    {
+        <div class="mud-table-pagination-actions">
+            <MudIconButton Class="mud-flip-x-rtl"
+                           Icon="@Icons.Material.Filled.FirstPage"
+                           Disabled="@BackButtonsDisabled"
+                           OnClick="@(() => DataGrid?.NavigateTo(Page.First))"
+                           aria-label="First page" />
+            <MudIconButton Class="mud-flip-x-rtl"
+                           Icon="@Icons.Material.Filled.NavigateBefore"
+                           Disabled="@BackButtonsDisabled"
+                           OnClick="@(() => DataGrid?.NavigateTo(Page.Previous))"
+                           aria-label="Previous page" />
+            <MudIconButton Class="mud-flip-x-rtl"
+                           Icon="@Icons.Material.Filled.NavigateNext"
+                           Disabled="@ForwardButtonsDisabled"
+                           OnClick="@(() => DataGrid?.NavigateTo(Page.Next))"
+                           aria-label="Next page" />
+            <MudIconButton Class="mud-flip-x-rtl"
+                           Icon="@Icons.Material.Filled.LastPage"
+                           Disabled="@ForwardButtonsDisabled"
+                           OnClick="@(() => DataGrid?.NavigateTo(Page.Last))"
+                           aria-label="Last page" />
+        </div>
+    }
+</MudToolBar>
+
+@code {
+    private readonly string _rowsPerPageLabelId = $"datagridpager-rows-per-page-{Guid.NewGuid():N}";
+
+    [CascadingParameter]
+    public MudDataGrid<T>? DataGrid { get; set; }
+
+    [Parameter]
+    public bool PageSizeSelector { get; set; } = true;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public int[] PageSizeOptions { get; set; } = [10, 25, 50, 100];
+
+    [Parameter]
+    public string RowsPerPageLabel { get; set; } = "Rows per page:";
+
+    [Parameter]
+    public string AllItemsText { get; set; } = "All";
+
+    [Parameter]
+    public bool ShowNavigation { get; set; } = true;
+
+    [Parameter]
+    public bool ShowPageNumber { get; set; } = true;
+
+    private string Info
+    {
+        get
+        {
+            if (DataGrid is null)
+                return string.Empty;
+
+            var total = DataGrid.GetFilteredItemsCount();
+            var first = total == 0 ? 0 : (DataGrid.CurrentPage * DataGrid.RowsPerPage) + 1;
+            var last = Math.Min((DataGrid.CurrentPage + 1) * DataGrid.RowsPerPage, total);
+            return $"{first}-{last} of {total}";
+        }
+    }
+
+    private bool BackButtonsDisabled =>
+        Disabled || DataGrid is { CurrentPage: 0 };
+
+    private bool ForwardButtonsDisabled =>
+        Disabled
+        || (DataGrid is not null
+            && (DataGrid.CurrentPage + 1) * DataGrid.RowsPerPage >= DataGrid.GetFilteredItemsCount());
+
+    private async Task SetRowsPerPageAsync(int size)
+    {
+        if (DataGrid is not null)
+            await DataGrid.SetRowsPerPageAsync(size);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        if (DataGrid is null)
+            return;
+
+        DataGrid.HasPager = true;
+        DataGrid.PagerStateHasChangedEvent += StateHasChanged;
+        var size = DataGrid.RowsPerPage > 0
+            ? DataGrid.RowsPerPage
+            : PageSizeOptions.FirstOrDefault();
+        await DataGrid.SetRowsPerPageAsync(size, false);
+    }
+
+    public void Dispose()
+    {
+        if (DataGrid is not null)
+            DataGrid.PagerStateHasChangedEvent -= StateHasChanged;
+    }
+}

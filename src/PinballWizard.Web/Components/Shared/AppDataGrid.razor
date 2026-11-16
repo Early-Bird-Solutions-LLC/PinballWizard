@@ -134,6 +134,8 @@
         return false;
     }
 
+    // AppDataGridPager (not MudDataGridPager): MudBlazor ≥9.6 page-size select
+    // is role=combobox without an accessible name; our pager labels it.
     private RenderFragment? _pagerContent =>
-        ShowPager ? (RenderFragment)(b => { b.OpenComponent<MudDataGridPager<T>>(0); b.CloseComponent(); }) : null;
+        ShowPager ? (RenderFragment)(b => { b.OpenComponent<AppDataGridPager<T>>(0); b.CloseComponent(); }) : null;
 }
