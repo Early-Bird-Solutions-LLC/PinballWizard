@@ -15,6 +15,7 @@ using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
 using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Findability;
+using PinballWizard.Application.Jobs;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.SeedData;
 using PinballWizard.Application.Persistence;
@@ -38,6 +39,7 @@ using PinballWizard.Infrastructure.Integrations.PinTips;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Catalog;
+using PinballWizard.Infrastructure.Jobs;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Chunking;
@@ -159,6 +161,11 @@ var evalOption = new Option<bool>("--eval")
 var corpusCoverageOption = new Option<bool>("--corpus-coverage")
 {
     Description = "Corpus coverage probe: for each (source × document_type) cell with indexed content, assert presence + retrievability (a query auto-derived from a sample chunk retrieves content from that cell). Writes data/eval/results/coverage.{ts}.json and exits non-zero on gaps. Requires AiSearch:Endpoint and AiFoundry:ProjectEndpoint (retrievability uses IQueryEmbedder — no chat LLM calls)."
+};
+
+var checkJobSchedulesOption = new Option<bool>("--check-job-schedules")
+{
+    Description = "Dead-man's-switch for ACA job schedules (#856 / ADR-0068): lists expected pinwiz-job-* cadences, reads last successful *scheduled* execution via ARM, and exits non-zero when any job exceeds its MaxGapHours. Manual starts do not reset the clock. Requires Cosmos:AccountResourceId (sub/RG) and Container Apps Jobs Operator on the resolved identity."
 };
 
 var probeRetrievalOption = new Option<string?>("--probe-retrieval")
@@ -330,6 +337,7 @@ rootCommand.Options.Add(rebuildMachineIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(corpusCoverageOption);
+rootCommand.Options.Add(checkJobSchedulesOption);
 rootCommand.Options.Add(probeRetrievalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
@@ -377,6 +385,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
     var corpusCoverage = parseResult.GetValue(corpusCoverageOption);
+    var checkJobSchedules = parseResult.GetValue(checkJobSchedulesOption);
     var probeRetrieval = parseResult.GetValue(probeRetrievalOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
@@ -1082,6 +1091,55 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                           $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
                           $"subagent_accuracy={FormatMean(runResult.Aggregate.SubagentAccuracyMean)} " +
                           $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
+        return;
+    }
+
+    // Handle --check-job-schedules (#856 / ADR-0068). ARM-backed dead-man's
+    // switch: overdue scheduled jobs → exit 3 so pinwiz-alert-aca-job-failure
+    // (or the ACA job Failed condition) surfaces silence as health.
+    if (checkJobSchedules)
+    {
+        var observer = host.Services.GetService<IJobScheduleObserver>();
+        if (observer is null)
+        {
+            Console.Error.WriteLine(
+                "--check-job-schedules requires Cosmos:AccountResourceId so the " +
+                "CLI can resolve subscription + resource group for ARM. " +
+                "Set it alongside Cosmos:AccountEndpoint (Managed Identity).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        try
+        {
+            var expected = ExpectedJobSchedules.All;
+            var observations = await observer.ObserveAsync(expected, cancellationToken).ConfigureAwait(false);
+            var now = DateTimeOffset.UtcNow;
+            var overdue = JobScheduleWatchdog.FindOverdue(expected, observations, now);
+
+            Console.WriteLine(
+                $"Job schedule check: {expected.Count} expected cadences; {overdue.Count} overdue at {now:O}.");
+
+            foreach (var o in overdue.OrderBy(x => x.BareJobName, StringComparer.Ordinal))
+            {
+                var last = o.LastScheduledSuccessUtc is { } t
+                    ? t.ToString("O", CultureInfo.InvariantCulture)
+                    : "never";
+                var full = o.FullJobName ?? "(resource missing)";
+                Console.WriteLine(
+                    $"  OVERDUE: {o.BareJobName} ({full}) lastScheduledSuccess={last} " +
+                    $"elapsedH={o.ElapsedHours:F1} maxGapH={o.MaxGapHours}");
+            }
+
+            if (overdue.Count > 0)
+                Environment.ExitCode = 3;
+        }
+        catch (ArmJobAdminException ex)
+        {
+            Console.Error.WriteLine($"--check-job-schedules ARM failure: {ex.Message}");
+            Environment.ExitCode = 2;
+        }
+
         return;
     }
 
@@ -2220,6 +2278,13 @@ static IHost CreateHost(string[] args)
         // GetService<IDocumentReclassifier>() in the handler returns null
         // (→ exit code 2) when Cosmos is not configured.
         builder.Services.AddTransient<IDocumentReclassifier, DocumentReclassifier>();
+
+        // ACA Jobs admin + schedule watchdog (#856). Sub/RG come from
+        // Cosmos:AccountResourceId; the shared UAMI already holds Container
+        // Apps Jobs Operator at RG scope (shared.bicep).
+        var cosmosAccountResourceId = builder.Configuration[CosmosOptions.AccountResourceIdKey];
+        if (!string.IsNullOrWhiteSpace(cosmosAccountResourceId))
+            builder.Services.AddJobAdminService();
     }
 
     // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,

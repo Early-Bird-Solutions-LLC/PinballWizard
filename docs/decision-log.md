@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-11-16 — ACA schedule watchdog uses ARM + existing failure alert
+
+**Decision:** Cover #856 missing-run detection with daily job `pinwiz-job-schedule-watchdog` (`--check-job-schedules`) rather than a seventh Log Analytics scheduledQueryRule.
+
+**Alternatives considered:** (a) Re-land #863 with `windowSize P2D` — rejected: weekly/monthly cadences exceed the 48 h Azure Monitor cap and would silently go uncovered. (b) Custom metric heartbeats from every job — deferred; correct but touches every command surface. (c) `ago()` inside the LA query — measured ineffective; the alert window clamps the data plane.
+
+**Rationale:** ARM execution history is not clamped to 48 h; numeric CronJob execution suffixes distinguish schedule from manual; non-zero exit reuses `pinwiz-alert-aca-job-failure`.
+
+**Revisit when:** Azure Monitor raises the log-alert window beyond weekly MaxGap, or metric-absence alerts become the preferred pattern.
+
+**Related:** ADR-0068, #856, #863, #888
+
 ## 2026-07-06 — docs-agent trigger design (re-dispatch on push + allowed_bots)
 
 **Decision:** The docs-agent workflow runs the `anthropics/claude-code-action` step only on `workflow_dispatch` and `schedule`. A separate push-only `redispatch` job re-invokes the workflow as a `workflow_dispatch` (passing the push's before-SHA for an exact diff range), and the action step sets `allowed_bots: "github-actions"`.

@@ -94,6 +94,9 @@ param spookySupportCronExpression string = '0 13 * * 0'
 param pbCronExpression string = '0 14 * * 0'
 param pbDocsCronExpression string = '0 15 * * 0'
 param pbFreshdeskCronExpression string = '0 16 * * 0'
+// Daily after the last daily scrape (ap @ 06:00). Surfaces missing scheduled
+// runs via non-zero exit → pinwiz-alert-aca-job-failure (ADR-0068 / #856).
+param scheduleWatchdogCronExpression string = '0 8 * * *'
 
 var sternPlaywrightMemoryByCpu = {
   '0.5': '1Gi'
@@ -1426,6 +1429,39 @@ resource pbFreshdeskJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/
 }
 
 // -----------------------------------------------------------------------------
+// Schedule watchdog ACA Job (daily — #856 / ADR-0068)
+// -----------------------------------------------------------------------------
+// ARM-backed dead-man's-switch. Reads last successful *scheduled* execution
+// for each expected cadence and exits non-zero when MaxGapHours is exceeded.
+// Does NOT use a Log Analytics scheduledQueryRule (Azure Monitor caps
+// windowSize at 48 h — #888). Failure is surfaced by the existing
+// pinwiz-alert-aca-job-failure rule. Auth: AZURE_CLIENT_ID pins to the shared
+// UAMI which already holds Container Apps Jobs Operator at RG scope.
+
+module scheduleWatchdogJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = {
+  name: 'schedule-watchdog-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-schedule-watchdog-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: scheduleWatchdogCronExpression
+    replicaTimeout: 900
+    cpu: '0.5'
+    memory: '1Gi'
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--check-job-schedules' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.?properties.ConnectionString ?? '' }
+      { name: 'AZURE_CLIENT_ID', value: acaIdentity.?properties.clientId ?? '' }
+    ]
+  }
+}
 
 // -----------------------------------------------------------------------------
 output linkerJobName string = linkerJob.outputs.jobName
