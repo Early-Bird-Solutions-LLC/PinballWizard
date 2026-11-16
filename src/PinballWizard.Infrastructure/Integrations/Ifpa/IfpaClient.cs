@@ -99,7 +99,7 @@ public sealed class IfpaClient : IIfpaClient
             .ReadFromJsonAsync<IfpaPlayerEnvelopeDto>(JsonOptions, cancellationToken)
             .ConfigureAwait(false);
 
-        return body?.Player;
+        return body is null ? null : ParsePlayer(body.Player);
     }
 
     private async Task<HttpResponseMessage> GetAsync(
@@ -138,6 +138,29 @@ public sealed class IfpaClient : IIfpaClient
             $"IFPA request failed with {(int)response.StatusCode} {response.StatusCode} for {publicPath}",
             inner: null,
             statusCode: response.StatusCode);
+    }
+
+    private static IfpaPlayerWireDto? ParsePlayer(JsonElement player)
+    {
+        if (player.ValueKind == JsonValueKind.Object)
+        {
+            return player.Deserialize<IfpaPlayerWireDto>(JsonOptions);
+        }
+
+        if (player.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in player.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                return item.Deserialize<IfpaPlayerWireDto>(JsonOptions);
+            }
+        }
+
+        return null;
     }
 
     private static List<IfpaPlayerSearchHitWireDto> ParseSearchResults(JsonElement results)

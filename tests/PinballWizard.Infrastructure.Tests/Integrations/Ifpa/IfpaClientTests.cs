@@ -84,6 +84,37 @@ public sealed class IfpaClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPlayerAsync_ParsesPlayerWhenTheLiveEnvelopeIsAnArray()
+    {
+        _handler.Map(
+            "https://api.ifpapinball.com/player/4?api_key=test-key",
+            """
+            {"player":[{"player_id":4,"first_name":"Josh","last_name":"Sharpe","player_stats":{"system":{"MAIN":{"current_rank":10,"current_points":1710.11}}}}]}
+            """);
+
+        var player = await _client.GetPlayerAsync(4);
+
+        Assert.NotNull(player);
+        Assert.Equal(4, player!.PlayerId);
+        Assert.Equal("Josh", player.FirstName);
+        Assert.Equal("Sharpe", player.LastName);
+        Assert.Equal(10, player.PlayerStats!.System!.Main!.CurrentRank);
+        Assert.Equal(1710.11, player.PlayerStats.System.Main.CurrentPoints);
+    }
+
+    [Fact]
+    public async Task GetPlayerAsync_EmptyPlayerArray_ReturnsNull()
+    {
+        _handler.Map(
+            "https://api.ifpapinball.com/player/4?api_key=test-key",
+            """
+            {"player":[]}
+            """);
+
+        Assert.Null(await _client.GetPlayerAsync(4));
+    }
+
+    [Fact]
     public async Task GetPlayerAsync_404_ReturnsNull()
     {
         _handler.MapStatus(
