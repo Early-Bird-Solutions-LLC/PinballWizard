@@ -24,9 +24,10 @@
 
 <PageTitle>PinballWizard — Architecture Decision Records</PageTitle>
 
+@* No MudBreadcrumbs trail — lone parent crumb gets aria-current="page" under
+   MudBlazor ≥9.14 and flakes axe target-size (see EngineeringDoc.razor). *@
 <AppPageShell Title="Architecture Decision Records"
-              Subtitle="Every significant technical decision, with its context and rationale, committed alongside the code."
-              Breadcrumbs="@_breadcrumbs">
+              Subtitle="Every significant technical decision, with its context and rationale, committed alongside the code.">
 
     <AppDataGrid T="AdrEntry"
                  Items="@Provider.Adrs"
@@ -64,11 +65,3 @@
 
 </AppPageShell>
 
-@code {
-    // Current page is the AppPageHeader <h1> — omit disabled current crumb
-    // (MudBlazor ≥9.14 renders it as <a href="#">; see EngineeringDoc.razor).
-    private static readonly IReadOnlyList<BreadcrumbItem> _breadcrumbs = new[]
-    {
-        new BreadcrumbItem("Engineering", "/engineering"),
-    };
-}

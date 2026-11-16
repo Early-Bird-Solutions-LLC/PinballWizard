@@ -122,9 +122,14 @@ public sealed class ResponsiveSnapshotTests(PlaywrightWebApplicationFactory fact
             () => {
               if (!getComputedStyle(document.documentElement).getPropertyValue('--pw-bg-base').trim())
                 return false;
-              const a = document.querySelector('.mud-breadcrumb-item > a');
-              if (!a) return true;
-              return a.getBoundingClientRect().height >= 44;
+              const links = [...document.querySelectorAll('.mud-breadcrumb-item > a')];
+              // Engineering doc/ADR pages intentionally omit crumbs; other
+              // routes may still render them — every rendered crumb link must
+              // already be at the 44px floor before axe runs.
+              return links.every(a => {
+                const r = a.getBoundingClientRect();
+                return r.height >= 44 && r.width >= 44;
+              });
             }
             """);
 

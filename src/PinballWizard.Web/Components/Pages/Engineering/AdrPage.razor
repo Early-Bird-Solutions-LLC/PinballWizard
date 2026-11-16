@@ -19,15 +19,6 @@
 
 @{
     var adr = Provider.ByNumber(Number);
-    var crumbs = adr is null
-        ? null
-        // Omit disabled current crumb — AppPageHeader <h1> is the page name
-        // (MudBlazor ≥9.14 <a href="#"> target-size; see EngineeringDoc.razor).
-        : (IReadOnlyList<BreadcrumbItem>)new[]
-        {
-            new BreadcrumbItem("Engineering", "/engineering"),
-            new BreadcrumbItem("ADRs", "/engineering/adr"),
-        };
 }
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
@@ -40,9 +31,11 @@
     }
     else
     {
+        @* No MudBreadcrumbs trail — AppPageHeader <h1>/subtitle name the ADR.
+           Parent links as the last crumb get aria-current="page" under MudBlazor
+           ≥9.14 and flake axe target-size (see EngineeringDoc.razor). *@
         <AppPageHeader Title="@($"ADR-{adr.Number:D4}")"
-                       Subtitle="@adr.Title"
-                       Breadcrumbs="@crumbs" />
+                       Subtitle="@adr.Title" />
 
         <div class="eng-adr-body">
             @MarkdownComponentRenderer.Render(adr.Ast, ResolveAdrLink)
