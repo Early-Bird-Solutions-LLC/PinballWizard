@@ -33,6 +33,17 @@ public interface IRagIndexer
         RagIndexerOptions options,
         CancellationToken cancellationToken);
 
+    // Uploads chunks whose vectors were already computed. PinTips fans one
+    // tip out to every machine in an OPDB group; the indexed text is the
+    // same, so the caller embeds once and uploads each machine from that
+    // vector. `embeddings` aligns with `chunks`.
+    Task<IndexUpsertResult> UploadEmbeddedAsync(
+        ChunkRequest request,
+        IReadOnlyList<Chunk> chunks,
+        IReadOnlyList<ReadOnlyMemory<float>> embeddings,
+        RagIndexerOptions options,
+        CancellationToken cancellationToken);
+
     // Deletes every index chunk for one (document_id, machine_id) pair.
     // The scope is deliberately the pair, NOT the document across all
     // machines: a re-attribution moves a document from a wrong machine to

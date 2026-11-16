@@ -180,6 +180,9 @@ public sealed class RagIndexGarbageCollectorTests
         public Task<IndexUpsertResult> UpsertAsync(ChunkRequest request, IReadOnlyList<Chunk> chunks, RagIndexerOptions options, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
+        public Task<IndexUpsertResult> UploadEmbeddedAsync(ChunkRequest request, IReadOnlyList<Chunk> chunks, IReadOnlyList<ReadOnlyMemory<float>> embeddings, RagIndexerOptions options, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
         public Task<int> DeleteByDocumentAndMachineAsync(string documentId, string machineId, CancellationToken cancellationToken)
         {
             Deletes.Add((documentId, machineId));

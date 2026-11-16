@@ -1586,10 +1586,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
     if (syncPinTips)
     {
-        var pinTipsClient = host.Services.GetService<PinballWizard.Infrastructure.Integrations.PinTips.PinTipsClient>();
-        var pinTipsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer>();
-        var pinTipsIndexer = host.Services.GetService<IRagIndexer>();
-        if (pinTipsClient is null || pinTipsSynthesizer is null || pinTipsIndexer is null)
+        var pinTipsClient = host.Services.GetService<PinTipsClient>();
+        var pinTipsSync = host.Services.GetService<PinTipsSync>();
+        var pinTipsMachines = host.Services.GetService<IMachineRepository>();
+        if (pinTipsClient is null || pinTipsSync is null || pinTipsMachines is null)
         {
             Console.Error.WriteLine(
                 "--sync-pintips requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.");
@@ -1597,127 +1597,28 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        var pinTipsRawDocs = host.Services.GetService<IRawDocumentRepository>();
-        var pinTipsIndexState = host.Services.GetService<PinballWizard.Application.Rag.Ingestion.IIndexState>();
-        var pinTipsMachines = host.Services.GetService<IMachineRepository>();
-        if (pinTipsMachines is null)
-        {
-            Console.Error.WriteLine("--sync-pintips requires the machine catalog so a group id can fan out to machine ids.");
-            Environment.ExitCode = 2;
-            return;
-        }
-
         var tips = await pinTipsClient.FetchAsync(cancellationToken);
         Console.WriteLine($"PinTips: {tips.Count} tip(s) to index.");
-        var pinTipsIndexed = 0;
-        var pinTipsFailed = 0;
-        var pinTipsRawFailed = 0;
-        var pinTipsUnlinked = 0;
-        var pinTipsSkippedUnchanged = 0;
-        var pinTipsOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
-        var pinTipsSource = SynthesizedSourceDescriptors.PinTips;
-        var exportUrl = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.PinTipsOptions>>().Value.ExportUrl;
-        var machinesByGroup = new Dictionary<string, IReadOnlyList<PinTipsIndexTarget>>(StringComparer.Ordinal);
-
-        foreach (var tip in tips)
-        {
-            if (cancellationToken.IsCancellationRequested) break;
-            var groupId = tip.OpdbId.Contains('-', StringComparison.Ordinal)
-                ? tip.OpdbId[..tip.OpdbId.IndexOf('-', StringComparison.Ordinal)]
-                : tip.OpdbId;
-            if (!machinesByGroup.TryGetValue(groupId, out var groupMachines))
+        var exportUrl = host.Services.GetRequiredService<IOptions<PinTipsOptions>>().Value.ExportUrl;
+        var pinTipsResult = await pinTipsSync.SyncAsync(
+            tips,
+            exportUrl,
+            async (groupId, groupToken) =>
             {
                 var loaded = new List<PinTipsIndexTarget>();
-                await foreach (var machine in pinTipsMachines.GetSiblingsByGroupIdAsync(groupId, cancellationToken))
+                await foreach (var machine in pinTipsMachines.GetSiblingsByGroupIdAsync(groupId, groupToken))
                 {
                     loaded.Add(new PinTipsIndexTarget(machine.Id, machine.Title, machine.ManufacturerDisplayName));
                 }
-                groupMachines = loaded;
-                machinesByGroup[groupId] = groupMachines;
-            }
 
-            var targets = PinTipsCatalogTargets.Resolve(tip.OpdbId, groupMachines);
-            if (targets.Count == 0)
-            {
-                pinTipsUnlinked++;
-                continue;
-            }
-
-            foreach (var target in targets)
-            {
-                var documentId = $"pintips_{tip.TipId}_{target.MachineId}";
-                var title = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.TitleFor(tip);
-                var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
-                    MachineId: target.MachineId,
-                    MachineTitle: target.MachineTitle,
-                    Manufacturer: target.Manufacturer,
-                    DocumentId: documentId,
-                    DocumentUrl: exportUrl,
-                    DocumentType: PinballWizard.Core.Models.DocumentType.PlayTip,
-                    LastScrapedUtc: DateTimeOffset.UtcNow);
-                var chunks = pinTipsSynthesizer.Synthesize(tip, exportUrl, chunkRequest);
-                if (chunks.Count == 0) continue;
-
-                var contentHash = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.ContentHash(tip, exportUrl);
-                try
-                {
-                    // The hash read shares this target's failure boundary.
-                    // A Cosmos timeout or a bad ledger row must fail this
-                    // machine only; the rest of the export still indexes.
-                    if (pinTipsIndexState is not null)
-                    {
-                        var lastIndexed = await pinTipsIndexState.GetLastIndexedHashAsync(
-                            documentId, target.MachineId, cancellationToken);
-                        if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(lastIndexed, contentHash))
-                        {
-                            pinTipsSkippedUnchanged++;
-                            continue;
-                        }
-                    }
-
-                    var result = await pinTipsIndexer.UpsertAsync(chunkRequest, chunks, pinTipsOptions, cancellationToken);
-                    if (result.Failures.Count > 0)
-                    {
-                        pinTipsFailed++;
-                        continue;
-                    }
-
-                    pinTipsIndexed++;
-                    var synDoc = SynthesizedDocumentRecordFactory.Create(
-                        documentId, title, exportUrl, pinTipsSource.DiscoveryContext,
-                        pinTipsSource.DocumentType, pinTipsSource.FileFormat, target.Manufacturer,
-                        target.MachineTitle, null, DateTimeOffset.UtcNow);
-                    // Stamp the skip hash only after the citation row is stored.
-                    // A failed raw-doc write must be retried next run; stamping
-                    // first would make IsUnchanged skip the tip forever.
-                    if (!await SynthesizedRawDocWriter.TryPersistAsync(pinTipsRawDocs, synDoc, cancellationToken))
-                    {
-                        pinTipsRawFailed++;
-                    }
-                    else if (pinTipsIndexState is not null)
-                    {
-                        try
-                        {
-                            await pinTipsIndexState.RecordIndexedAsync(
-                                documentId, target.MachineId, contentHash, chunks.Count, 0, cancellationToken);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            Console.Error.WriteLine(
-                                $"  Warning: index-state stamp failed for {documentId}: {ex.Message}. The next sync will re-embed it.");
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Console.Error.WriteLine($"  Failed to index PinTips tip {tip.TipId} for {target.MachineId}: {ex.Message}");
-                    pinTipsFailed++;
-                }
-            }
-        }
-
-        Console.WriteLine($"--sync-pintips complete: indexed={pinTipsIndexed} skipped_unchanged={pinTipsSkippedUnchanged} unlinked={pinTipsUnlinked} failed={pinTipsFailed} raw_doc_write_failed={pinTipsRawFailed}");
-        if (pinTipsFailed > 0) Environment.ExitCode = 1;
+                return loaded;
+            },
+            cancellationToken);
+        Console.WriteLine(
+            $"--sync-pintips complete: indexed={pinTipsResult.Indexed} skipped_unchanged={pinTipsResult.SkippedUnchanged} " +
+            $"unlinked={pinTipsResult.Unlinked} failed={pinTipsResult.Failed} " +
+            $"raw_doc_write_failed={pinTipsResult.RawDocWriteFailed} embeddings={pinTipsResult.EmbeddingCalls}");
+        if (pinTipsResult.Failed > 0) Environment.ExitCode = 1;
         return;
     }
 
