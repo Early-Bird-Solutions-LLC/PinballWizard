@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Azure;
 using Azure.ResourceManager;
 using Azure.ResourceManager.AppContainers;
@@ -63,8 +64,19 @@ internal sealed class ArmJobAdminService : IJobAdminService
             await foreach (var job in rg.GetContainerAppJobs().GetAllAsync(cancellationToken).ConfigureAwait(false))
                 jobs.Add(job);
 
-            var results = await Task.WhenAll(
-                jobs.Select(job => MapJobStatusAsync(job, cancellationToken))).ConfigureAwait(false);
+            JobStatus[] results;
+            try
+            {
+                results = await Task.WhenAll(
+                    jobs.Select(job => MapJobStatusAsync(job, cancellationToken))).ConfigureAwait(false);
+            }
+            catch (AggregateException ae)
+            {
+                // Task.WhenAll wraps faults in AggregateException; unwrap so the
+                // RequestFailedException / ArmJobAdminException handlers below still match.
+                ExceptionDispatchInfo.Capture(ae.Flatten().InnerExceptions[0]).Throw();
+                throw; // unreachable — ExceptionDispatchInfo.Throw() always throws
+            }
 
             _logger.LogDebug(
                 "Listed {Count} ACA jobs in resource group {ResourceGroup}.",
