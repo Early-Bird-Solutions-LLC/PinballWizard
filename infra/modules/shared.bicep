@@ -43,7 +43,7 @@ param tags object
 @description('Object ID of the developer principal to grant RBAC at deploy time. If empty, role assignments are skipped.')
 param developerObjectId string
 
-@description('Object (principal) ID of the CI/CD deploy service principal — the "PinballWizard GitHub Actions" app registration that the deploy.yml workflow logs in as via OIDC. When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps so the workflow can run `az containerapp update --image` against each app. Empty (default) skips these grants. Replaces the former manual per-app `az role assignment create` step in the deploy.yml header — CI-identity RBAC is now IaC. NOTE: this is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret).')
+@description('Object (principal) ID of the CI/CD deploy service principal — the "PinballWizard GitHub Actions" app registration that deploy.yml / corpus-coverage.yml / lighthouse.yml log in as via OIDC. When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps (image swap), Search Index Data Reader + Foundry OpenAI User (corpus-coverage probe), and App Insights Metrics Publisher/Reader (Lighthouse emitter). Empty (default) skips these grants. Replaces the former manual per-app `az role assignment create` step in the deploy.yml header — CI-identity RBAC is now IaC. NOTE: this is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret).')
 param cicdDeployPrincipalId string = ''
 
 @description('When false, only Phase 1 resources are deployed (Cosmos + Log Analytics + Cosmos diagnostics). Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + blob containers, and their diagnostic settings + developer RBAC) are gated behind this flag and ship when their consuming features start landing.')
@@ -2549,24 +2549,23 @@ resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview
 }
 
 // -----------------------------------------------------------------------------
-// CI/CD deploy identity RBAC (Contributor on the deployed Container Apps)
+// CI/CD OIDC identity RBAC (ACA image-swap + corpus probe + perf emitter)
 // -----------------------------------------------------------------------------
-// The deploy.yml GitHub Actions workflow logs in via OIDC as the
-// "PinballWizard GitHub Actions" app registration and runs
-// `az containerapp update --image :{sha}` to swap each app to the freshly
-// built image. That call needs Contributor on each target app. These grants
-// were historically created by hand (per the deploy.yml setup header); they
-// are now IaC, gated on a non-empty cicdDeployPrincipalId so a deploy without
-// the workflow SP (e.g. a local-only stack) skips them cleanly.
+// The GitHub Actions OIDC app registration ("PinballWizard GitHub Actions") is
+// shared by deploy.yml, corpus-coverage.yml, and lighthouse.yml. Grants below
+// are IaC, gated on a non-empty cicdDeployPrincipalId so a deploy without the
+// workflow SP (e.g. a local-only stack) skips them cleanly.
 //
 // principalType is ServicePrincipal (an app-registration SP), matching the
-// RAG-indexer MI assignments above. Contributor built-in role definition:
-//   b24988ac-6180-42a0-ab88-20f7382dd24c
+// RAG-indexer MI assignments above. Built-in role definition GUIDs:
+//   Contributor (ACA image swap)     = b24988ac-6180-42a0-ab88-20f7382dd24c
+//   Search Index Data Reader         = 1407120a-92aa-4202-b7e9-c0e197c71c8f
+//   Cognitive Services OpenAI User   = 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
 //
-// Scope is per-app (least privilege) — the workflow only mutates these three
-// apps, never the data-plane resources (Cosmos / Key Vault / Storage). The
-// ragindexer grant additionally gates on deployAiSearch, matching the
-// ragIndexerApp resource itself.
+// ACA Contributor scopes stay per-app (least privilege for image swap). The
+// corpus probe additionally needs Search Index Data Reader + Foundry OpenAI
+// User (query + embed only — not Search Contributor / Cosmos). The ragindexer
+// ACA grant additionally gates on deployAiSearch, matching ragIndexerApp.
 
 resource cicdWizardContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
   scope: wizardApp
@@ -2593,6 +2592,35 @@ resource cicdRagIndexerContributor 'Microsoft.Authorization/roleAssignments@2022
   name: guid(ragIndexerApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Corpus-coverage probe (#1095 / post-#1021): corpus-coverage.yml azure/login's as
+// the same OIDC SP, then DefaultAzureCredential (AZURE_TOKEN_CREDENTIALS=dev →
+// AzureCliCredential) queries AI Search + embeds via Foundry. Without these
+// data-plane grants the probe fails with Search 403 before writing coverage.*.json
+// (run #128, 2026-11-16) — mis-surfaced as a "coverage GAP" alarm. Least privilege:
+// Reader (not Contributor) on the index; OpenAI User for embedding inference only.
+// Built-in role definition GUIDs (stable/well-known):
+//   Search Index Data Reader         = 1407120a-92aa-4202-b7e9-c0e197c71c8f
+//   Cognitive Services OpenAI User   = 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
+resource cicdSearchIndexReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch && !empty(cicdDeployPrincipalId)) {
+  scope: searchService
+  name: guid(searchService.id, cicdDeployPrincipalId, '1407120a-92aa-4202-b7e9-c0e197c71c8f')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '1407120a-92aa-4202-b7e9-c0e197c71c8f')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource cicdFoundryOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch && !empty(cicdDeployPrincipalId)) {
+  scope: foundry
+  name: guid(foundry.id, cicdDeployPrincipalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
     principalId: cicdDeployPrincipalId
     principalType: 'ServicePrincipal'
   }
