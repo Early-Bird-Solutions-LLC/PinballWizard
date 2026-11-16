@@ -350,6 +350,47 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("GRBN-G1995", result.TitleCollisions[0].OpdbId);
     }
 
+    // #718 — bare "Cactus Canyon" must surface the Bally original AND the
+    // Chicago Gaming remake as a TitleCollisions pair (different OPDB groups,
+    // same franchise title). The Wizard prompt then requires ONE clarifying
+    // question when the user gave no year/manufacturer qualifier. This locks
+    // the tool contract; agent compliance is covered by Wizard.md Step 2.
+    [Fact]
+    public async Task GetMachineByTitleAsync_CactusCanyon_SurfacesBallyAndCgcAsTitleCollisions()
+    {
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Cactus Canyon"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Cactus Canyon"),
+        };
+        // OPDB ids from #718 (Bally 1998 original vs CGC remake group).
+        lookup.UpsertEntry("G4835-Mb5eO", "bally", ["bally"]);
+        lookup.UpsertEntry("G4835-M2YPK", "chicago-gaming", ["chicago-gaming"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Cactus Canyon", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var bally = BuildMachine("G4835-Mb5eO", "bally", "Bally", "Cactus Canyon", 1998);
+        bally.GroupId = "G4835-Mb5eO";
+        var cgc = BuildMachine("G4835-M2YPK", "chicago-gaming", "Chicago Gaming Company", "Cactus Canyon", 2022);
+        cgc.GroupId = "G4835-M2YPK";
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("G4835-Mb5eO", "bally", Arg.Any<CancellationToken>()).Returns(bally);
+        repo.GetByOpdbIdAsync("G4835-M2YPK", "chicago-gaming", Arg.Any<CancellationToken>()).Returns(cgc);
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Cactus Canyon", CancellationToken.None);
+
+        Assert.NotNull(result);
+        // Newer year wins the content-intrinsic tie-break (ADR-0049).
+        Assert.Equal("G4835-M2YPK", result!.OpdbId);
+        Assert.Equal("Chicago Gaming Company", result.Manufacturer);
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("G4835-Mb5eO", result.TitleCollisions[0].OpdbId);
+        Assert.Equal(1998, result.TitleCollisions[0].Year);
+    }
+
     // ── ADR-0029 S5: sibling-returning behavior ───────────────────────
     // After resolving the primary machine, if it has a GroupId the tool
     // fetches all base-machine records in the same group so the agent
