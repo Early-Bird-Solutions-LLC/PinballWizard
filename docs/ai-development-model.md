@@ -159,6 +159,10 @@ repo-maintenance task, not a product-serving one.
 The classification rule for any future agent is a single question: does it serve live user
 traffic, or does it act on git events? Foundry and CI respectively.
 
+A documented **hybrid** also exists: **Ops Triage** reasons in Foundry (diagnosing Azure
+Monitor alerts) and hands any git mutation to a CI workflow (`ops-triage-remediate.yml`)
+([ADR-0064](adr/0064-ops-triage-foundry-agent.md); lifecycle in [ADR-0066](adr/0066-agent-lifecycle-kit.md)).
+
 ## Verification & evidence
 
 The most common failure mode of an AI contributor is not a syntax error — it is a confident,
