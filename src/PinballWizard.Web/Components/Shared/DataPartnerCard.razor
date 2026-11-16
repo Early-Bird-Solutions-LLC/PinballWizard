@@ -16,13 +16,13 @@
  *@
 
 @* Whole-card accessible name must include every visible string (axe
-   label-content-name-mismatch / WCAG 2.5.3 Label in Name). Role + arrow
-   stay aria-hidden so they are presentation-only. *@
+   label-content-name-mismatch / WCAG 2.5.3 Label in Name). Axe scores
+   painted text — aria-hidden does not exclude Role/↗ from that check. *@
 <a class="@CssClass"
    href="@Href"
    target="_blank"
    rel="noopener noreferrer"
-   aria-label="@($"{Name} {Description} {StatusText} (opens in new tab)")"
+   aria-label="@($"{Role} {Name} \u2197 {Description} {StatusText} (opens in new tab)")"
    data-testid="@($"data-partner-card-{Role.ToLowerInvariant()}")">
 
     <span class="partner-card__role" aria-hidden="true">@Role</span>
