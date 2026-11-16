@@ -67,8 +67,48 @@ public sealed class IfpaClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetPlayerAsync_ParsesEnvelopeWithMainStanding()
+    public async Task SearchPlayersAsync_StringNumericsAndNotRanked_DoNotFailPayload()
     {
+        // Live search encodes player_id / wppr_rank as strings; unranked
+        // players use the sentinel "Not Ranked".
+        _handler.Map(
+            "https://api.ifpapinball.com/player/search?name=Micayla&api_key=test-key",
+            """
+            {"count":1,"total_results":1,"results":[{"player_id":"77483","first_name":"Micayla","last_name":"K","wppr_rank":"Not Ranked","rating_value":null}]}
+            """);
+
+        var hits = await _client.SearchPlayersAsync("Micayla");
+
+        Assert.Single(hits);
+        Assert.Equal(77483, hits[0].PlayerId);
+        Assert.Null(hits[0].WpprRank);
+    }
+
+    [Fact]
+    public async Task GetPlayerAsync_ParsesLiveArrayEnvelopeWithOpenStanding()
+    {
+        // Live shape (2026-11): player is a 1-element array; overall WPPR is
+        // under system.open; numerics are strings.
+        _handler.Map(
+            "https://api.ifpapinball.com/player/4?api_key=test-key",
+            """
+            {"player":[{"player_id":"4","first_name":"Josh","last_name":"Sharpe","initials":"JLS","city":"Chicago","stateprov":"IL","country_name":"United States","country_code":"US","ifpa_registered":true,"player_stats":{"system":{"open":{"current_rank":"46","last_month_rank":"45","current_points":"1544.39","active_points":"2914.3300","ratings_rank":"62","ratings_value":"1908.51","total_events_all_time":"426","total_active_events":"42"}}}}]}
+            """);
+
+        var player = await _client.GetPlayerAsync(4);
+
+        Assert.NotNull(player);
+        Assert.Equal(4, player!.PlayerId);
+        Assert.Equal("Josh", player.FirstName);
+        Assert.Equal(46, player.PlayerStats!.System!.Open!.CurrentRank);
+        Assert.Equal(1544.39, player.PlayerStats.System.Open.CurrentPoints);
+        Assert.Null(player.PlayerStats.System.Main);
+    }
+
+    [Fact]
+    public async Task GetPlayerAsync_ParsesObjectEnvelopeWithMainStanding()
+    {
+        // Historical OpenAPI-shaped fixture still accepted.
         _handler.Map(
             "https://api.ifpapinball.com/player/4?api_key=test-key",
             """
@@ -84,34 +124,19 @@ public sealed class IfpaClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetPlayerAsync_ParsesPlayerWhenTheLiveEnvelopeIsAnArray()
+    public async Task GetPlayerAsync_ParsesWomensStandingKey()
     {
         _handler.Map(
-            "https://api.ifpapinball.com/player/4?api_key=test-key",
+            "https://api.ifpapinball.com/player/103614?api_key=test-key",
             """
-            {"player":[{"player_id":4,"first_name":"Josh","last_name":"Sharpe","player_stats":{"system":{"MAIN":{"current_rank":10,"current_points":1710.11}}}}]}
+            {"player":[{"player_id":"103614","first_name":"Cayla","last_name":"Jackson","ifpa_registered":true,"player_stats":{"system":{"open":{"current_rank":"18620","current_points":"3.75"},"womens":{"current_rank":"2148","current_points":"5.1325"}}}}]}
             """);
 
-        var player = await _client.GetPlayerAsync(4);
+        var player = await _client.GetPlayerAsync(103614);
 
         Assert.NotNull(player);
-        Assert.Equal(4, player!.PlayerId);
-        Assert.Equal("Josh", player.FirstName);
-        Assert.Equal("Sharpe", player.LastName);
-        Assert.Equal(10, player.PlayerStats!.System!.Main!.CurrentRank);
-        Assert.Equal(1710.11, player.PlayerStats.System.Main.CurrentPoints);
-    }
-
-    [Fact]
-    public async Task GetPlayerAsync_EmptyPlayerArray_ReturnsNull()
-    {
-        _handler.Map(
-            "https://api.ifpapinball.com/player/4?api_key=test-key",
-            """
-            {"player":[]}
-            """);
-
-        Assert.Null(await _client.GetPlayerAsync(4));
+        Assert.Equal(18620, player!.PlayerStats!.System!.Open!.CurrentRank);
+        Assert.Equal(2148, player.PlayerStats.System.Womens!.CurrentRank);
     }
 
     [Fact]

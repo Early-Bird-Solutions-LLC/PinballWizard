@@ -35,7 +35,7 @@ public sealed class IfpaPlayerProviderTests
     }
 
     [Fact]
-    public async Task GetPlayerAsync_MapsMainAndWomenStandings()
+    public async Task GetPlayerAsync_MapsOpenAndWomensStandings_AsMainAndWomen()
     {
         var client = Substitute.For<IIfpaClient>();
         client.GetPlayerAsync(4, Arg.Any<CancellationToken>())
@@ -45,6 +45,45 @@ public sealed class IfpaPlayerProviderTests
                 FirstName = "Josh",
                 LastName = "Sharpe",
                 IfpaRegistered = true,
+                PlayerStats = new IfpaPlayerStatsWireDto
+                {
+                    System = new IfpaRankingSystemsWireDto
+                    {
+                        Open = new IfpaRankingStandingWireDto
+                        {
+                            CurrentRank = 46,
+                            CurrentPoints = 1544.39,
+                        },
+                        Womens = new IfpaRankingStandingWireDto
+                        {
+                            CurrentRank = 1,
+                            CurrentPoints = 900,
+                        },
+                    },
+                },
+            });
+
+        var provider = new IfpaPlayerProvider(client);
+        var profile = await provider.GetPlayerAsync(4);
+
+        Assert.NotNull(profile);
+        Assert.Equal("MAIN", profile!.Main!.RankingSystem);
+        Assert.Equal(46, profile.Main.CurrentRank);
+        Assert.Equal("WOMEN", profile.Women!.RankingSystem);
+        Assert.Equal(1, profile.Women.CurrentRank);
+        Assert.Equal("https://www.ifpapinball.com/player.php?p=4", profile.PublicUrl);
+    }
+
+    [Fact]
+    public async Task GetPlayerAsync_FallsBackToHistoricalMainWomenKeys()
+    {
+        var client = Substitute.For<IIfpaClient>();
+        client.GetPlayerAsync(4, Arg.Any<CancellationToken>())
+            .Returns(new IfpaPlayerWireDto
+            {
+                PlayerId = 4,
+                FirstName = "Josh",
+                LastName = "Sharpe",
                 PlayerStats = new IfpaPlayerStatsWireDto
                 {
                     System = new IfpaRankingSystemsWireDto
@@ -66,12 +105,8 @@ public sealed class IfpaPlayerProviderTests
         var provider = new IfpaPlayerProvider(client);
         var profile = await provider.GetPlayerAsync(4);
 
-        Assert.NotNull(profile);
-        Assert.Equal("MAIN", profile!.Main!.RankingSystem);
-        Assert.Equal(10, profile.Main.CurrentRank);
-        Assert.Equal("WOMEN", profile.Women!.RankingSystem);
-        Assert.Equal(1, profile.Women.CurrentRank);
-        Assert.Equal("https://www.ifpapinball.com/player.php?p=4", profile.PublicUrl);
+        Assert.Equal(10, profile!.Main!.CurrentRank);
+        Assert.Equal(1, profile.Women!.CurrentRank);
     }
 
     [Fact]
