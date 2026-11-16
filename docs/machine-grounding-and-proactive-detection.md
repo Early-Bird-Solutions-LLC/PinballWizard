@@ -53,10 +53,13 @@ Kineticist tutorial games:
 We already distinguish two situations; the fix extends collision detection so the
 right one fires:
 
-- **Editions of the *same* game** (Pro / Premium / LE — same OPDB group) → answer
-  for all editions at once (they share rules). No clarifying question.
+- **Editions of the *same* game** (Pro / Premium / LE — same OPDB group *and*
+  same manufacturer) → answer for all editions at once (they share rules). No
+  clarifying question.
 - **Different *games* that share a title** (Sega *Godzilla* vs Stern *Godzilla*;
-  *Iron Maiden* vs *Iron Maiden: Legacy of the Beast*) → **ask one clarifying
+  *Iron Maiden* vs *Iron Maiden: Legacy of the Beast*; and same-OPDB-group
+  remakes from a different manufacturer, e.g. Bally *Cactus Canyon* 1998 vs
+  Chicago Gaming's remake, both group `G4835` — #718) → **ask one clarifying
   question** naming the candidates (manufacturer + year/subtitle), and answer only
   after the user picks. Never silently choose a machine.
 
