@@ -167,8 +167,9 @@ jobs:
             Constraints: at most one triage comment on the PR (create or
             update); never modify code; never push; never approve or request
             changes. If you cannot read the feedback, say so honestly in the
-            comment rather than guessing.
+            comment rather than guessing. If a tool call is denied, do not
+            retry it — stay inside the allowlist and finish with gh only.
           claude_args: |
-            --max-turns 8
+            --max-turns 16
             --model claude-sonnet-4-6
             --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(gh pr comment:*)"
