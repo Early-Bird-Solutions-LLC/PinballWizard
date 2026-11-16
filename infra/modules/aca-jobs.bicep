@@ -121,7 +121,7 @@ resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' exis
   name: searchServiceName
 }
 
-resource foundry 'Microsoft.CognitiveServices/accounts@2025-09-01' existing = if (deployAiSearch && !empty(foundryAccountName)) {
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-12-01' existing = if (deployAiSearch && !empty(foundryAccountName)) {
   name: foundryAccountName
 }
 
