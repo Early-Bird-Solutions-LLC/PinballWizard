@@ -62,9 +62,8 @@
 .featured-card__tagline {
     font-size: 0.7rem;
     line-height: 1.4;
-    /* Clamp tagline to 3 lines so cards stay uniform height */
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    /* No line-clamp: Axe 4.14 label-content-name-mismatch scores the
+       painted ellipsis (…) from -webkit-line-clamp as visible text that
+       must appear in aria-label. Keep full tagline painted so it matches
+       FeaturedCardLabel (Title + Tagline). */
 }
