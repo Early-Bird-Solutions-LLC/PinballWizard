@@ -8,9 +8,17 @@ name: PR first-pass review
 # Enablement: repository variable ENABLE_PR_FIRST_PASS_REVIEW must be the string
 # "true". Default is off (AGENT-08 adversary gate).
 #
-# NOTE: pull_request workflows that need repo vars/secrets run in the base-branch
-# context for forks; same-repo PRs use this file from the merge ref. Prefer merging
-# this workflow to main before flipping the enablement variable.
+# Security (Bugbot / ADR-0069):
+#  - Checkout is the PR *base* SHA only (not the merge commit) so CLAUDE.md /
+#    .claude from the head never land in the action cwd.
+#  - Prompt file is fetched via API into /tmp and injected as action input —
+#    never relied on from a head/merge working tree.
+#  - No actions:write (artifact upload works with contents:read; write would
+#    allow workflow_dispatch via gh api).
+#  - Bot-authored PRs are skipped (neutral) so Renovate/docs-agent do not
+#    hard-fail on allowed_bots defaults.
+#
+# NOTE: Prefer merging this workflow to main before flipping the enablement variable.
 
 on:
   pull_request:
@@ -25,7 +33,6 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
-  actions: write   # upload run artifact (outcomes slots)
 
 jobs:
   first-pass-review:
@@ -33,18 +40,29 @@ jobs:
     if: >-
       vars.ENABLE_PR_FIRST_PASS_REVIEW == 'true' &&
       github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.type != 'Bot'
     steps:
-      - name: Checkout base (never untrusted head)
+      - name: Checkout PR base only (never head / merge commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
-      - name: Load versioned prompt
+      - name: Load versioned prompt from head blob into /tmp
         id: agent_prompt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMPT_PATH: .github/agents/pr-first-pass-review.md
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # Isolate prompt bytes outside the base checkout so Claude Code does
+          # not treat head-tree CLAUDE.md / .claude as project settings.
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${PROMPT_PATH}?ref=${HEAD_SHA}" \
+            --jq .content | base64 -d > /tmp/pr-first-pass-review.md
           {
             echo 'text<<PROMPT_EOF'
-            cat .github/agents/pr-first-pass-review.md
+            cat /tmp/pr-first-pass-review.md
             echo 'PROMPT_EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -83,11 +101,16 @@ jobs:
           anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
           anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Human-authored same-repo PRs only (Bot skipped in job if). Do not
+          # set allowed_bots='*' on this public repo.
           prompt: |
             REPO: ${{ github.repository }}
             PR: ${{ github.event.pull_request.number }}
             HEAD_SHA: ${{ github.event.pull_request.head.sha }}
             BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+            Working tree is the PR *base* commit only. Review the PR via gh —
+            do not assume cwd contains the head diff.
 
             Follow the agent instructions below exactly.
 

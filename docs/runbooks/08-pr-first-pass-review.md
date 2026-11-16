@@ -4,9 +4,10 @@ ADR: [0069](../adr/0069-pr-first-pass-review-agent.md) · Lifecycle kit: [0066](
 
 ## What it does
 
-On same-repo, non-draft PRs, a Claude Code CI agent reviews the **diff** and
-posts one Propose-tier comment (`<!-- pr-first-pass-review -->`). It never
-pushes code or approves PRs. Complementary to [ADR-0041](../adr/0041-pr-feedback-triage.md)
+On same-repo, non-draft, **human-authored** PRs, a Claude Code CI agent reviews
+the **diff** and posts one Propose-tier comment (`<!-- pr-first-pass-review -->`).
+It never pushes code or approves PRs. Checkout is the PR base SHA only; Bot PRs
+are skipped. Complementary to [ADR-0041](../adr/0041-pr-feedback-triage.md)
 feedback triage.
 
 ## Enablement (default off)

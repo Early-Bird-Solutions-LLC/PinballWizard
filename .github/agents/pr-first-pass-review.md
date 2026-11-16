@@ -11,8 +11,8 @@ push, approve, request changes, or merge.
 ## Inputs (filled by the workflow)
 
 - REPO / PR number / head SHA are in the workflow prompt wrapper.
-- Use `gh pr view`, `gh pr diff`, and `gh api` to read the PR. Prefer the
-  GitHub API / `gh pr diff` over trusting a checked-out head (base checkout only).
+- Use `gh pr view`, `gh pr diff`, and `gh api` to read the PR. The job cwd is
+  the PR *base* commit only — never assume the head tree is on disk.
 
 ## Idempotency
 
