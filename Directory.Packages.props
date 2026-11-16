@@ -220,7 +220,7 @@
       labels the select (aria-labelledby + aria-label). Upstream fixed the
       same gap on MudBlazor `dev`; drop AppDataGridPager when that ships.
     -->
-    <PackageVersion Include="MudBlazor" Version="9.6.0" />
+    <PackageVersion Include="MudBlazor" Version="9.14.0" />
     <!--
       Microsoft.Identity.Web supports Entra External ID tenants natively per
       ADR-0009. The app uses only AddMicrosoftIdentityWebApp + AddMicrosoftIdentityUI
