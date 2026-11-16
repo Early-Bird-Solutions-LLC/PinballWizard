@@ -46,12 +46,17 @@ concurrency:
 jobs:
   coverage:
     name: Corpus coverage probe
-    # Skip failed/cancelled Deploy runs and non-main heads (fork PRs / branches
-    # do not share the production OIDC subject `ref:refs/heads/main`).
+    # Only follow a successful Deploy on this repo's main. workflow_run always
+    # executes in the base-repo default-branch context (OIDC subject is ours),
+    # so head_branch alone is not a fork boundary — also require the triggering
+    # head repository to be this repository. (Deploy itself is push:main-only
+    # today, so the fork path is already unreachable; this keeps the guard
+    # honest if Deploy ever gains pull_request triggers.)
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
