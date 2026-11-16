@@ -37,6 +37,8 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
     // transitively. /settings is in a separate in-progress branch; once its
     // Settings.razor lands it will be added here. /{**slug} (404) redirects
     // to /error via NotFound.razor so /error covers that code path.
+    // Keep this list aligned with nav/footer chrome; DiscoveredRouteInvariantTests
+    // fails if discovery finds routes this suite never scanned (#790).
     [Theory]
     [InlineData("/",                        "landing page")]
     [InlineData("/wizard",                  "wizard ask page")]
@@ -45,6 +47,9 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
     [InlineData("/engineering",             "engineering docs index")]
     [InlineData("/engineering/docs/glossary", "engineering docs glossary")]
     [InlineData("/about",                   "about / engineering story page")]
+    [InlineData("/documents",               "document corpus browse")]
+    [InlineData("/settings",                "user preferences")]
+    [InlineData("/status",                  "system status")]
     public async Task PublicPage_HasNoAxeViolations(string path, string description)
     {
         _ = description; // InlineData label — surfaced in test output, not asserted

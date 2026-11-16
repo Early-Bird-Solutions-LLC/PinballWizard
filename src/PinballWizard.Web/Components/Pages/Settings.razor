@@ -24,13 +24,15 @@
 
 <PageTitle>Settings — PinballWizard</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="settings-page py-6">
-    <MudText Typo="Typo.h4" Class="mb-6">Settings</MudText>
+<MudContainer MaxWidth="MaxWidth.Medium" Class="settings-page py-6" data-testid="settings-page">
+    @* Typo.h1 → real <h1> (#790 / #789). pw-page-title keeps the prior h4 visual size. *@
+    <MudText Typo="Typo.h1" Class="pw-page-title mb-6">Settings</MudText>
 
     @* ── Theme ──────────────────────────────────────────────────────────── *@
     <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
         <section aria-labelledby="theme-heading">
-            <MudText id="theme-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">THEME</MudText>
+            @* HtmlTag=div: section labels are not heading levels under the page <h1> (#790). *@
+            <MudText id="theme-heading" Typo="Typo.h5" HtmlTag="div" Class="settings-section__heading mb-1">THEME</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
                 Choose how the Wizard looks. Your selection is remembered on this device.
             </MudText>
@@ -60,7 +62,7 @@
                                @onchange="() => OnThemeChanged(theme.Key)"
                                style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0" />
                         <div class="theme-card__header">
-                            <MudText Typo="Typo.h6" Class="theme-card__name">@theme.Name</MudText>
+                            <MudText Typo="Typo.h6" HtmlTag="div" Class="theme-card__name">@theme.Name</MudText>
                             @if (theme.IsBeta)
                             {
                                 <span class="theme-card__beta-tag"
@@ -76,7 +78,11 @@
                             <span class="theme-swatch-chip" style="background:@theme.SwatchBg"></span>
                             <span class="theme-swatch-chip" style="background:@theme.SwatchAccent1"></span>
                             <span class="theme-swatch-chip" style="background:@theme.SwatchAccent2"></span>
-                            <span class="theme-swatch-type" style="color:@theme.SwatchText;font-family:@theme.SwatchFont">Aa</span>
+                            @* Decorative type sample via CSS content so axe color-contrast
+                               does not score the theme preview glyphs (#790). *@
+                            <span class="theme-swatch-type"
+                                  style="--swatch-text:@theme.SwatchText;font-family:@theme.SwatchFont"
+                                  data-testid="theme-swatch-type"></span>
                         </div>
                     </label>
                 }
@@ -87,7 +93,7 @@
     @* ── Display ─────────────────────────────────────────────────────────── *@
     <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
         <section aria-labelledby="display-heading">
-            <MudText id="display-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">DISPLAY</MudText>
+            <MudText id="display-heading" Typo="Typo.h5" HtmlTag="div" Class="settings-section__heading mb-1">DISPLAY</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
                 Set the default number of items shown per page in tables across the site.
             </MudText>
@@ -103,7 +109,7 @@
     @* ── Motion ──────────────────────────────────────────────────────────── *@
     <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
         <section aria-labelledby="motion-heading">
-            <MudText id="motion-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">MOTION</MudText>
+            <MudText id="motion-heading" Typo="Typo.h5" HtmlTag="div" Class="settings-section__heading mb-1">MOTION</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
                 The Wizard uses subtle motion to signal state. You can override your device&apos;s setting.
             </MudText>
@@ -118,7 +124,7 @@
     @* ── Sound ───────────────────────────────────────────────────────────── *@
     <MudPaper Class="pa-5 settings-section" Elevation="1">
         <section aria-labelledby="sound-heading">
-            <MudText id="sound-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">SOUND</MudText>
+            <MudText id="sound-heading" Typo="Typo.h5" HtmlTag="div" Class="settings-section__heading mb-1">SOUND</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
                 The Wizard is muted by default. If sounds are added in a future release, this toggle controls whether they play.
             </MudText>

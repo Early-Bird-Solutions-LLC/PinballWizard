@@ -112,15 +112,12 @@ public sealed class SettingsTests : AsyncBunitContext
     {
         var cut = Render<Settings>();
 
-        // Four sections identified by headings
-        var headings = cut.FindAll("h5, h6")
-            .Select(h => h.TextContent.Trim())
-            .ToArray();
-
-        Assert.Contains("THEME", headings);
-        Assert.Contains("DISPLAY", headings);
-        Assert.Contains("MOTION", headings);
-        Assert.Contains("SOUND", headings);
+        // Four sections identified by labelled heading ids (HtmlTag=div, not h5 —
+        // page already has an <h1>; section labels must not skip heading levels #790).
+        Assert.Contains("THEME", cut.Find("#theme-heading").TextContent);
+        Assert.Contains("DISPLAY", cut.Find("#display-heading").TextContent);
+        Assert.Contains("MOTION", cut.Find("#motion-heading").TextContent);
+        Assert.Contains("SOUND", cut.Find("#sound-heading").TextContent);
     }
 
     [Fact]

@@ -1,0 +1,6 @@
+/* Decorative theme-preview glyphs — CSS content so axe color-contrast does
+   not score the sample text against the swatch background (#790). */
+.theme-swatch-type::before {
+    content: "Aa";
+    color: var(--swatch-text);
+}
