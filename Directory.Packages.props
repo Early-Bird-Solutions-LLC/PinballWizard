@@ -201,7 +201,7 @@
       Result on 2026-07-06: latest stable = 1.3.2, owner xoofx, 68 M+ downloads.
       See src/PinballWizard.Web/PinballWizard.Web.csproj for the consumer.
     -->
-    <PackageVersion Include="Markdig" Version="1.3.2" />
+    <PackageVersion Include="Markdig" Version="1.6.0" />
   </ItemGroup>
   <ItemGroup Label="Web — Blazor frontend (ADR-0026) + Entra External ID auth (ADR-0009)">
     <!--
