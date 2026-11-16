@@ -44,12 +44,14 @@
             var slug = q.Slug; // capture for lambda
             var question = q.Question;
             <div class="seed-question-grid__cell">
+                @* aria-label must contain every visible string (axe
+                   label-content-name-mismatch / WCAG 2.5.3). *@
                 <MudCard Class="seed-card mud-clickable" Elevation="2"
                          @onclick="@(() => OnCardClick(slug, question))"
                          data-testid="@($"seed-card-{slug}")"
                          role="button"
                          tabindex="0"
-                         aria-label="@($"Ask: {question}")">
+                         aria-label="@($"{question} {q.TargetSubAgent}")">
                     <MudCardContent>
                         <MudText Typo="Typo.body1" Class="seed-card__question mb-1"
                                  data-testid="seed-card-question">

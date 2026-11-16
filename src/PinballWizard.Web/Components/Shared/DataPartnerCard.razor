@@ -15,11 +15,14 @@
  * ADR-0027 — routes outward; whole card is the outbound link.
  *@
 
+@* Whole-card accessible name must include every visible string (axe
+   label-content-name-mismatch / WCAG 2.5.3 Label in Name). Role + arrow
+   stay aria-hidden so they are presentation-only. *@
 <a class="@CssClass"
    href="@Href"
    target="_blank"
    rel="noopener noreferrer"
-   aria-label="@Name — data partner (opens in new tab)"
+   aria-label="@($"{Name} {Description} {StatusText} (opens in new tab)")"
    data-testid="@($"data-partner-card-{Role.ToLowerInvariant()}")">
 
     <span class="partner-card__role" aria-hidden="true">@Role</span>
@@ -30,7 +33,7 @@
 
     <span class="partner-card__desc">@Description</span>
 
-    <span class="partner-card__status" aria-label="Status: @StatusText">
+    <span class="partner-card__status">
         <span class="partner-card__status-dot" aria-hidden="true"></span>
         <span>@StatusText</span>
     </span>

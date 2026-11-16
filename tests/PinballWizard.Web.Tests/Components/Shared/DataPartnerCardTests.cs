@@ -36,6 +36,19 @@ public sealed class DataPartnerCardTests : AsyncBunitContext
     // 1. Whole card is an <a> link (ADR-0027: route outward, single hitbox)
     // ──────────────────────────────────────────────────────────────────────
 
+    // AxeCore ≥4.14 enforces WCAG 2.5.3 label-content-name-mismatch:
+    // aria-label must contain every non-hidden visible string on the card.
+    [Fact]
+    public void DataPartnerCard_AccessibleName_ContainsVisibleText()
+    {
+        var cut = RenderCard();
+        var anchor = cut.Find("a");
+        var name = anchor.GetAttribute("aria-label") ?? "";
+        Assert.Contains("OPDB", name, StringComparison.Ordinal);
+        Assert.Contains("The canonical machine catalog.", name, StringComparison.Ordinal);
+        Assert.Contains("Canonical · active", name, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void DataPartnerCard_IsAnchorElement_WithCorrectHref()
     {
