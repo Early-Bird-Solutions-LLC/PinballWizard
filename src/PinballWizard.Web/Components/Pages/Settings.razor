@@ -25,8 +25,8 @@
 <PageTitle>Settings — PinballWizard</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="settings-page py-6" data-testid="settings-page">
-    @* Typo.h1 → real <h1> (#790 / #789). pw-page-title keeps the prior h4 visual size. *@
-    <MudText Typo="Typo.h1" Class="pw-page-title mb-6">Settings</MudText>
+    @* Shared AppPageHeader: real <h1> + scoped pw-page-title size (#790 Bugbot). *@
+    <AppPageHeader Title="Settings" />
 
     @* ── Theme ──────────────────────────────────────────────────────────── *@
     <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
