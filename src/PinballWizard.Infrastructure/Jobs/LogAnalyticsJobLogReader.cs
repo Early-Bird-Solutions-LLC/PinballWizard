@@ -1,6 +1,6 @@
 using System.Globalization;
 using Azure.Identity;
-using Azure.Monitor.Query;
+using Azure.Monitor.Query.Logs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Jobs;
@@ -16,14 +16,14 @@ namespace PinballWizard.Infrastructure.Jobs;
 // Per DL-0002/DL-0003 the wire path is validated at operational hand-off + the
 // bUnit page tests; unit tests cover MapSeverity / BuildResult / unconfigured.
 //
-// SDK verification (Azure.Monitor.Query 1.7.1, 2026-07-02):
+// SDK verification (Azure.Monitor.Query.Logs 1.0.0, 2026-07-02):
 //   QueryWorkspaceAsync(workspaceId, kql, range, options=null, ct=default)
 //   options has HasDefaultValue=True so can be skipped with named cancellationToken arg.
 //   response.Value.Table.Rows — confirmed via XML doc P:LogsQueryResult.Table / P:LogsTable.Rows.
 //   row[0] — confirmed via P:LogsTableRow.Item(System.Int32) returning object.
-//   new QueryTimeRange(DateTimeOffset, DateTimeOffset) — confirmed via
-//     M:Azure.Monitor.Query.QueryTimeRange.#ctor(System.DateTimeOffset,System.DateTimeOffset)
-//     in Azure.Monitor.Query.xml (same package as LogAnalyticsMonitoringStatsReader).
+//   new LogsQueryTimeRange(DateTimeOffset, DateTimeOffset) — confirmed via
+//     M:Azure.Monitor.Query.Logs.LogsQueryTimeRange.#ctor(System.DateTimeOffset,System.DateTimeOffset)
+//     in Azure.Monitor.Query.Logs.xml (same package as LogAnalyticsMonitoringStatsReader).
 internal sealed class LogAnalyticsJobLogReader : IJobLogReader
 {
     private readonly MonitoringOptions _options;
@@ -66,7 +66,7 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
         {
             var response = await _client.QueryWorkspaceAsync(
                 _options.LogAnalyticsWorkspaceId, kql,
-                new QueryTimeRange(startUtc, endUtc),
+                new LogsQueryTimeRange(startUtc, endUtc),
                 cancellationToken: ct).ConfigureAwait(false);
 
             var rows = response.Value.Table.Rows

@@ -3,7 +3,7 @@ using PinballWizard.Application.Monitoring;
 namespace PinballWizard.Infrastructure.Monitoring;
 
 // Pure KQL builders + mappings. No SDK dependency — fully unit-tested.
-// Queries are consumed with a QueryTimeRange(TimeSpan) so they carry no
+// Queries are consumed with a LogsQueryTimeRange(TimeSpan) so they carry no
 // time filter themselves.
 //
 // SCHEMA: these run against the Log Analytics WORKSPACE (QueryWorkspaceAsync on
