@@ -6,10 +6,20 @@
 # retrievability is one retrieval per cell. A gap opens/refreshes a pinned issue
 # (honest-failure surfacing, invariant #17); a green run closes it.
 #
+# Triggers:
+#   - schedule: daily floor (cron offset off top-of-hour)
+#   - workflow_dispatch: on-demand (operator UI — agents often lack Actions write)
+#   - workflow_run (Deploy success on main): closes the lag between a Deploy that
+#     lands Search/Foundry data-plane RBAC (or image/index changes) and the next
+#     daily cron. Without this, a false GAP alarm (#1095 class) stays open until
+#     the next 06:41 UTC schedule or a manual dispatch.
+#
 # Auth: azure/login (OIDC, no long-lived secret), same federated credential as
 # deploy.yml. The CLI's SharedAzureCredential resolves against the AI Search
 # index; AZURE_TOKEN_CREDENTIALS=dev forces the developer chain (AzureCli, which
 # azure/login populates) per the local live-load runbook.
+# Requires Search Index Data Reader + Cognitive Services OpenAI User on the
+# cicdDeployPrincipalId (shared.bicep) — platform stack apply, or equivalent.
 
 name: Corpus coverage
 
@@ -17,11 +27,17 @@ on:
   schedule:
     - cron: '41 6 * * *' # daily, offset off top-of-hour
   workflow_dispatch: {}
+  workflow_run:
+    workflows:
+      - Deploy
+    types:
+      - completed
 
 permissions:
   contents: read
   issues: write
   id-token: write   # OIDC token exchange for azure/login
+  actions: read     # workflow_run: read triggering Deploy conclusion/branch
 
 concurrency:
   group: corpus-coverage
@@ -30,6 +46,12 @@ concurrency:
 jobs:
   coverage:
     name: Corpus coverage probe
+    # Skip failed/cancelled Deploy runs and non-main heads (fork PRs / branches
+    # do not share the production OIDC subject `ref:refs/heads/main`).
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
