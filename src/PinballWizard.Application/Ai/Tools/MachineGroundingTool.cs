@@ -153,7 +153,7 @@ public sealed class MachineGroundingTool
         return score;
     }
 
-    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. The response may also include TitleCollisions: machines from DIFFERENT OPDB groups that share a related title — either the same franchise title (e.g. Sega Godzilla 1998 alongside Stern Godzilla 2021) OR where the resolved game's title is a subtitle-prefix of a different group's longer title (e.g. Iron Maiden 1981 alongside Iron Maiden: Legacy of the Beast 2018). When TitleCollisions is non-empty: if the user gave a qualifier (manufacturer, year, or full subtitle), ground definitively on that game; otherwise ask ONE targeted clarifying question naming 2–3 candidates (manufacturer + year/subtitle where they differ) before answering. Returns null if no machine matches the title.")]
+    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group AND manufacturer (Pro/Premium/LE) so the agent can ask a targeted clarifying question for version-dependent topics. The response may also include TitleCollisions: franchise-title collisions that are NOT same-manufacturer editions — (a) different OPDB groups (Sega Godzilla 1998 vs Stern Godzilla 2021), (b) same OPDB group segment but a different manufacturer / remake (Cactus Canyon Bally 1998 vs Chicago Gaming 2022, both group G4835), or (c) subtitle-superset across groups (Iron Maiden 1981 vs Iron Maiden: Legacy of the Beast 2018). When TitleCollisions is non-empty: if the user gave a qualifier (manufacturer, year, or full subtitle), ground definitively on that game; otherwise ask ONE targeted clarifying question naming 2–3 candidates (manufacturer + year/subtitle where they differ) before answering. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
         [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name if the user stated it (for example: 'Stern Godzilla', 'Foo Fighters', 'Attack from Mars Remake'). The manufacturer qualifier resolves ambiguity when multiple machines share the same franchise title (e.g. Sega vs Stern Godzilla). Keep the FULL game title, including any subtitle after a colon — a subtitle denotes a DISTINCT game, not an edition: pass 'Iron Maiden: Legacy of the Beast' (2018), NOT 'Iron Maiden' (the 1981 game); 'Transformers: More Than Meets the Eye', NOT 'Transformers'. Only Pro/Premium/LE/Standard are edition suffixes to omit on an initial lookup — those are surfaced via the returned Siblings list. When re-calling to resolve a specific edition named by the user, include the edition qualifier (e.g. 'Godzilla Premium', 'Attack from Mars Remake').")] string title,
         CancellationToken cancellationToken = default)
@@ -490,6 +490,13 @@ public sealed class MachineGroundingTool
                 if (sibling.Id == primary.Id)
                     continue;
 
+                // Same OPDB group segment + different manufacturer is a remake
+                // collision (Cactus Canyon Bally vs CGC, #718), not a Pro/Premium
+                // edition. Those surface via TitleCollisions; keep Siblings for
+                // same-manufacturer edition families only.
+                if (!string.Equals(sibling.PartitionKey, primary.PartitionKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 siblings.Add(new MachineSiblingGroundingDto(
                     OpdbId: sibling.Id,
                     Title: sibling.Title,
@@ -523,15 +530,17 @@ public sealed class MachineGroundingTool
         return siblings;
     }
 
-    // Fetches cross-group machines that share the same franchise title as
-    // the resolved primary — the other entries in the lookup row that were
-    // NOT scored as the best match and belong to a DIFFERENT OPDB group.
+    // Fetches machines that share the franchise title but are NOT edition
+    // siblings of the resolved primary — the other lookup-row entries that
+    // were not scored as the best match.
     //
-    // Exclusion rules (both must hold for an entry to be skipped):
+    // Exclusion rules (skip when any hold):
     //   • The entry IS the resolved match (same opdbId / same bestIdx).
-    //   • The entry's machine shares the primary's GroupId — it is already
-    //     reachable via Siblings (same-group); adding it to TitleCollisions
-    //     would duplicate information the agent already has.
+    //   • Same GroupId AND same manufacturer (PartitionKey) — true
+    //     Pro/Premium/LE edition siblings already reachable via Siblings.
+    //     Same-group remakes from a DIFFERENT manufacturer (Cactus Canyon
+    //     Bally 1998 vs CGC 2022 share OPDB group segment G4835, #718) are
+    //     NOT editions — surface them here so the agent clarifies.
     //
     // Failures fetching a collision machine are silently skipped (logged
     // at Debug) so a stale/missing machine row does not poison the list or
@@ -546,13 +555,6 @@ public sealed class MachineGroundingTool
         // TitleCollisions is not available without a row.
         if (resolvedLookup is null || resolvedLookup.OpdbIds.Count <= 1)
             return [];
-
-        // Exclusion set: the primary's GroupId. Siblings share it by
-        // construction (same OPDB group), so any collision candidate in
-        // this group is already visible to the agent via Siblings.
-        var siblingGroupIds = new HashSet<string>(StringComparer.Ordinal);
-        if (!string.IsNullOrEmpty(primary.GroupId))
-            siblingGroupIds.Add(primary.GroupId);
 
         var collisions = new List<MachineSiblingGroundingDto>();
         for (var i = 0; i < resolvedLookup.OpdbIds.Count; i++)
@@ -579,10 +581,15 @@ public sealed class MachineGroundingTool
                     continue;
                 }
 
-                // Skip if the candidate is in the same OPDB group as the primary
-                // (already visible via Siblings — no need to duplicate).
-                if (!string.IsNullOrEmpty(candidate.GroupId) && siblingGroupIds.Contains(candidate.GroupId))
+                // Same-group + same-manufacturer → edition sibling (Siblings).
+                // Same-group + different manufacturer → remake collision (#718).
+                // Different GroupId → classic cross-group collision (Godzilla).
+                if (!string.IsNullOrEmpty(candidate.GroupId)
+                    && string.Equals(candidate.GroupId, primary.GroupId, StringComparison.Ordinal)
+                    && string.Equals(candidate.PartitionKey, primary.PartitionKey, StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
 
                 collisions.Add(new MachineSiblingGroundingDto(
                     OpdbId: candidate.Id,
@@ -850,16 +857,19 @@ public sealed class MachineGroundingTool
             title, primaryMachine.Title, primaryMachine.Id, primaryHit.Score);
 
         var primaryGroup = GroupKeyOf(primaryMachine);
-        var seenGroups = new HashSet<string>(StringComparer.Ordinal) { primaryGroup };
+        // Dedup key is (group, manufacturer): same-group remakes from a different
+        // manufacturer (Cactus Canyon #718) must still surface as TitleCollisions.
+        var seenGroupManufacturers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            $"{primaryGroup}\0{primaryMachine.PartitionKey}",
+        };
         var collisions = new List<MachineSiblingGroundingDto>();
 
         foreach (var hit in hits.Skip(1))
         {
-            // Group-key deduplication — same-group hits are already reachable via
-            // Siblings and must not appear in TitleCollisions (duplication makes
-            // the agent's clarifying question redundant).
             var hitGroupKey = string.IsNullOrEmpty(hit.GroupId) ? hit.OpdbId : hit.GroupId;
-            if (!seenGroups.Add(hitGroupKey))
+            var hitDedupKey = $"{hitGroupKey}\0{hit.ManufacturerKey}";
+            if (!seenGroupManufacturers.Add(hitDedupKey))
                 continue;
 
             try
@@ -876,14 +886,14 @@ public sealed class MachineGroundingTool
                     continue;
                 }
 
-                // Post-fetch group re-check against the AUTHORITATIVE Cosmos GroupId.
-                // The pre-fetch dedup used the index-supplied GroupId, which can be
-                // stale; if the candidate's real group is the primary's, it is already
-                // reachable via Siblings and must not surface as a cross-group
-                // collision (mirrors ResolveTitleCollisionsAsync). Self-heals on the
-                // next projection.
-                if (string.Equals(GroupKeyOf(candidate), primaryGroup, StringComparison.Ordinal))
+                // Authoritative Cosmos check (index GroupId can be stale). Skip only
+                // true edition siblings: same group AND same manufacturer. Same-group
+                // remakes (#718) fall through into TitleCollisions.
+                if (string.Equals(GroupKeyOf(candidate), primaryGroup, StringComparison.Ordinal)
+                    && string.Equals(candidate.PartitionKey, primaryMachine.PartitionKey, StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
 
                 collisions.Add(new MachineSiblingGroundingDto(
                     OpdbId: candidate.Id,
@@ -972,16 +982,27 @@ public sealed class MachineGroundingTool
         var primary = scored[0].Machine;
         var primaryGroup = GroupKeyOf(primary);
 
-        // Surface only DIFFERENT-group candidates as collisions — same-group
-        // editions are already reachable via the Siblings path, so duplicating
-        // them here would make the agent's clarifying question redundant.
+        // Surface distinct (group, manufacturer) candidates as collisions —
+        // same-group same-manufacturer editions stay on the Siblings path;
+        // same-group remakes from another manufacturer (#718) still collide.
         var collisions = new List<MachineSiblingGroundingDto>();
-        var seenGroups = new HashSet<string>(StringComparer.Ordinal) { primaryGroup };
+        var seenGroupManufacturers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            $"{primaryGroup}\0{primary.PartitionKey}",
+        };
         foreach (var (machine, _) in scored.Skip(1))
         {
             var group = GroupKeyOf(machine);
-            if (!seenGroups.Add(group))
+            var dedupKey = $"{group}\0{machine.PartitionKey}";
+            if (!seenGroupManufacturers.Add(dedupKey))
                 continue;
+
+            // True edition sibling — already on Siblings; skip.
+            if (string.Equals(group, primaryGroup, StringComparison.Ordinal)
+                && string.Equals(machine.PartitionKey, primary.PartitionKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
             collisions.Add(new MachineSiblingGroundingDto(
                 OpdbId: machine.Id,

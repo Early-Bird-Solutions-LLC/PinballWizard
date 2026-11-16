@@ -351,10 +351,12 @@ public sealed class MachineGroundingToolTests
     }
 
     // #718 — bare "Cactus Canyon" must surface the Bally original AND the
-    // Chicago Gaming remake as a TitleCollisions pair (different OPDB groups,
-    // same franchise title). The Wizard prompt then requires ONE clarifying
-    // question when the user gave no year/manufacturer qualifier. This locks
-    // the tool contract; agent compliance is covered by Wizard.md Step 2.
+    // Chicago Gaming remake as a TitleCollisions pair. Production GroupId is
+    // the shared OPDB segment "G4835" (ExtractGroupSegment of both
+    // G4835-Mb5eO and G4835-M2YPK) — NOT the full opdb ids. Same-group +
+    // different manufacturer is a remake collision, not a Pro/Premium
+    // sibling; the tool must put Bally in TitleCollisions (and keep it out
+    // of Siblings) so Wizard.md Step 2 can clarify.
     [Fact]
     public async Task GetMachineByTitleAsync_CactusCanyon_SurfacesBallyAndCgcAsTitleCollisions()
     {
@@ -363,21 +365,26 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Cactus Canyon"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Cactus Canyon"),
         };
-        // OPDB ids from #718 (Bally 1998 original vs CGC remake group).
+        // OPDB ids from #718 (Bally 1998 original vs CGC remake).
         lookup.UpsertEntry("G4835-Mb5eO", "bally", ["bally"]);
         lookup.UpsertEntry("G4835-M2YPK", "chicago-gaming", ["chicago-gaming"]);
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Cactus Canyon", Arg.Any<CancellationToken>()).Returns(lookup);
 
+        // ExtractGroupSegment → "G4835" for both ids (production shape).
         var bally = BuildMachine("G4835-Mb5eO", "bally", "Bally", "Cactus Canyon", 1998);
-        bally.GroupId = "G4835-Mb5eO";
+        bally.GroupId = "G4835";
         var cgc = BuildMachine("G4835-M2YPK", "chicago-gaming", "Chicago Gaming Company", "Cactus Canyon", 2022);
-        cgc.GroupId = "G4835-M2YPK";
+        cgc.GroupId = "G4835";
 
         var repo = Substitute.For<IMachineRepository>();
         repo.GetByOpdbIdAsync("G4835-Mb5eO", "bally", Arg.Any<CancellationToken>()).Returns(bally);
         repo.GetByOpdbIdAsync("G4835-M2YPK", "chicago-gaming", Arg.Any<CancellationToken>()).Returns(cgc);
+        // Sibling fetch returns both — tool must exclude cross-manufacturer
+        // remakes from Siblings and put them in TitleCollisions instead.
+        repo.GetSiblingsByGroupIdAsync("G4835", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(cgc, bally));
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Cactus Canyon", CancellationToken.None);
@@ -386,6 +393,8 @@ public sealed class MachineGroundingToolTests
         // Newer year wins the content-intrinsic tie-break (ADR-0049).
         Assert.Equal("G4835-M2YPK", result!.OpdbId);
         Assert.Equal("Chicago Gaming Company", result.Manufacturer);
+        Assert.Equal("G4835", result.GroupId);
+        Assert.Empty(result.Siblings);
         Assert.Single(result.TitleCollisions);
         Assert.Equal("G4835-Mb5eO", result.TitleCollisions[0].OpdbId);
         Assert.Equal(1998, result.TitleCollisions[0].Year);
