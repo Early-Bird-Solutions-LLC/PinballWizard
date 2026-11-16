@@ -39,11 +39,15 @@ Ship a **PR first-pass review** agent:
 ### Governance (Propose / comment-only)
 
 - `contents: read` only — no Edit/Write/`git push`.
-- Allowed tools: Read/Grep/Glob + `gh pr view` / `gh pr diff` / `gh pr comment`
-  only — **no** `Bash(gh api:*)` for the model (broad `gh api` + PR/issues write
-  would allow close/delete/lock under prompt injection). Idempotency for the
-  current `head_sha` is a trusted workflow shell step using `gh api` before the
-  agent runs; if a matching comment exists the Claude step is skipped.
+- Allowed tools: Read/Grep/Glob + `gh pr view` / `gh pr diff` + create-only
+  `.github/scripts/post-pr-first-pass-comment.sh` — **no** `Bash(gh api:*)` or
+  raw `Bash(gh pr comment:*)` (the latter admits `--edit-last`, which could
+  overwrite ADR-0041 triage comments). Comment body is stdin/heredoc (no
+  `--body-file` / Write tool). Idempotency for the current `head_sha` is a
+  trusted workflow shell step using `gh api` before the agent runs; if a
+  matching `github-actions[bot]` comment exists the Claude step is skipped.
+- Bot-authored PRs **and** bot-driven `synchronize` (`github.actor` contains
+  `[bot]`) skip neutrally so empty `allowed_bots` cannot hard-fail the check.
 - Posts **exactly one** sticky-style comment beginning with
   `<!-- pr-first-pass-review -->` and keyed to `head_sha`.
 - Never approve, request changes, merge, or dismiss reviews.
@@ -91,6 +95,9 @@ events from same repo).
 | Broad `gh api:*` + PR/issues write → close/delete/lock via injection | P0 | Model allowlist omits `gh api`; only `gh pr view` / `diff` / `comment`; idempotency `gh api` stays in trusted workflow shell |
 | Collaborator spoofs marker strings to skip review | P1 | Skip only when comment author is `github-actions[bot]` and body *starts with* the marker + matching `head_sha` |
 | Comment-list API failure treated as “no review yet” | P1 | Idempotency step fails the job on `gh api` errors (no `\|\| true`) |
+| `--body-file` without Write burns turns / mis-posts | P1 | Prompt mandates stdin heredoc via create-only helper; no `--body-file` |
+| `gh pr comment --edit-last` overwrites triage comment | P0 | Raw `gh pr comment` not allowlisted; helper only creates |
+| Bot push on human PR hard-fails `allowed_bots` | P1 | Job `if` skips when `github.actor` contains `[bot]` |
 | Token scope escalation (`actions:write` + `gh api`) → `workflow_dispatch` | P0 | No `actions: write`; artifact upload with `contents: read` only |
 | Cost amplification via force-push spam | P1 | Concurrency group per PR + cancel-in-progress; idempotent per head SHA |
 | Leaking secrets from diff into public comment | P0 | Prompt forbids quoting secret-shaped strings; redact in artifact |

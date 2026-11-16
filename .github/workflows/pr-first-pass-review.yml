@@ -18,10 +18,12 @@ name: PR first-pass review
 #    missing artifact JSON.
 #  - No actions:write (artifact upload works with contents:read; write would
 #    allow workflow_dispatch via gh api).
-#  - Agent tool allowlist has NO Bash(gh api:*) — only gh pr view/diff/comment.
-#    Idempotency check uses gh api in a trusted workflow step (not the model).
-#  - Bot-authored PRs are skipped (neutral) so Renovate/docs-agent do not
-#    hard-fail on allowed_bots defaults.
+#  - Agent tool allowlist has NO Bash(gh api:*) / Bash(gh pr comment:*) —
+#    only gh pr view/diff + create-only .github/scripts/post-pr-first-pass-comment.sh
+#    (blocks --edit-last overwriting triage comments). Idempotency uses gh api
+#    in a trusted workflow step (not the model).
+#  - Bot-authored PRs and bot-driven synchronize (github.actor contains [bot])
+#    are skipped (neutral) so allowed_bots defaults do not hard-fail.
 #
 # NOTE: Prefer merging this workflow to main before flipping the enablement variable.
 
@@ -46,7 +48,8 @@ jobs:
       vars.ENABLE_PR_FIRST_PASS_REVIEW == 'true' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.user.type != 'Bot'
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(github.actor, '[bot]')
     steps:
       - name: Checkout PR base only (never head / merge commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,7 +63,7 @@ jobs:
           cat > artifacts/pr-first-pass-review-run.json <<EOF
           {
             "agent": "pr-first-pass-review",
-            "prompt_version": "v1.2026.11.1",
+            "prompt_version": "v1.2026.11.2",
             "adr": "0069",
             "trust_tier": "Propose",
             "category": "claude-code-ci",
@@ -149,8 +152,8 @@ jobs:
           anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
           anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Human-authored same-repo PRs only (Bot skipped in job if). Do not
-          # set allowed_bots='*' on this public repo.
+          # Human author + human actor only (job if). Empty allowed_bots stays
+          # deny-by-default; do not set allowed_bots='*' on this public repo.
           prompt: |
             REPO: ${{ github.repository }}
             PR: ${{ github.event.pull_request.number }}
@@ -166,7 +169,7 @@ jobs:
           claude_args: |
             --max-turns 12
             --model claude-sonnet-4-6
-            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(.github/scripts/post-pr-first-pass-comment.sh:*)"
 
       - name: Mark run completed (best-effort)
         if: success() && steps.existing_review.outputs.already_reviewed != 'true'
