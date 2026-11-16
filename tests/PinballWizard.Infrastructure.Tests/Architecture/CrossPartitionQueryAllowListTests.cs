@@ -105,6 +105,15 @@ public sealed class CrossPartitionQueryAllowListTests
             "reconcile bounded by SELECT TOP @sampleSize ORDER BY recorded_utc DESC; not a " +
             "CosmosRepository subclass (direct Container injection); Tier 2.",
 
+        // Direct GetItemQueryIterator<IndexStateDocument> — --rebuild-rag-index
+        // must delete every hash row or the next sync treats wiped chunks as
+        // already indexed. Projects only id + document_id. Operator command,
+        // not a request path. One scan per rebuild.
+        ["CosmosBackedIndexState.cs"] =
+            "Direct GetItemQueryIterator<IndexStateDocument> in ClearAllAsync; " +
+            "--rebuild-rag-index only; projects id and document_id then deletes each row; " +
+            "not user-facing; one scan per operator rebuild.",
+
         // StreamCrossPartitionAsync — StreamAllManufacturersAsync enumerates all
         // catalog_stats documents (one per manufacturer) for the /admin/manufacturers
         // page. Required for dynamic discovery: OPDB carries defunct manufacturers
