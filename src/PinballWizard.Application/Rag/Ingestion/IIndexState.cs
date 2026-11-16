@@ -61,4 +61,9 @@ public interface IIndexState
         string machineId,
         IngestionOutcome skipOutcome,
         CancellationToken cancellationToken);
+
+    // Drops every hash row. --rebuild-rag-index wipes the search index;
+    // leaving these rows would make the next sync treat wiped chunks as
+    // already indexed. Returns the number of rows removed.
+    Task<int> ClearAllAsync(CancellationToken cancellationToken);
 }

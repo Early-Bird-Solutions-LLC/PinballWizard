@@ -32,4 +32,21 @@ public sealed class PinTipsSynthesizerTests
         Assert.Contains("G5pe4", chunk.Text, StringComparison.Ordinal);
         Assert.Contains("tip 2", chunk.Text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ContentHash_IsStableUntilTheIndexedTextChanges()
+    {
+        var url = "https://mp-data.sfo3.cdn.digitaloceanspaces.com/latest-pintips.json";
+        var tip = new PinTip(2, "G5pe4", "general", 15, "Shoot the castle repeatedly.");
+
+        var first = PinTipsSynthesizer.ContentHash(tip, url);
+        var again = PinTipsSynthesizer.ContentHash(tip, url);
+        var edited = PinTipsSynthesizer.ContentHash(tip with { Text = "Shoot the orbits." }, url);
+
+        Assert.Equal(first, again);
+        Assert.NotEqual(first, edited);
+        Assert.True(PinTipsSynthesizer.IsUnchanged(first, again));
+        Assert.False(PinTipsSynthesizer.IsUnchanged(null, first));
+        Assert.False(PinTipsSynthesizer.IsUnchanged(first, edited));
+    }
 }

@@ -943,6 +943,22 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
+        // Clear the hash ledger before the drop. A wipe that stops after the
+        // index is gone and before every hash row is deleted would leave
+        // --sync-pintips skipping tips that are no longer searchable.
+        var rebuildIndexState = host.Services.GetService<PinballWizard.Application.Rag.Ingestion.IIndexState>();
+        if (rebuildIndexState is not null)
+        {
+            var cleared = await rebuildIndexState.ClearAllAsync(cancellationToken);
+            Console.WriteLine($"Cleared {cleared} rag_index_state row(s) before dropping the index.");
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                "Warning: rag_index_state was not cleared (IIndexState is not configured). " +
+                "A later sync may skip documents whose hash was recorded before this wipe.");
+        }
+
         Console.WriteLine("Rebuilding AI Search RAG index (DROP + recreate) — all chunks will be removed...");
         var rebuildResult = await bootstrapper.RecreateAsync(cancellationToken);
         Console.WriteLine(
@@ -1524,6 +1540,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         var pinTipsRawDocs = host.Services.GetService<IRawDocumentRepository>();
+        var pinTipsIndexState = host.Services.GetService<PinballWizard.Application.Rag.Ingestion.IIndexState>();
         var pinTipsMachines = host.Services.GetService<IMachineRepository>();
         if (pinTipsMachines is null)
         {
@@ -1538,6 +1555,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var pinTipsFailed = 0;
         var pinTipsRawFailed = 0;
         var pinTipsUnlinked = 0;
+        var pinTipsSkippedUnchanged = 0;
         var pinTipsOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
         var pinTipsSource = SynthesizedSourceDescriptors.PinTips;
         var exportUrl = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.PinTipsOptions>>().Value.ExportUrl;
@@ -1582,8 +1600,23 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 var chunks = pinTipsSynthesizer.Synthesize(tip, exportUrl, chunkRequest);
                 if (chunks.Count == 0) continue;
 
+                var contentHash = PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.ContentHash(tip, exportUrl);
                 try
                 {
+                    // The hash read shares this target's failure boundary.
+                    // A Cosmos timeout or a bad ledger row must fail this
+                    // machine only; the rest of the export still indexes.
+                    if (pinTipsIndexState is not null)
+                    {
+                        var lastIndexed = await pinTipsIndexState.GetLastIndexedHashAsync(
+                            documentId, target.MachineId, cancellationToken);
+                        if (PinballWizard.Infrastructure.Integrations.PinTips.PinTipsSynthesizer.IsUnchanged(lastIndexed, contentHash))
+                        {
+                            pinTipsSkippedUnchanged++;
+                            continue;
+                        }
+                    }
+
                     var result = await pinTipsIndexer.UpsertAsync(chunkRequest, chunks, pinTipsOptions, cancellationToken);
                     if (result.Failures.Count > 0)
                     {
@@ -1596,9 +1629,25 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         documentId, title, exportUrl, pinTipsSource.DiscoveryContext,
                         pinTipsSource.DocumentType, pinTipsSource.FileFormat, target.Manufacturer,
                         target.MachineTitle, null, DateTimeOffset.UtcNow);
+                    // Stamp the skip hash only after the citation row is stored.
+                    // A failed raw-doc write must be retried next run; stamping
+                    // first would make IsUnchanged skip the tip forever.
                     if (!await SynthesizedRawDocWriter.TryPersistAsync(pinTipsRawDocs, synDoc, cancellationToken))
                     {
                         pinTipsRawFailed++;
+                    }
+                    else if (pinTipsIndexState is not null)
+                    {
+                        try
+                        {
+                            await pinTipsIndexState.RecordIndexedAsync(
+                                documentId, target.MachineId, contentHash, chunks.Count, 0, cancellationToken);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            Console.Error.WriteLine(
+                                $"  Warning: index-state stamp failed for {documentId}: {ex.Message}. The next sync will re-embed it.");
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1609,7 +1658,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             }
         }
 
-        Console.WriteLine($"--sync-pintips complete: indexed={pinTipsIndexed} unlinked={pinTipsUnlinked} failed={pinTipsFailed} raw_doc_write_failed={pinTipsRawFailed}");
+        Console.WriteLine($"--sync-pintips complete: indexed={pinTipsIndexed} skipped_unchanged={pinTipsSkippedUnchanged} unlinked={pinTipsUnlinked} failed={pinTipsFailed} raw_doc_write_failed={pinTipsRawFailed}");
         if (pinTipsFailed > 0) Environment.ExitCode = 1;
         return;
     }
