@@ -89,6 +89,22 @@ public sealed class AppDataGridTests : AsyncBunitContext
         cut.Find(".mud-table-pagination");
     }
 
+    // MudBlazor ≥9.6 page-size select is role=combobox; without a name it
+    // fails axe aria-input-field-name on every AppDataGrid page. Pin the
+    // labelled AppDataGridPager contract so a future pager swap can't regress.
+    [Fact]
+    public void PageSizeSelect_HasAccessibleName()
+    {
+        var items = Enumerable.Range(1, 3).Select(i => new Row($"Row{i}")).ToList();
+        var cut = RenderGrid(items, showPager: true);
+        var combobox = cut.Find(".mud-table-pagination-select [role='combobox']");
+        var labelledBy = combobox.GetAttribute("aria-labelledby");
+        var ariaLabel = combobox.GetAttribute("aria-label");
+        Assert.True(
+            !string.IsNullOrWhiteSpace(labelledBy) || !string.IsNullOrWhiteSpace(ariaLabel),
+            "page-size combobox must expose aria-labelledby or aria-label");
+    }
+
     [Fact]
     public void ShowPagerFalse_HidesPagination()
     {
