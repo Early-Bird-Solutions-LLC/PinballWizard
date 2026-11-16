@@ -55,12 +55,12 @@
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
     <PackageVersion Include="Azure.AI.Projects" Version="2.0.1" />
     <PackageVersion Include="Azure.Communication.Email" Version="1.1.0" />
-    <PackageVersion Include="Azure.Core" Version="1.62.0" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
+    <PackageVersion Include="Azure.Core" Version="1.65.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.5" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.5" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <!-- Azure.Monitor.Query 1.7.1 — Log Analytics query client for live telemetry reads.
          Resolved via `dotnet add package Azure.Monitor.Query` 2026-07-01 (latest stable).
@@ -70,11 +70,11 @@
     <!-- Azure.ResourceManager.AppContainers 1.5.0 — ARM control-plane SDK for
          Microsoft.App/jobs (list, read executions, trigger). GA stable.
          Source: https://www.nuget.org/packages/Azure.ResourceManager.AppContainers -->
-    <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.5.0" />
+    <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.6.0" />
     <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.5.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
     <!-- Aspire.Microsoft.Azure.Cosmos 13.6.5 requires Microsoft.Azure.Cosmos >= 3.63.1. -->
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.63.1" />
+    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.64.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.5.0" />
@@ -134,7 +134,7 @@
     <!-- Azure.Monitor.OpenTelemetry.Exporter — Entra-authenticated log exporter for the
          PerfMetrics console tool (Phase 1 perf-trend tracking). Verified latest stable via
          `dotnet package search Azure.Monitor.OpenTelemetry.Exporter` on 2026-07-09. -->
-    <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.3" />
+    <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.10.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
