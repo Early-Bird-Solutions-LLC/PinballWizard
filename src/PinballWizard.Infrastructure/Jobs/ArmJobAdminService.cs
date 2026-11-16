@@ -52,17 +52,23 @@ internal sealed class ArmJobAdminService : IJobAdminService
         try
         {
             var rg = await GetResourceGroupAsync(cancellationToken).ConfigureAwait(false);
-            var results = new List<JobStatus>();
 
+            // Materialize the job list first, then fetch each job's latest
+            // execution in parallel. Sequential MapJobStatusAsync was an N+1
+            // ARM walk (list + one executions page per job). With ~23 jobs in
+            // rg-pinwiz-shared-dev that regularly exceeded the /admin/jobs
+            // canary's 20 s wait while the page's own load CTS is 30 s
+            // (Deploy 43777294983 / #1047 canary red).
+            var jobs = new List<ContainerAppJobResource>();
             await foreach (var job in rg.GetContainerAppJobs().GetAllAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var status = await MapJobStatusAsync(job, cancellationToken).ConfigureAwait(false);
-                results.Add(status);
-            }
+                jobs.Add(job);
+
+            var results = await Task.WhenAll(
+                jobs.Select(job => MapJobStatusAsync(job, cancellationToken))).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Listed {Count} ACA jobs in resource group {ResourceGroup}.",
-                results.Count, _resourceGroupName);
+                results.Length, _resourceGroupName);
 
             return results;
         }

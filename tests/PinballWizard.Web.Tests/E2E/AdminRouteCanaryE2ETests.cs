@@ -170,9 +170,13 @@ public sealed class AdminRouteCanaryE2ETests : IAsyncLifetime
             return; // auth redirect — not the failure we guard against
 
         // Page is accessible: assert no ARM error.
+        // Timeout must exceed AdminJobs.LoadAsync's CreateLoadCts(30s) — the
+        // loading bar (jobs-loading) has no terminal testid, so a wait shorter
+        // than the page budget false-fails while ARM is still in flight
+        // (Deploy 43777294983: 20s wait vs 30s page CTS → TimeoutException).
         await page.WaitForSelectorAsync(
             "[data-testid='jobs-table'], [data-testid='jobs-empty'], [data-testid='jobs-arm-error'], [data-testid='jobs-service-unavailable']",
-            new() { Timeout = 20_000 });
+            new() { Timeout = 45_000 });
 
         var armErrorVisible = await page.IsVisibleAsync("[data-testid='jobs-arm-error']");
         Assert.False(armErrorVisible,
