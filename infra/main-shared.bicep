@@ -146,7 +146,7 @@ var commonTags = {
 // Resource group
 // -----------------------------------------------------------------------------
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-07-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   name: resourceGroupName
   location: location
   tags: commonTags
