@@ -46,7 +46,8 @@
             <MudCard Elevation="1" Class="status-card" data-testid="status-card-cosmos">
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Cosmos DB</MudText>
+                        @* HtmlTag=div: card titles are not document headings (#790 heading-order). *@
+                        <MudText Typo="Typo.h6" HtmlTag="div">Cosmos DB</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
@@ -75,7 +76,7 @@
             <MudCard Elevation="1" Class="status-card" data-testid="status-card-foundry">
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Azure AI Foundry</MudText>
+                        <MudText Typo="Typo.h6" HtmlTag="div">Azure AI Foundry</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
@@ -104,7 +105,7 @@
             <MudCard Elevation="1" Class="status-card" data-testid="status-card-search">
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">AI Search</MudText>
+                        <MudText Typo="Typo.h6" HtmlTag="div">AI Search</MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>

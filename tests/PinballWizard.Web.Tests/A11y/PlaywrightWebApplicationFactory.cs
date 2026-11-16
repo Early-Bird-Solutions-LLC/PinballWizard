@@ -153,6 +153,10 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         else
         {
             builder.Services.AddAuthorization();
+            // /documents injects IRawDocumentRepository; without a stub the page
+            // DI-fails during SSR and discovery/axe gates see an empty document
+            // (#790 — routes linked from the footer must be scannable).
+            builder.Services.AddPublicBrowseTestDoubles();
         }
 
         // Random loopback port; actual address is read from IServerAddressesFeature.
