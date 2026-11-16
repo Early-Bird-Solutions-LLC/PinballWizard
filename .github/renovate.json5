@@ -109,11 +109,12 @@
       allowedVersions: "<1.6.0",
     },
     {
-      // 9.7.0+ changes MudSelect to an unnamed combobox and fails axe
-      // aria-input-field-name on admin pages. See Directory.Packages.props.
-      // Without this, a 9.5 → 9.9 minor would auto-merge and red the ui-tests job.
+      // ≥9.6 MudDataGridPager page-size MudSelect is an unnamed combobox.
+      // AppDataGridPager owns the a11y label (Directory.Packages.props + #1086);
+      // #1104 landed 9.14.0 on main. Keep majors on the dashboard; allow 9.x
+      // minors/patches so Renovate does not fight the shipped pin.
       matchPackageNames: ["MudBlazor"],
-      allowedVersions: "<9.7.0",
+      allowedVersions: "<10.0.0",
     },
     {
       matchPackageNames: ["Microsoft.Extensions.*"],
