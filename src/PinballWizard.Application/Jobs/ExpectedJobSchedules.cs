@@ -4,7 +4,8 @@ namespace PinballWizard.Application.Jobs;
 //
 // Manual-only jobs (relink-all, gc-rag-index) and the paused Kineticist
 // weekly sync are intentionally absent — silence there is not a schedule
-// failure. The watchdog job itself is also absent (would recurse).
+// failure. The watchdog job itself (pinwiz-job-watchdog) is also absent
+// (would recurse).
 //
 // MaxGapHours:
 //   Daily   25  — 24 h cadence + 1 h jitter

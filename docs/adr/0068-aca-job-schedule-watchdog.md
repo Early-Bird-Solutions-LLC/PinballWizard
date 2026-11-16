@@ -19,7 +19,7 @@ workspace in #888).
 
 ## Decision
 
-Ship a daily ACA job `pinwiz-job-schedule-watchdog` that runs
+Ship a daily ACA job `pinwiz-job-watchdog` (≤32-char ACA name limit) that runs
 `dotnet PinballWizard.Cli.dll --check-job-schedules`:
 
 1. Seed expected cadences in Application (`ExpectedJobSchedules`) — daily /
