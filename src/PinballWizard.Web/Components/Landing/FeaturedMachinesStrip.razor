@@ -30,13 +30,14 @@
                 var slug = machine.MachineId;
                 <div class="featured-strip__cell"
                      data-testid="@($"featured-machine-{slug}")">
-                    @* Accessible name must include every painted string (axe
-                       label-content-name-mismatch / WCAG 2.5.3) — Title + Tagline. *@
+                    @* No aria-label: let the accessible name come from painted
+                       Title+Tagline content. Axe 4.14 label-content-name-mismatch
+                       kept failing when an aria-label re-stated the same strings
+                       (and earlier when line-clamp painted an ellipsis). *@
                     <MudCard Class="featured-card mud-clickable" Elevation="1"
                              @onclick="@(() => OnMachineClick(machine))"
                              role="button"
-                             tabindex="0"
-                             aria-label="@FeaturedCardLabel(machine)">
+                             tabindex="0">
                         <MudCardContent Class="featured-card__content">
                             <MudText Typo="Typo.subtitle2" Class="featured-card__title">
                                 @machine.Title
@@ -80,11 +81,6 @@ else if (Machines is null)
     // Null = loading; empty = nothing to show; populated = render cards.
     [Parameter]
     public IReadOnlyList<FeaturedMachine>? Machines { get; set; }
-
-    private static string FeaturedCardLabel(FeaturedMachine machine) =>
-        string.IsNullOrWhiteSpace(machine.Tagline)
-            ? machine.Title
-            : $"{machine.Title} {machine.Tagline}";
 
     // Build the Wizard query from the human-readable Title, never the slug.
     // The slug (machine.MachineId, e.g. "jjp-wonka") is an internal identifier
