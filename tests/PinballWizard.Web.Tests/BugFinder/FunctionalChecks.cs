@@ -30,13 +30,24 @@ public static class FunctionalChecks
                 $"Navigated to {url} but ended on {page.Url}. A Blazor render exception was thrown."));
         }
 
-        // 2. In-layout TiltErrorBoundary fallback (not the dedicated /error|/tilt pages)
-        var tiltBoundary = page.Locator("[data-testid='tilt-boundary-fallback']");
-        if (await tiltBoundary.CountAsync() > 0 && await tiltBoundary.IsVisibleAsync())
+        // 2. TILT surfaces that replace page content without a URL change:
+        //    - tilt-boundary-fallback: in-layout TiltErrorBoundary
+        //    - tilt-heading: Error.razor re-executed via UseExceptionHandler("/error")
+        //      while the browser URL stays on the original route (Bugbot #1077).
+        // Skip when the crawler intentionally opened /error or /tilt.
+        var onDedicatedTiltRoute = url.Contains("/error", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/tilt", StringComparison.OrdinalIgnoreCase);
+        if (!onDedicatedTiltRoute)
         {
-            findings.Add(new BugFinding(url, BugSeverity.Critical, BugSource.Functional,
-                "Global Tilt error surface rendered instead of page content",
-                "data-testid='tilt-boundary-fallback' is visible — TiltErrorBoundary caught an unhandled exception."));
+            var tiltSurface = page.Locator(
+                "[data-testid='tilt-boundary-fallback'], [data-testid='tilt-heading']");
+            if (await tiltSurface.CountAsync() > 0 && await tiltSurface.First.IsVisibleAsync())
+            {
+                findings.Add(new BugFinding(url, BugSeverity.Critical, BugSource.Functional,
+                    "Global Tilt error surface rendered instead of page content",
+                    "tilt-boundary-fallback or tilt-heading is visible — ErrorBoundary / "
+                    + "UseExceptionHandler replaced the page without a navigated /error URL."));
+            }
         }
 
         // 3. Load time
