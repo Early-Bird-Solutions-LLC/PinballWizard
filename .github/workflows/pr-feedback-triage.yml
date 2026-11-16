@@ -19,8 +19,10 @@ on:
 # One in-flight triage per (PR × event type). Bugbot (and similar) often fire
 # pull_request_review and pull_request_review_comment nearly together; a single
 # PR-wide group with cancel-in-progress cancelled one run and left a red/cancelled
-# "triage" required check (#1077). Scope by event_name so those paths do not
-# cancel each other; same-event bursts still supersede.
+# "triage" required check (#1077 / #1083). Scope by event_name so those paths do
+# not cancel each other; same-event bursts still supersede. Parallel event types
+# can still race to post — the "Find existing triage comment" step + upsert
+# prompt below collapses them onto one <!-- claude-triage --> comment.
 concurrency:
   group: pr-triage-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -57,8 +59,29 @@ jobs:
       - name: Checkout base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # When review + review_comment race (allowed by event-scoped concurrency),
+      # both jobs would otherwise post a fresh <!-- claude-triage --> comment.
+      # Resolve any existing marker comment up front so the prompt can PATCH it.
+      - name: Find existing triage comment
+        id: existing_triage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR="${{ github.event.pull_request.number || github.event.issue.number }}"
+          ID="$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("<!-- claude-triage -->"))] | first | .id // empty')"
+          echo "comment_id=${ID}" >> "$GITHUB_OUTPUT"
+          if [ -n "${ID}" ]; then
+            echo "Found existing triage comment id=${ID}"
+          else
+            echo "No existing triage comment"
+          fi
+
       - name: Triage PR feedback (comment only)
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1
+        env:
+          EXISTING_TRIAGE_COMMENT_ID: ${{ steps.existing_triage.outputs.comment_id }}
         with:
           # #804 root cause (proved by the probe on run 31517799430): the action
           # sends anthropic_api_key as a static x-api-key header, but a WIF
@@ -121,8 +144,8 @@ jobs:
                - MECHANICAL: style/lint/format, missing-test, simple rename,
                  obvious local fix.
                - JUDGMENT: design/architecture/security/behavioral trade-off.
-            4. Post EXACTLY ONE comment via `gh pr comment <PR> --body <...>`.
-               The comment MUST begin with the literal marker on its own line:
+            4. Upsert EXACTLY ONE triage comment. The body MUST begin with the
+               literal marker on its own line:
                <!-- claude-triage -->
                Then two sections:
                - "### Mechanical (ready-to-apply)" — each item with a concrete
@@ -132,9 +155,19 @@ jobs:
                  and your reasoning, ending "→ your call".
                If a section is empty, write "_None._" under it.
 
-            Constraints: post at most one comment; never modify code; never push;
-            never approve or request changes. If you cannot read the feedback,
-            say so honestly in the comment rather than guessing.
+               If env EXISTING_TRIAGE_COMMENT_ID is non-empty, UPDATE that
+               comment (do not create a second one):
+                 gh api -X PATCH repos/${{ github.repository }}/issues/comments/$EXISTING_TRIAGE_COMMENT_ID \
+                   -f body="$(cat <<'EOF'
+               ...full body including marker...
+               EOF
+               )"
+               Otherwise create once via `gh pr comment <PR> --body <...>`.
+
+            Constraints: at most one triage comment on the PR (create or
+            update); never modify code; never push; never approve or request
+            changes. If you cannot read the feedback, say so honestly in the
+            comment rather than guessing.
           claude_args: |
             --max-turns 8
             --model claude-sonnet-4-6
