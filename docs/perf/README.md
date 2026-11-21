@@ -89,7 +89,7 @@ blade for `pinwiz-ai-dev`.
   per the sibling-region-fallback design (commit `54e674c`), and the committed
   `main-shared.dev.bicepparam` now pins `searchLocation = 'eastus'`. The gitignored
   `infra/main-shared.dev.local.bicepparam` is no longer a replacement for the committed file — deploy
-  scripts always load the committed file and overlay only `developerObjectId` from the local file
+  scripts always load the committed file and overlay only allowlisted params (`developerObjectId`, plus the Ops Triage `enableOpsTriage` / `opsTriageWebhookUri`) from the local file
   (any other local param, including `searchLocation`, is ignored with a warning; #400). New worktrees
   don't inherit gitignored files, so recreate the minimal `developerObjectId` overlay there.
 
