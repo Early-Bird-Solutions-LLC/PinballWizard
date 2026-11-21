@@ -227,10 +227,10 @@ param wizardAliveUrl string = ''
 @description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, the domain is bound (SniEnabled) to the Cloudflare Origin CA certificate sourced from Key Vault (cert name "cloudflare-origin-pinwiz"; imported by infra/scripts/Import-OriginCaCertToKeyVault.ps1). See ADR-0038. Leave empty to skip.')
 param wizardCustomDomain string = ''
 
-@description('When non-empty, Azure Monitor posts the common alert schema to the Foundry Ops Triage webhook (ADR-0064). Format: https://<api-host>/api/ops/alerts/webhook?code=<OpsTriage:WebhookSecret>. Empty keeps email-only action-group behavior.')
+@description('When non-empty, Azure Monitor posts the common alert schema to the Foundry Ops Triage webhook (ADR-0064). Prefer Wizard ACA FQDN — Api ingress is internal; Wizard proxies POST /api/ops/alerts/webhook. Format: https://<wizard-aca-fqdn>/api/ops/alerts/webhook?code=<OpsTriage:WebhookSecret>. Empty keeps email-only action-group behavior.')
 param opsTriageWebhookUri string = ''
 
-@description('When true, Api ACA mounts Ops Triage Key Vault secrets (WebhookSecret / EmailConnectionString / GitHubToken) and sets OpsTriage__Enabled=true. Leave false until those three secrets exist in Key Vault — otherwise the Api revision fails secret resolution. See docs/runbooks/07-ops-triage.md.')
+@description('When true, Api ACA mounts Ops Triage Key Vault secrets (WebhookSecret / EmailConnectionString / GitHubToken) and sets OpsTriage__Enabled=true. Leave false until those three secrets exist in Key Vault — otherwise the Api revision fails secret resolution. Flip via gitignored local overlay (Deploy-SharedResources allowlist). See docs/runbooks/07-ops-triage.md.')
 param enableOpsTriage bool = false
 
 // -----------------------------------------------------------------------------

@@ -39,10 +39,13 @@ Introduce an **Ops Triage** hybrid:
    and not part of `PublicWizardSubAgents`.
 
 2. **Alert ingress** — Azure Monitor action group gains a webhook to
-   `POST /api/ops/alerts/webhook` (shared-secret query `code`). The endpoint
-   persists a `TriageRun` and returns `202` quickly; a hosted processor runs the
-   Foundry diagnosis asynchronously (Monitor webhook timeouts are too short for
-   a full LLM round-trip).
+   `POST /api/ops/alerts/webhook` (shared-secret query `code`). Api ACA ingress
+   stays **internal**; the Wizard (external) proxies that path to Api so Monitor
+   can reach triage without opening Api to the internet. Prefer the Wizard ACA
+   FQDN (same pattern as `wizardAliveUrl`) to avoid Cloudflare Access / Bot Fight
+   on the apex. The Api endpoint persists a `TriageRun` and returns `202`
+   quickly; a hosted processor runs the Foundry diagnosis asynchronously
+   (Monitor webhook timeouts are too short for a full LLM round-trip).
 
 3. **Enriched notification** — after diagnosis, the processor sends **the**
    operator email (subject/body include alert summary + short diagnosis + admin

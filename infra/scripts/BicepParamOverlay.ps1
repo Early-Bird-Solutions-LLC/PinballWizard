@@ -76,7 +76,13 @@ function Resolve-BicepParamSource {
 
         # Param names that may be taken from the local file and layered on
         # top of the committed file. Everything else in local is ignored.
-        [string[]] $AllowedLocalParams = @('developerObjectId')
+        # enableOpsTriage / opsTriageWebhookUri: ADR-0064 enablement — URI
+        # embeds WebhookSecret; must stay gitignored (see runbook 07).
+        [string[]] $AllowedLocalParams = @(
+            'developerObjectId'
+            'enableOpsTriage'
+            'opsTriageWebhookUri'
+        )
     )
 
     if (-not (Test-Path -LiteralPath $CommittedPath)) {
