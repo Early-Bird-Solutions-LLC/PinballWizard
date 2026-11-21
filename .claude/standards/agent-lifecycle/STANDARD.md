@@ -12,9 +12,13 @@ applies-to:
   - ".github/workflows/**triage**"
   - ".github/workflows/**remediate**"
   - ".github/workflows/**agent**"
+  - ".github/workflows/**first-pass-review**"
+  - ".github/agents/**"
   - "docs/adr/*agent*"
   - "docs/adr/*triage*"
+  - "docs/adr/*first-pass-review*"
   - "data/eval/**"
+  - "data/agent-kb/**"
 ---
 
 # Agent Lifecycle Standard

@@ -79,6 +79,7 @@ negative) it carries.
 | [0066](0066-agent-lifecycle-kit.md) | Agent Lifecycle Kit — closed loop for every Foundry / CI / hybrid agent (amends 0051, 0016) | Accepted |
 | [0067](0067-ifpa-wppr-tools.md) | IFPA WPPR live player tools (search + profile; not RAG) | Accepted |
 | [0068](0068-aca-job-schedule-watchdog.md) | ACA job schedule watchdog via ARM (not Log Analytics) | Accepted |
+| [0069](0069-pr-first-pass-review-agent.md) | PR first-pass review agent — CI Propose (amends 0051, 0066; complementary to 0041) | Accepted |
 
 ## Conventions
 

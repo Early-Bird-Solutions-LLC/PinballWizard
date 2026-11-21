@@ -136,6 +136,12 @@ Some controls are not a single stage — they run through the whole process:
   keeping a human accountable for every merge decision. Because it is version-controlled, it
   is non-optional and independent of any developer being online. See [ADR-0041](adr/0041-pr-feedback-triage.md)
   for the rationale and the deferred autonomous-mode upgrade path.
+- **Automated first-pass PR review.** A complementary CI Propose agent
+  (`.github/workflows/pr-first-pass-review.yml`, [ADR-0069](adr/0069-pr-first-pass-review-agent.md))
+  reviews the *diff* on same-repo PRs (comment-only, enablement off by default via
+  `ENABLE_PR_FIRST_PASS_REVIEW`). It is the server-side counterpart to `/local-review`,
+  not a Foundry product agent (ADR-0051). Feedback triage (0041) remains the classifier
+  for *reviewer* comments.
 
 ## Two kinds of agents
 
@@ -151,9 +157,10 @@ the answer a visitor receives.
 schedule — run as ephemeral GitHub Actions jobs via `claude-code-action@v1`, authenticated
 keylessly through GitHub OIDC → Anthropic WIF (ADR-0047). They need `git`, `gh pr create`,
 and repo checkout; they have no place in a product-runtime orchestrator. The `@claude`
-mention handler (`claude.yml`) and the PR-feedback triage bot (`pr-feedback-triage.yml`)
-are already in this category. The **docs-agent** (Phase 3) is the worked example that made
-the boundary explicit: it opens a PR to refresh documentation on a schedule — a canonical
+mention handler (`claude.yml`), the PR-feedback triage bot (`pr-feedback-triage.yml`),
+and the PR first-pass review bot (`pr-first-pass-review.yml`, ADR-0069) are already in
+this category. The **docs-agent** (Phase 3) is the worked example that made the boundary
+explicit: it opens a PR to refresh documentation on a schedule — a canonical
 repo-maintenance task, not a product-serving one.
 
 The classification rule for any future agent is a single question: does it serve live user
