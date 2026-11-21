@@ -97,6 +97,7 @@ events from same repo).
 | Comment-list API failure treated as “no review yet” | P1 | Idempotency step fails the job on `gh api` errors (no `\|\| true`) |
 | `--body-file` without Write burns turns / mis-posts | P1 | Prompt mandates stdin heredoc via create-only helper; no `--body-file` |
 | `gh pr comment --edit-last` overwrites triage comment | P0 | Raw `gh pr comment` not allowlisted; helper only creates |
+| Comment helper not executable on runner | P1 | File tracked as `100755`; workflow `chmod +x` before Claude; `bash …helper` also allowlisted |
 | Bot push on human PR hard-fails `allowed_bots` | P1 | Job `if` skips when `github.actor` contains `[bot]` |
 | Token scope escalation (`actions:write` + `gh api`) → `workflow_dispatch` | P0 | No `actions: write`; artifact upload with `contents: read` only |
 | Cost amplification via force-push spam | P1 | Concurrency group per PR + cancel-in-progress; idempotent per head SHA |

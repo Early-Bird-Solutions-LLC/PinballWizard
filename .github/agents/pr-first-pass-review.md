@@ -44,7 +44,9 @@ hide a real bug.
 
 ## Comment format (mandatory)
 
-Post **one** comment via stdin to the create-only helper (heredoc — no body file):
+Post **one** comment via stdin to the create-only helper (heredoc — no body file).
+Prefer direct execution; `bash .github/scripts/post-pr-first-pass-comment.sh` is
+also allowlisted if the runner drops `+x`.
 
 ```bash
 .github/scripts/post-pr-first-pass-comment.sh <PR> <<'EOF'

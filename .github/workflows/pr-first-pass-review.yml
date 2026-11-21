@@ -124,6 +124,7 @@ jobs:
         if: steps.existing_review.outputs.already_reviewed != 'true'
         env:
           PROMPT_PATH: .github/agents/pr-first-pass-review.md
+          COMMENT_HELPER: .github/scripts/post-pr-first-pass-comment.sh
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
@@ -134,6 +135,12 @@ jobs:
             echo "::error::Trusted prompt missing on base ${BASE_SHA}: ${PROMPT_PATH}"
             exit 1
           fi
+          if [[ ! -f "${COMMENT_HELPER}" ]]; then
+            echo "::error::Comment helper missing on base ${BASE_SHA}: ${COMMENT_HELPER}"
+            exit 1
+          fi
+          # Repo tracks 100755; chmod is belt-and-suspenders if a checkout drops +x.
+          chmod +x "${COMMENT_HELPER}"
           cp "${PROMPT_PATH}" /tmp/pr-first-pass-review.md
           # Random delimiter so a literal PROMPT_EOF line cannot truncate outputs.
           delim="PROMPT_$(openssl rand -hex 16)"
@@ -169,7 +176,7 @@ jobs:
           claude_args: |
             --max-turns 12
             --model claude-sonnet-4-6
-            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(.github/scripts/post-pr-first-pass-comment.sh:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(.github/scripts/post-pr-first-pass-comment.sh:*),Bash(bash .github/scripts/post-pr-first-pass-comment.sh:*)"
 
       - name: Mark run completed (best-effort)
         if: success() && steps.existing_review.outputs.already_reviewed != 'true'
