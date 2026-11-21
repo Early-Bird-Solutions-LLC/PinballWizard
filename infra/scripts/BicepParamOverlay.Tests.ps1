@@ -5,7 +5,8 @@ $ErrorActionPreference = 'Stop'
 
 function Assert-Equal {
     param($Expected, $Actual, [string]$Name)
-    if ($Expected -ne $Actual) {
+    # -cne: case-sensitive — the whole point is true ≠ True for az --parameters.
+    if ("$Expected" -cne "$Actual") {
         throw "FAIL ${Name}: expected '${Expected}', got '${Actual}'"
     }
     Write-Host "OK ${Name}" -ForegroundColor Green
