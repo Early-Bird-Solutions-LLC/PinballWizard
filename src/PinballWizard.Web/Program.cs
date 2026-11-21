@@ -45,6 +45,7 @@ using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
+using PinballWizard.Web.Endpoints;
 using PinballWizard.Web.Engineering;
 using PinballWizard.Web.Hosting;
 using PinballWizard.Web.Security;
@@ -257,6 +258,20 @@ builder.Services
     })
     .AddStandardResilienceHandler();
 
+// ── Ops Triage webhook proxy (ADR-0064 public front door) ─────────────────
+// Azure Monitor posts to the Wizard (external ingress); this client forwards
+// to the internal Api. Non-idempotent from Monitor's perspective — no retries
+// (Monitor already retries). Timeout bounds connect+headers+body to Api accept.
+#pragma warning disable EXTEXP0001
+builder.Services
+    .AddHttpClient(OpsTriageWebhookProxyEndpoint.HttpClientName, client =>
+    {
+        client.BaseAddress = new Uri("https+http://pinwiz-api");
+        client.Timeout = TimeSpan.FromSeconds(30);
+    })
+    .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+
 // ── Wizard SSE streaming client ───────────────────────────────────────────
 // Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
 // Base address uses Aspire service-discovery notation ("https+http://pinwiz-api")
@@ -463,5 +478,8 @@ app.MapRazorComponents<App>()
 
 // Microsoft.Identity.Web sign-in / sign-out controller routes.
 app.MapControllers();
+
+// Azure Monitor → Ops Triage public front door (Api remains internal).
+app.MapOpsTriageWebhookProxyEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);

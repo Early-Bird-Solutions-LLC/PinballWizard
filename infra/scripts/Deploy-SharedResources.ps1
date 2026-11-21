@@ -160,12 +160,18 @@ $committedParams = Join-Path $infraDir "main-shared.$Environment.bicepparam"
 $localOverride   = Join-Path $infraDir "main-shared.$Environment.local.bicepparam"
 
 # #400: committed file is always the --parameters source. *.local.bicepparam may
-# only overlay allowlisted personal values (developerObjectId). Wholesale
+# only overlay allowlisted personal / secret-bearing values. Wholesale
 # replacement silently dropped committed additions (cicdDeployPrincipalId).
+# Ops Triage (ADR-0064): enableOpsTriage + opsTriageWebhookUri carry the
+# webhook ?code= secret — keep them gitignored local, never commit.
 $paramSource = Resolve-BicepParamSource `
     -CommittedPath $committedParams `
     -LocalPath $localOverride `
-    -AllowedLocalParams @('developerObjectId')
+    -AllowedLocalParams @(
+        'developerObjectId'
+        'enableOpsTriage'
+        'opsTriageWebhookUri'
+    )
 $parametersFile = $paramSource.ParametersFile
 $paramOverlays = @($paramSource.OverlayArgs)
 
