@@ -42,15 +42,14 @@ public static class OpsTriageWebhookProxyEndpoint
         }
 
         byte[] body;
-        await using (var ms = new MemoryStream(capacity: (int)Math.Min(request.ContentLength ?? 4096, MaxBodyBytes)))
+        try
         {
-            await request.Body.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
-            if (ms.Length > MaxBodyBytes)
-            {
-                return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-            }
-
-            body = ms.ToArray();
+            body = await ReadBodyCappedAsync(request.Body, MaxBodyBytes, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         }
 
         var client = httpClientFactory.CreateClient(HttpClientName);
@@ -71,10 +70,12 @@ public static class OpsTriageWebhookProxyEndpoint
         }
         catch (HttpRequestException ex)
         {
+            // Azure Monitor action-group webhooks retry 408/429/503/504 — not 502.
+            // Surface transient Api unreachability as 503 so Monitor redelivers.
             logger.LogWarning(ex, "Ops triage webhook proxy could not reach pinwiz-api.");
             return Results.Json(
                 new { error = "Ops triage Api unreachable from Wizard proxy." },
-                statusCode: StatusCodes.Status502BadGateway);
+                statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -96,6 +97,46 @@ public static class OpsTriageWebhookProxyEndpoint
     /// <summary>Preserves Monitor's <c>?code=</c> (and any other query) for Api auth.</summary>
     internal static string BuildForwardPath(QueryString query) =>
         "/api/ops/alerts/webhook" + query.Value;
+
+    /// <summary>
+    /// Reads at most <paramref name="maxBytes"/> from <paramref name="source"/>.
+    /// Throws <see cref="InvalidOperationException"/> if the stream exceeds the cap
+    /// (stops before buffering the rest — safe for chunked / missing Content-Length).
+    /// </summary>
+    internal static async Task<byte[]> ReadBodyCappedAsync(
+        Stream source,
+        int maxBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
+
+        var buffer = new byte[Math.Min(16 * 1024, maxBytes + 1)];
+        await using var ms = new MemoryStream(capacity: Math.Min(maxBytes, 4096));
+        while (true)
+        {
+            var remaining = maxBytes - (int)ms.Length;
+            // Read one extra byte past the cap so we can reject oversize without
+            // relying on Content-Length (chunked / missing-length POSTs).
+            var toRead = Math.Min(buffer.Length, remaining + 1);
+            var read = await source.ReadAsync(buffer.AsMemory(0, toRead), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (ms.Length + read > maxBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Request body exceeds {maxBytes} byte Ops Triage proxy cap.");
+            }
+
+            await ms.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        return ms.ToArray();
+    }
 
     private sealed class ProxyPassthroughResult(
         int statusCode,

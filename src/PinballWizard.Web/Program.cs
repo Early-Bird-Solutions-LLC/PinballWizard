@@ -260,8 +260,9 @@ builder.Services
 
 // ── Ops Triage webhook proxy (ADR-0064 public front door) ─────────────────
 // Azure Monitor posts to the Wizard (external ingress); this client forwards
-// to the internal Api. Non-idempotent from Monitor's perspective — no retries
-// (Monitor already retries). Timeout bounds connect+headers+body to Api accept.
+// to the internal Api. No HttpClient retries here — Monitor already retries
+// 408/429/503/504; the proxy maps Api unreachability to 503 (not 502) so
+// those retries fire. Timeout bounds connect+headers+body to Api accept.
 #pragma warning disable EXTEXP0001
 builder.Services
     .AddHttpClient(OpsTriageWebhookProxyEndpoint.HttpClientName, client =>
