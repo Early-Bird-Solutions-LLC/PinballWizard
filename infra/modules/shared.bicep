@@ -1698,7 +1698,9 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
       // in Bicep, params, or source — set out of band:
       //   az keyvault secret set --name silverball-api-key --value sbl_live_…
       //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
+      //   az keyvault secret set --name Ifpa-ApiKey --value <partner key>
       // Kineticist key name matches the C2 CLI job secret (Kineticist-ApiKey).
+      // IFPA key name matches ADR-0067 (Ifpa-ApiKey → Ifpa__ApiKey).
       // Ops Triage (ADR-0064) secrets — gated by enableOpsTriage so a merge
       // does not brick the Api before KV secrets exist. Seed then flip true:
       //   az keyvault secret set --name OpsTriage-WebhookSecret --value …
@@ -1713,6 +1715,14 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
         {
           name: 'kineticist-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          // IFPA WPPR live-player tools (ADR-0067). Gates AddIfpaIntegration
+          // in Api Program.cs — absent → searchIfpaPlayers / getIfpaPlayer
+          // return null (honest unavailable).
+          name: 'ifpa-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Ifpa-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
       ], enableOpsTriage ? [
@@ -1821,6 +1831,13 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
               // in Api Program.cs — absent → getKineticistGuideLinks returns null.
               name: 'Kineticist__ApiKey'
               secretRef: 'kineticist-api-key'
+            }
+            {
+              // IFPA WPPR live-player tools (ADR-0067). Same Key Vault secret
+              // as the Web app. Gates AddIfpaIntegration in Api Program.cs —
+              // absent → searchIfpaPlayers / getIfpaPlayer return null.
+              name: 'Ifpa__ApiKey'
+              secretRef: 'ifpa-api-key'
             }
           ], enableOpsTriage ? [
             // Ops Triage Foundry agent (ADR-0064) — showcase ops AI.
@@ -2370,9 +2387,10 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
       ]
       // Partner API keys + optional OIDC client secret. Key Vault secrets
       // resolve at runtime via the UAMI (Key Vault Secrets User). Silverball
-      // + Kineticist keys are always present (non-conditional); the AzureAd
-      // block is appended only when azureAdClientId is set.
+      // + Kineticist + IFPA keys are always present (non-conditional); the
+      // AzureAd block is appended only when azureAdClientId is set.
       // Kineticist KV secret name matches the CLI job: Kineticist-ApiKey.
+      // IFPA KV secret name: Ifpa-ApiKey (ADR-0067).
       secrets: concat([
         {
           // Silverball Labs live pricing API key (Stream C). Never appears
@@ -2388,6 +2406,14 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
           //   az keyvault secret set --name Kineticist-ApiKey --value ki_live_…
           name: 'kineticist-api-key'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
+          identity: acaIdentity.?id ?? ''
+        }
+        {
+          // IFPA WPPR live-player tools (ADR-0067). Same Key Vault secret
+          // as the Api app.
+          //   az keyvault secret set --name Ifpa-ApiKey --value <partner key>
+          name: 'ifpa-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Ifpa-ApiKey'
           identity: acaIdentity.?id ?? ''
         }
       ], empty(azureAdClientId) ? [] : [
@@ -2485,6 +2511,12 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               // AddKineticistIntegration in Web Program.cs — same secret as Api.
               name: 'Kineticist__ApiKey'
               secretRef: 'kineticist-api-key'
+            }
+            {
+              // IFPA WPPR live-player tools (ADR-0067). Gates
+              // AddIfpaIntegration in Web Program.cs — same secret as Api.
+              name: 'Ifpa__ApiKey'
+              secretRef: 'ifpa-api-key'
             }
           ], deployAiSearch ? [
             {
