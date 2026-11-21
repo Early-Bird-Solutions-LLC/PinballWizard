@@ -56,14 +56,9 @@ public static class OpsTriageWebhookProxyEndpoint
         var client = httpClientFactory.CreateClient(HttpClientName);
         using var forward = new HttpRequestMessage(HttpMethod.Post, BuildForwardPath(request.QueryString));
         forward.Content = new ByteArrayContent(body);
-        if (!string.IsNullOrWhiteSpace(request.ContentType))
-        {
-            forward.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(request.ContentType);
-        }
-        else
-        {
-            forward.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        }
+        forward.Content.Headers.ContentType = !string.IsNullOrWhiteSpace(request.ContentType)
+            ? MediaTypeHeaderValue.Parse(request.ContentType)
+            : new MediaTypeHeaderValue("application/json");
 
         HttpResponseMessage upstream;
         try
