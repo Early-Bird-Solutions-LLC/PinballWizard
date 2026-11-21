@@ -59,6 +59,25 @@ function ConvertFrom-BicepParamLiteral {
     return $Raw
 }
 
+function Format-AzCliParameterValue {
+    <#
+    .SYNOPSIS
+        Serialize a parsed bicepparam literal for `az … --parameters name=value`.
+
+    .NOTES
+        PowerShell stringifies [bool]$true as "True". Azure CLI / ARM bool
+        params expect JSON `true`/`false` (Bugbot on #1113). Keep ints/strings
+        as their normal ToString forms.
+    #>
+    param([Parameter(Mandatory)][AllowNull()]$Value)
+
+    if ($Value -is [bool]) {
+        if ($Value) { return 'true' }
+        return 'false'
+    }
+    return "$Value"
+}
+
 function Resolve-BicepParamSource {
     <#
     .OUTPUTS
@@ -111,8 +130,8 @@ function Resolve-BicepParamSource {
     foreach ($name in $localMap.Keys) {
         if ($allowed.Contains($name)) {
             $value = ConvertFrom-BicepParamLiteral -Raw ([string]$localMap[$name])
-            # az --parameters name=value; booleans/ints stringify fine
-            $result.OverlayArgs.Add("$name=$value")
+            # az --parameters name=value; bools must be JSON true/false (not True).
+            $result.OverlayArgs.Add("$name=$(Format-AzCliParameterValue -Value $value)")
             $applied.Add($name)
         }
         else {
