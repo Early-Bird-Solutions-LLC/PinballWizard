@@ -59,6 +59,22 @@ function ConvertFrom-BicepParamLiteral {
     return $Raw
 }
 
+# Formats a parsed overlay value for `az … --parameters name=value`.
+# PowerShell's "$bool" yields True/False; ARM/az expect JSON lowercase true/false
+# (Bugbot on #1113 — first boolean overlay was enableOpsTriage).
+function Format-AzParameterValue {
+    param([Parameter(Mandatory)][AllowNull()] $Value)
+
+    if ($Value -is [bool]) {
+        if ($Value) { return 'true' }
+        return 'false'
+    }
+    if ($Value -is [int] -or $Value -is [long]) {
+        return [string]$Value
+    }
+    return [string]$Value
+}
+
 function Resolve-BicepParamSource {
     <#
     .OUTPUTS
@@ -111,8 +127,8 @@ function Resolve-BicepParamSource {
     foreach ($name in $localMap.Keys) {
         if ($allowed.Contains($name)) {
             $value = ConvertFrom-BicepParamLiteral -Raw ([string]$localMap[$name])
-            # az --parameters name=value; booleans/ints stringify fine
-            $result.OverlayArgs.Add("$name=$value")
+            # az --parameters name=value; bools must be JSON lowercase (see Format-AzParameterValue).
+            $result.OverlayArgs.Add("$name=$(Format-AzParameterValue -Value $value)")
             $applied.Add($name)
         }
         else {

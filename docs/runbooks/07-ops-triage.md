@@ -86,6 +86,8 @@ Example shape (suffix changes if the ACA environment is recreated):
 # Keep developerObjectId; ADD:
 param enableOpsTriage = true
 param opsTriageWebhookUri = 'https://<wizard-aca-fqdn>/api/ops/alerts/webhook?code=<WEBHOOK_SECRET from step 1>'
+# Deploy-SharedResources overlays these as az --parameters enableOpsTriage=true
+# (lowercase JSON bool — not PowerShell True).
 ```
 
 ```powershell
